@@ -1,0 +1,10 @@
+// ✅ 内容（Vite + Vue3 + Laravel 标准）
+{
+    "compilerOptions": {
+        "composite": true,
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "allowSyntheticDefaultImports": true
+    },
+    "include": ["vite.config.ts"]
+}
