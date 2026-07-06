@@ -145,18 +145,30 @@ const pushData = (data: any, now: string) => {
 
     if (!data) return
 
+    const load = Array.isArray(data.load)
+        ? {
+            one: data.load[0],
+            five: data.load[1],
+            fifteen: data.load[2],
+        }
+        : {
+            one: data.load?.['1min'],
+            five: data.load?.['5min'],
+            fifteen: data.load?.['15min'],
+        }
+
     /**
      * Load Average
      */
-    load1.push(Number(data.load?.[0] ?? 0))
-    load5.push(Number(data.load?.[1] ?? 0))
-    load15.push(Number(data.load?.[2] ?? 0))
+    load1.push(Number(load.one ?? 0))
+    load5.push(Number(load.five ?? 0))
+    load15.push(Number(load.fifteen ?? 0))
 
     /**
      * Memory %
      */
-    const memoryTotal = Number(data.memory?.total ?? 0)
-    const memoryAvailable = Number(data.memory?.available ?? 0)
+    const memoryTotal = Number(data.memory?.total ?? data.memory?.total_mb ?? 0)
+    const memoryAvailable = Number(data.memory?.available ?? data.memory?.available_mb ?? 0)
 
     const memoryUsedPercent = memoryTotal > 0
         ? ((memoryTotal - memoryAvailable) / memoryTotal * 100)
@@ -167,8 +179,8 @@ const pushData = (data: any, now: string) => {
     /**
      * Swap %
      */
-    const swapTotal = Number(data.swap?.total ?? 0)
-    const swapFree = Number(data.swap?.free ?? 0)
+    const swapTotal = Number(data.swap?.total ?? data.swap?.total_mb ?? 0)
+    const swapFree = Number(data.swap?.free ?? data.swap?.free_mb ?? 0)
 
     const swapUsedPercent = swapTotal > 0
         ? ((swapTotal - swapFree) / swapTotal * 100)
@@ -186,8 +198,8 @@ const pushData = (data: any, now: string) => {
 
     Object.values(network).forEach((item: any) => {
 
-        totalRx += Number(item.rx || 0)
-        totalTx += Number(item.tx || 0)
+        totalRx += Number(item.rx || item.rx_bytes || 0)
+        totalTx += Number(item.tx || item.tx_bytes || 0)
     })
 
     const rxRate = lastRx > 0

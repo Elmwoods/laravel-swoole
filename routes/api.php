@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
+use App\Http\Controllers\Admin\Ops\AlertController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
@@ -131,6 +132,8 @@ Route::prefix('/ops')->group(function () {
      */
     Route::prefix('docker')->group(function () {
 
+        Route::get('/summary', [DockerController::class, 'summary']);
+
         Route::get('/containers', [DockerController::class, 'containers']);
 
         Route::get('/stats/{id}', [DockerController::class, 'stats']);
@@ -142,6 +145,8 @@ Route::prefix('/ops')->group(function () {
         Route::post('/start/{id}', [DockerController::class, 'start']);
 
         Route::post('/stop/{id}', [DockerController::class, 'stop']);
+
+        Route::get('/version', [DockerController::class, 'version']);
     });
 
     /*
@@ -174,6 +179,17 @@ Route::prefix('/ops')->group(function () {
 
     Route::get('/network', [NetworkController::class, 'index']);
 
+    /*
+     |--------------------------------------------------------------------------
+     | Alerts
+     |--------------------------------------------------------------------------
+     */
+    Route::prefix('alerts')->group(function () {
+        Route::get('/', [AlertController::class, 'index']);
+        Route::get('/summary', [AlertController::class, 'summary']);
+        Route::post('/evaluate', [AlertController::class, 'evaluate']);
+        Route::post('/{alert}/acknowledge', [AlertController::class, 'acknowledge']);
+    });
 
     Route::prefix('logs')
         ->group(function () {
@@ -191,6 +207,16 @@ Route::prefix('/ops')->group(function () {
             Route::get(
                 '/redis',
                 [LogController::class, 'redis']
+            );
+
+            Route::get(
+                '/system',
+                [LogController::class, 'system']
+            );
+
+            Route::get(
+                '/system/sources',
+                [LogController::class, 'systemSources']
             );
 
             Route::get(

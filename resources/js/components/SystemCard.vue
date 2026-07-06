@@ -41,10 +41,8 @@ const init = async () => {
     try {
         const res = await axios.get('/api/ops/system/summary')
 
-        console.log(res);
         cpu.value = res.data.data.cpu
         memory.value = res.data.data.memory.available/res.data.data.memory.total
-        console.log(cpu.value, memory.value)
     } catch (e) {
         console.error('init summary failed', e)
     }

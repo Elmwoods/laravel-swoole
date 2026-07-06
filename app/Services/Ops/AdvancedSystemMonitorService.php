@@ -2,6 +2,8 @@
 
 namespace App\Services\Ops;
 
+use Symfony\Component\Process\Process;
+
 /**
  * 高级系统监控（生产级）
  * CPU / Load / Memory / Swap / Network / Disk IO
@@ -149,10 +151,21 @@ class AdvancedSystemMonitorService
      */
     public function diskIO(): array
     {
-        $output = shell_exec("iostat -dx 1 1");
+        $process = new Process(['iostat', '-dx', '1', '1']);
+        $process->setTimeout(5);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return [
+                'available' => false,
+                'raw' => '',
+                'message' => 'iostat command unavailable',
+            ];
+        }
 
         return [
-            'raw' => $output,
+            'available' => true,
+            'raw' => $process->getOutput(),
         ];
     }
 

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin\Ops;
 use App\Http\Controllers\Controller;
 use App\Services\Ops\QueueMonitorService;
 use App\Traits\ApiResponse;
-use Exception;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -24,10 +23,6 @@ class QueueController extends Controller
      */
     public function summary(): JsonResponse
     {
-//        添加错误队列信息 方便观察数据测试
-//        dispatch(function () {
-//            throw new Exception("test fail");
-//        });
-        return $this->success( $this->service->summary());
+        return $this->success($this->service->summary());
     }
 }

@@ -31,3 +31,5 @@ Thumbs.db
 /storage/framework/sessions/*
 /storage/framework/views/*
 /bootstrap/cache/*
+/docs
+/database

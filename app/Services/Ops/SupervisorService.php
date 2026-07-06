@@ -2,16 +2,18 @@
 
 namespace App\Services\Ops;
 
-use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 
 /**
- * Supervisor 管理服务
+ * Supervisor 管理服务。
+ *
+ * 通过 supervisorctl 操作容器内进程，适配 Docker + Sail + Octane。
  */
 class SupervisorService
 {
     /**
-     * 获取所有 Supervisor 服务
+     * 获取所有 Supervisor 服务状态。
      */
     public function status(): array
     {
@@ -23,7 +25,7 @@ class SupervisorService
     }
 
     /**
-     * 启动服务
+     * 启动服务。
      */
     public function start(string $name): array
     {
@@ -38,7 +40,7 @@ class SupervisorService
     }
 
     /**
-     * 停止服务
+     * 停止服务。
      */
     public function stop(string $name): array
     {
@@ -53,7 +55,7 @@ class SupervisorService
     }
 
     /**
-     * 重启服务
+     * 重启服务。
      */
     public function restart(string $name): array
     {
@@ -68,7 +70,7 @@ class SupervisorService
     }
 
     /**
-     * 重新读取配置
+     * 重新读取配置。
      */
     public function reread(): string
     {
@@ -79,7 +81,7 @@ class SupervisorService
     }
 
     /**
-     * 更新配置
+     * 更新配置。
      */
     public function update(): string
     {
@@ -90,24 +92,25 @@ class SupervisorService
     }
 
     /**
-     * 查看日志
+     * 查看 Supervisor stdout 尾部日志。
      */
     public function tail(string $name, int $lines = 100): string
     {
         return $this->execute([
             'supervisorctl',
             'tail',
-            '-100',
+            "-{$lines}",
             $name
         ]);
     }
 
     /**
-     * 执行命令
+     * 执行 supervisorctl 命令。
      */
     private function execute(array $command): string
     {
         $process = new Process($command);
+        $process->setTimeout(10);
 
         $process->run();
 
@@ -115,7 +118,7 @@ class SupervisorService
     }
 
     /**
-     * 解析 status 输出
+     * 解析 supervisorctl status 输出。
      */
     private function parse(string $output): array
     {
@@ -133,10 +136,13 @@ class SupervisorService
                 $matches
             );
 
+            $status = $matches[2] ?? 'UNKNOWN';
+
             $result[] = [
                 'name' => $matches[1] ?? '',
-                'status' => $matches[2] ?? '',
+                'status' => $status,
                 'description' => $matches[3] ?? '',
+                'running' => $status === 'RUNNING',
             ];
         }
 
@@ -144,7 +150,7 @@ class SupervisorService
     }
 
     /**
-     * 获取日志
+     * 从配置文件读取服务日志。
      */
     public function logs(
         string $service,

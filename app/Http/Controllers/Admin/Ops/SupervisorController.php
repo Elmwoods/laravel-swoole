@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Ops\SupervisorProcessRequest;
 use App\Services\Ops\SupervisorService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -21,32 +22,32 @@ class SupervisorController extends Controller
     }
 
     public function start(
+        SupervisorProcessRequest $request,
         SupervisorService $service,
-        string $name
     ): JsonResponse
     {
         return $this->success(
-            $service->start($name)
+            $service->start($request->serviceName())
         );
     }
 
     public function stop(
+        SupervisorProcessRequest $request,
         SupervisorService $service,
-        string $name
     ): JsonResponse
     {
         return $this->success(
-            $service->stop($name)
+            $service->stop($request->serviceName())
         );
     }
 
     public function restart(
+        SupervisorProcessRequest $request,
         SupervisorService $service,
-        string $name
     ): JsonResponse
     {
         return $this->success(
-            $service->restart($name)
+            $service->restart($request->serviceName())
         );
     }
 
@@ -69,19 +70,20 @@ class SupervisorController extends Controller
     }
 
     public function tail(
+        SupervisorProcessRequest $request,
         SupervisorService $service,
-        string $name
     ): JsonResponse
     {
         return $this->success([
-            'logs' => $service->tail($name)
+            'logs' => $service->tail($request->serviceName())
         ]);
     }
 
     public function logs(
+        SupervisorProcessRequest $request,
         SupervisorService $service,
-        string $name
     ): JsonResponse {
+        $name = $request->serviceName();
 
         return $this->success([
             'service' => $name,

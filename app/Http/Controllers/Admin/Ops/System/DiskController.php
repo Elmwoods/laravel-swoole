@@ -27,6 +27,6 @@ class DiskController extends Controller
      */
     public function index(): JsonResponse
     {
-        return $this->success($this->diskService->getUsage());
+        return $this->success($this->diskService->summary());
     }
 }

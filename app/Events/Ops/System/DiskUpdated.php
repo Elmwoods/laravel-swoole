@@ -3,7 +3,7 @@
 namespace App\Events\Ops\System;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -12,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
  * 磁盘监控实时推送事件
  * ---------------------------------------
  */
-class DiskUpdated implements ShouldBroadcast
+class DiskUpdated implements ShouldBroadcastNow
 {
     use SerializesModels;
 
@@ -43,6 +43,9 @@ class DiskUpdated implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        return $this->payload;
+        return [
+            'data' => $this->payload,
+            'timestamp' => now()->toDateTimeString(),
+        ];
     }
 }

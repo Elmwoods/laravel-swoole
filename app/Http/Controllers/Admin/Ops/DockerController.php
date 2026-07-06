@@ -3,7 +3,8 @@
 namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
-use App\Services\Ops\DockerService;
+use App\Http\Requests\Admin\Ops\DockerContainerRequest;
+use App\Services\Ops\Docker\DockerService;
 
 class DockerController extends Controller
 {
@@ -21,33 +22,56 @@ class DockerController extends Controller
     }
 
     /**
+     * 容器汇总
+     */
+    public function summary()
+    {
+        return $this->success($this->docker->summary());
+    }
+
+    /**
      * 容器资源统计
      */
-    public function stats(string $id)
+    public function stats(DockerContainerRequest $request)
     {
-        return $this->success($this->docker->stats($id));
+        return $this->success(
+            $this->docker->stats($request->containerId())
+        );
     }
 
     /**
      * 容器日志
      */
-    public function logs(string $id)
+    public function logs(DockerContainerRequest $request)
     {
-        return $this->success($this->docker->logs($id));
+        return $this->success(
+            $this->docker->logs($request->containerId())
+        );
     }
 
-    public function restart(string $id)
+    public function restart(DockerContainerRequest $request)
     {
-        return$this->success($this->docker->restart($id));
+        return $this->success(
+            $this->docker->restart($request->containerId())
+        );
     }
 
-    public function stop(string $id)
+    public function stop(DockerContainerRequest $request)
     {
-        return$this->success($this->docker->stop($id));
+        return $this->success(
+            $this->docker->stop($request->containerId())
+        );
     }
 
-    public function start(string $id)
+    public function start(DockerContainerRequest $request)
     {
-        return$this->success($this->docker->start($id));
+        return $this->success(
+            $this->docker->start($request->containerId())
+        );
+    }
+
+    public function version()
+    {
+        return $this->success($this->docker->version());
     }
 }

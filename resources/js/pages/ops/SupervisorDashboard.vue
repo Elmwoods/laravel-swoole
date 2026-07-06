@@ -1,9 +1,15 @@
 <template>
 
-    <el-card>
+    <el-card shadow="never">
 
         <template #header>
-            Supervisor Dashboard
+            <div class="card-header">
+                <span>Supervisor 状态管理</span>
+
+                <el-button :icon="Refresh" :loading="loading" @click="load">
+                    刷新
+                </el-button>
+            </div>
         </template>
 
         <el-table
@@ -58,6 +64,7 @@
                         <el-button
                             size="small"
                             type="success"
+                            :icon="VideoPlay"
                             @click="start(row)"
                         >
                             Start
@@ -66,6 +73,7 @@
                         <el-button
                             size="small"
                             type="warning"
+                            :icon="RefreshRight"
                             @click="restart(row)"
                         >
                             Restart
@@ -74,6 +82,7 @@
                         <el-button
                             size="small"
                             type="danger"
+                            :icon="VideoPause"
                             @click="stop(row)"
                         >
                             Stop
@@ -81,6 +90,7 @@
 
                         <el-button
                             size="small"
+                            :icon="Document"
                             @click="showLogs(row)"
                         >
                             Logs
@@ -112,12 +122,21 @@
 
 <script setup lang="ts">
 
-import axios from 'axios'
-import { ref, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Document, Refresh, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import {
+    getSupervisorLogs,
+    getSupervisorStatus,
+    restartSupervisor,
+    startSupervisor,
+    stopSupervisor,
+    type SupervisorService,
+} from '@/api/opsCenter'
 
-const services = ref([])
+const services = ref<SupervisorService[]>([])
 const loading = ref(false)
+let timer: number | null = null
 
 const logVisible = ref(false)
 const logContent = ref('')
@@ -128,9 +147,7 @@ const load = async () => {
 
     try {
 
-        const res = await axios.get(
-            '/api/ops/supervisor/status'
-        )
+        const res = await getSupervisorStatus()
 
         services.value =
             res.data.data.services
@@ -141,44 +158,36 @@ const load = async () => {
     }
 }
 
-const start = async (row:any) => {
+const start = async (row: SupervisorService) => {
 
-    await axios.post(
-        `/api/ops/supervisor/start/${row.name}`
-    )
+    await startSupervisor(row.name)
 
     ElMessage.success('Started')
 
     load()
 }
 
-const stop = async (row:any) => {
+const stop = async (row: SupervisorService) => {
 
-    await axios.post(
-        `/api/ops/supervisor/stop/${row.name}`
-    )
+    await stopSupervisor(row.name)
 
     ElMessage.success('Stopped')
 
     load()
 }
 
-const restart = async (row:any) => {
+const restart = async (row: SupervisorService) => {
 
-    await axios.post(
-        `/api/ops/supervisor/restart/${row.name}`
-    )
+    await restartSupervisor(row.name)
 
     ElMessage.success('Restarted')
 
     load()
 }
 
-const showLogs = async (row:any) => {
+const showLogs = async (row: SupervisorService) => {
 
-    const res = await axios.get(
-        `/api/ops/supervisor/logs/${row.name}`
-    )
+    const res = await getSupervisorLogs(row.name)
 
     logContent.value =
         res.data.data.logs
@@ -190,7 +199,14 @@ onMounted(() => {
 
     load()
 
-    setInterval(load, 5000)
+    timer = window.setInterval(load, 5000)
+})
+
+onBeforeUnmount(() => {
+
+    if (timer) {
+        window.clearInterval(timer)
+    }
 })
 
 </script>
@@ -209,6 +225,12 @@ onMounted(() => {
     padding: 20px;
 
     white-space: pre-wrap;
+}
+
+.card-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
 }
 
 </style>

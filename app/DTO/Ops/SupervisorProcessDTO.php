@@ -1,6 +1,6 @@
 <?php
 
-namespace App\DTOs\Ops;
+namespace App\DTO\Ops;
 
 class SupervisorProcessDTO
 {

@@ -2,64 +2,94 @@
 
 namespace App\Http\Controllers\Admin\Ops\Log;
 
-use App\DTO\Ops\Log\LogQueryDTO;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Ops\LogQueryRequest;
 use App\Services\Ops\Log\DockerLogService;
 use App\Services\Ops\Log\LaravelLogService;
 use App\Services\Ops\Log\OctaneLogService;
 use App\Services\Ops\Log\RedisLogService;
-use Illuminate\Http\Request;
+use App\Services\Ops\Log\SystemLogService;
+use Illuminate\Http\JsonResponse;
 
 class LogController extends Controller
 {
+    /**
+     * Laravel 实时日志。
+     */
     public function laravel(
-        Request           $request,
+        LogQueryRequest   $request,
         LaravelLogService $service
-    )
+    ): JsonResponse
     {
         return $this->success(
-            $service->latest(
-                new LogQueryDTO(
-                    lines: $request->integer('lines', 200),
-                    keyword: $request->string('keyword')
-                )
-            )
+            $service->latest($request->dto())
         );
     }
 
+    /**
+     * Octane / Swoole 日志。
+     */
     public function octane(
-        Request          $request,
+        LogQueryRequest  $request,
         OctaneLogService $service
-    )
+    ): JsonResponse
     {
         return $this->success(
-            $service->latest(
-                new LogQueryDTO(
-                    lines: $request->integer('lines', 200)
-                )
-            )
+            $service->latest($request->dto())
         );
     }
 
+    /**
+     * Redis 慢日志。
+     */
     public function redis(
+        LogQueryRequest $request,
         RedisLogService $service
-    )
+    ): JsonResponse
     {
         return $this->success(
-            $service->slowLogs()
+            $service->slowLogs($request->integer('lines', 100))
         );
     }
 
+    /**
+     * Docker 容器日志。
+     */
     public function docker(
-        Request          $request,
+        LogQueryRequest  $request,
         DockerLogService $service
-    )
+    ): JsonResponse
     {
+        $dto = $request->dto();
+
         return $this->success(
             $service->latest(
-                container: $request->string('container')->toString(),
-                lines: $request->integer('lines', 200)
+                container: $dto->container ?? '',
+                lines: $dto->lines,
             )
         );
+    }
+
+    /**
+     * 系统日志。
+     */
+    public function system(
+        LogQueryRequest $request,
+        SystemLogService $service
+    ): JsonResponse
+    {
+        return $this->success(
+            $service->latest($request->dto())
+        );
+    }
+
+    /**
+     * 系统日志来源列表。
+     */
+    public function systemSources(SystemLogService $service): JsonResponse
+    {
+        return $this->success([
+            'sources' => $service->sources(),
+        ]);
     }
 }

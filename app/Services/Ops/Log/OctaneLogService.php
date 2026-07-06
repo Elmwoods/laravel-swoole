@@ -6,19 +6,19 @@ use App\DTO\Ops\Log\LogQueryDTO;
 
 class OctaneLogService
 {
+    public function __construct(
+        private readonly LogFileReaderService $reader,
+    ) {}
+
+    /**
+     * 获取 Octane / Swoole 日志。
+     */
     public function latest(LogQueryDTO $dto): array
     {
-        $file = storage_path('logs/octane.logs');
-
-        if (!file_exists($file)) {
-            return [];
-        }
-
-        $lines = file($file);
-
-        return array_slice(
-            $lines,
-            -$dto->lines
+        return $this->reader->tail(
+            storage_path('logs/octane.log'),
+            $dto,
+            'octane',
         );
     }
 }
