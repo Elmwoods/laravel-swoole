@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Ops;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\AlertAcknowledgeRequest;
 use App\Http\Requests\Admin\Ops\AlertIndexRequest;
+use App\Http\Requests\Admin\Ops\AlertNotificationTestRequest;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
 use App\Traits\ApiResponse;
@@ -58,6 +59,14 @@ class AlertController extends Controller
     public function evaluate(): JsonResponse
     {
         return $this->success($this->service->evaluate());
+    }
+
+    /**
+     * 测试 Telegram / 邮件通知配置。
+     */
+    public function testNotification(AlertNotificationTestRequest $request): JsonResponse
+    {
+        return $this->success($this->service->testNotification($request->validated()));
     }
 
     /**

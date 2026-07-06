@@ -26,6 +26,37 @@ class AlertNotificationService
     }
 
     /**
+     * 发送测试通知。
+     *
+     * 测试通知不会写入告警表，专门用于验证 Telegram / 邮件配置是否可用。
+     */
+    public function sendTest(array $channels = [], ?string $message = null): array
+    {
+        $channels = $channels ?: ['telegram', 'mail'];
+        $channels = array_values(array_intersect($channels, ['telegram', 'mail']));
+        $alert = new OpsAlert([
+            'source' => 'notification-test',
+            'severity' => 'info',
+            'title' => 'Ops Center 通知测试',
+            'message' => $message ?: '这是一条 Ops Center 告警通知测试消息。',
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+        $result = [];
+
+        if (in_array('telegram', $channels, true)) {
+            $result['telegram'] = $this->sendTelegram($alert);
+        }
+
+        if (in_array('mail', $channels, true)) {
+            $result['mail'] = $this->sendMail($alert);
+        }
+
+        return $result;
+    }
+
+    /**
      * Telegram 告警。
      */
     private function sendTelegram(OpsAlert $alert): array

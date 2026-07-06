@@ -98,6 +98,22 @@ class AlertCenterService
     }
 
     /**
+     * 测试告警通知通道。
+     */
+    public function testNotification(array $payload): array
+    {
+        $result = $this->notification->sendTest(
+            channels: $payload['channels'] ?? [],
+            message: $payload['message'] ?? null,
+        );
+
+        return [
+            'result' => $result,
+            'checked_at' => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
      * 确认告警。
      */
     public function acknowledge(OpsAlert $alert, array $payload): OpsAlert

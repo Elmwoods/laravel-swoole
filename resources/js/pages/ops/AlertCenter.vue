@@ -20,6 +20,9 @@
                         <el-tag :type="realtimeConnected ? 'success' : 'info'" effect="plain">
                             {{ realtimeConnected ? '实时已连接' : '实时未连接' }}
                         </el-tag>
+                        <el-button :loading="testingNotification" @click="handleTestNotification">
+                            测试通知
+                        </el-button>
                         <el-button :icon="Refresh" :loading="loading || evaluating" @click="handleEvaluate">
                             立即评估
                         </el-button>
@@ -117,6 +120,7 @@ import {
     evaluateAlerts,
     getAlerts,
     getAlertSummary,
+    testAlertNotification,
     type AlertRealtimePayload,
     type AlertSummary,
     type AlertStatus,
@@ -125,6 +129,7 @@ import {
 
 const loading = ref(false)
 const evaluating = ref(false)
+const testingNotification = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
 const alerts = ref<OpsAlert[]>([])
@@ -231,6 +236,35 @@ const handleEvaluate = async () => {
         ElMessage.error('告警评估失败')
     } finally {
         evaluating.value = false
+    }
+}
+
+/**
+ * 测试 Telegram / 邮件通知通道。
+ */
+const handleTestNotification = async () => {
+    testingNotification.value = true
+
+    try {
+        const res = await testAlertNotification({
+            channels: ['telegram', 'mail'],
+            message: 'Ops Center 告警中心通知通道测试。',
+        })
+        const result = res.data.data.result
+        const sentChannels = Object.entries(result)
+            .filter(([, item]) => item.sent)
+            .map(([channel]) => channel)
+
+        if (sentChannels.length > 0) {
+            ElMessage.success(`通知测试成功：${sentChannels.join(', ')}`)
+            return
+        }
+
+        ElMessage.warning('通知测试未发送，请检查 Telegram / 邮件配置是否启用')
+    } catch {
+        ElMessage.error('通知测试失败')
+    } finally {
+        testingNotification.value = false
     }
 }
 

@@ -42,4 +42,21 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.status', 'acknowledged')
             ->assertJsonPath('data.acknowledged_by', 'tester');
     }
+
+    public function test_notification_channel_can_be_tested_when_disabled(): void
+    {
+        config()->set('ops.alerts.telegram.enabled', false);
+        config()->set('ops.alerts.mail.enabled', false);
+
+        $this->postJson('/api/ops/alerts/test-notification', [
+            'channels' => ['telegram', 'mail'],
+            'message' => 'Ops Center test',
+        ])
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.result.telegram.enabled', false)
+            ->assertJsonPath('data.result.telegram.sent', false)
+            ->assertJsonPath('data.result.mail.enabled', false)
+            ->assertJsonPath('data.result.mail.sent', false);
+    }
 }

@@ -68,6 +68,16 @@ export interface AlertEvaluateResult {
     checked_at: string
 }
 
+export interface AlertNotificationTestResult {
+    result: Record<string, {
+        enabled: boolean
+        sent: boolean
+        status?: number
+        reason?: string
+    }>
+    checked_at: string
+}
+
 export interface AlertRealtimePayload {
     id: number
     source: string
@@ -87,6 +97,9 @@ export const getAlerts = (query: AlertQuery) =>
 
 export const evaluateAlerts = () =>
     request.post<ApiResponse<AlertEvaluateResult>>('/api/ops/alerts/evaluate')
+
+export const testAlertNotification = (payload: { channels?: string[]; message?: string }) =>
+    request.post<ApiResponse<AlertNotificationTestResult>>('/api/ops/alerts/test-notification', payload)
 
 export const acknowledgeAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/acknowledge`, payload)
