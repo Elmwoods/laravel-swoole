@@ -47,7 +47,5 @@ class PushDiskMetricsCommand extends Command
                 sleep(5);
             }
         }
-
-        return self::SUCCESS;
     }
 }
