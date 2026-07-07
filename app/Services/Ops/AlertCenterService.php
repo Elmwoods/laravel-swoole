@@ -129,6 +129,23 @@ class AlertCenterService
     }
 
     /**
+     * 标记告警已恢复。
+     *
+     * 已恢复告警会从 open 统计中移除，但仍保留历史记录，便于后续审计。
+     */
+    public function resolve(OpsAlert $alert, array $payload): OpsAlert
+    {
+        $alert->forceFill([
+            'status' => 'resolved',
+            'acknowledged_at' => $alert->acknowledged_at ?: now(),
+            'acknowledged_by' => $payload['acknowledged_by'] ?? $alert->acknowledged_by ?? 'ops-user',
+            'acknowledge_note' => $payload['note'] ?? $alert->acknowledge_note,
+        ])->save();
+
+        return $alert->refresh();
+    }
+
+    /**
      * API 输出结构。
      */
     public function serialize(OpsAlert $alert): array

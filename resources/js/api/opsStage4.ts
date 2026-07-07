@@ -103,3 +103,6 @@ export const testAlertNotification = (payload: { channels?: string[]; message?: 
 
 export const acknowledgeAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/acknowledge`, payload)
+
+export const resolveAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
+    request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/resolve`, payload)

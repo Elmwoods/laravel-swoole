@@ -80,4 +80,16 @@ class AlertController extends Controller
             ),
         );
     }
+
+    /**
+     * 标记告警已恢复。
+     */
+    public function resolve(AlertAcknowledgeRequest $request, OpsAlert $alert): JsonResponse
+    {
+        return $this->success(
+            $this->service->serialize(
+                $this->service->resolve($alert, $request->validated()),
+            ),
+        );
+    }
 }

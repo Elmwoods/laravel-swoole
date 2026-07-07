@@ -41,6 +41,15 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.status', 'acknowledged')
             ->assertJsonPath('data.acknowledged_by', 'tester');
+
+        $this->postJson("/api/ops/alerts/{$alert->id}/resolve", [
+            'acknowledged_by' => 'tester',
+            'note' => '已恢复',
+        ])
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.status', 'resolved')
+            ->assertJsonPath('data.acknowledge_note', '已恢复');
     }
 
     public function test_notification_channel_can_be_tested_when_disabled(): void

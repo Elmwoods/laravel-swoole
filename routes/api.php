@@ -190,6 +190,7 @@ Route::prefix('/ops')->group(function () {
         Route::post('/evaluate', [AlertController::class, 'evaluate']);
         Route::post('/test-notification', [AlertController::class, 'testNotification']);
         Route::post('/{alert}/acknowledge', [AlertController::class, 'acknowledge']);
+        Route::post('/{alert}/resolve', [AlertController::class, 'resolve']);
     });
 
     Route::prefix('logs')

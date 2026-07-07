@@ -89,7 +89,16 @@
                         >
                             确认
                         </el-button>
-                        <span v-else class="muted">{{ row.acknowledged_by || '-' }}</span>
+                        <el-button
+                            v-else-if="row.status === 'acknowledged'"
+                            text
+                            type="success"
+                            :loading="resolvingId === row.id"
+                            @click="handleResolve(row)"
+                        >
+                            恢复
+                        </el-button>
+                        <span v-else class="muted">已恢复</span>
                     </template>
                 </el-table-column>
             </el-table>
@@ -120,6 +129,7 @@ import {
     evaluateAlerts,
     getAlerts,
     getAlertSummary,
+    resolveAlert,
     testAlertNotification,
     type AlertRealtimePayload,
     type AlertSummary,
@@ -132,6 +142,7 @@ const evaluating = ref(false)
 const testingNotification = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
+const resolvingId = ref<number | null>(null)
 const alerts = ref<OpsAlert[]>([])
 const status = ref<AlertStatus | 'all'>('open')
 const severity = ref('')
@@ -309,6 +320,34 @@ const handleAcknowledge = async (alert: OpsAlert) => {
         }
     } finally {
         acknowledgingId.value = null
+    }
+}
+
+/**
+ * 标记告警已恢复。
+ */
+const handleResolve = async (alert: OpsAlert) => {
+    try {
+        await ElMessageBox.confirm('确认该告警已恢复？', '恢复告警', {
+            confirmButtonText: '确认恢复',
+            cancelButtonText: '取消',
+            type: 'success',
+        })
+
+        resolvingId.value = alert.id
+        await resolveAlert(alert.id, {
+            acknowledged_by: 'ops-user',
+            note: '已恢复',
+        })
+
+        ElMessage.success('告警已恢复')
+        await Promise.all([loadSummary(), loadAlerts()])
+    } catch (error) {
+        if (error !== 'cancel') {
+            ElMessage.error('告警恢复失败')
+        }
+    } finally {
+        resolvingId.value = null
     }
 }
 
