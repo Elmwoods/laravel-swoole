@@ -35,4 +35,5 @@ Thumbs.db
 /bootstrap/cache/*
 /docs
 /database
-/tests
+/test/
+/tests/
