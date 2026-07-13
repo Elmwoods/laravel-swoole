@@ -87,5 +87,9 @@ return [
             'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
             'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))),
         ],
+
+        'demo' => [
+            'enabled' => filter_var(env('OPS_ALERT_DEMO_ENABLED', env('APP_ENV', 'local') !== 'production'), FILTER_VALIDATE_BOOL),
+        ],
     ],
 ];

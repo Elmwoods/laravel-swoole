@@ -57,6 +57,9 @@
                         <el-button :loading="testingNotification" @click="handleTestNotification">
                             测试通知
                         </el-button>
+                        <el-button :icon="DataLine" :loading="demoLoading" @click="handleDemoScenarios">
+                            模拟数据
+                        </el-button>
                         <el-button :icon="Refresh" :loading="loading || evaluating" @click="handleEvaluate">
                             立即评估
                         </el-button>
@@ -157,10 +160,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { DataLine, Refresh } from '@element-plus/icons-vue'
 import echo from '@/utils/echo'
 import {
     acknowledgeAlert,
+    createAlertDemoScenarios,
     evaluateAlerts,
     getAlertNotificationStatus,
     getAlerts,
@@ -177,6 +181,7 @@ import {
 const loading = ref(false)
 const evaluating = ref(false)
 const testingNotification = ref(false)
+const demoLoading = ref(false)
 const notificationLoading = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
@@ -357,6 +362,34 @@ const handleTestNotification = async () => {
         ElMessage.error('通知测试失败')
     } finally {
         testingNotification.value = false
+    }
+}
+
+/**
+ * 生成一组接近真实值班流程的演示告警。
+ */
+const handleDemoScenarios = async () => {
+    demoLoading.value = true
+
+    try {
+        const res = await createAlertDemoScenarios()
+        const result = res.data.data
+
+        if (!result.enabled) {
+            ElMessage.warning('模拟数据入口未启用，请检查 OPS_ALERT_DEMO_ENABLED')
+            return
+        }
+
+        summary.value = result.summary
+        status.value = 'all'
+        page.value = 1
+        await loadAlerts()
+        emitAlertStateChanged()
+        ElMessage.success(`已生成 ${result.created} 条模拟告警，覆盖触发、确认与恢复流程`)
+    } catch {
+        ElMessage.error('模拟告警生成失败')
+    } finally {
+        demoLoading.value = false
     }
 }
 

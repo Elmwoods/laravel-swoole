@@ -13,6 +13,7 @@
 - Dashboard 告警摘要卡片与告警中心快捷入口
 - 告警恢复后自动关闭
 - 持续告警重复通知冷却时间
+- 告警中心真实流程模拟数据入口
 - 告警规则评估命令与定时调度
 
 ## 文件路径
@@ -98,6 +99,27 @@
 }
 ```
 
+### 生成模拟告警流程
+
+- 方法：`POST`
+- 地址：`/api/ops/alerts/demo-scenarios`
+- 页面入口：告警中心顶部“模拟数据”按钮。
+- 说明：生成 4 条固定 fingerprint 的演示告警，覆盖“触发告警、队列积压、值班确认、恢复关闭”流程。
+- 幂等性：重复点击不会创建无限新数据，会刷新同一批演示告警并累加 `hit_count`。
+- 安全约束：只写入轻量摘要和演示上下文，不写入日志正文、密钥、容器日志等大内容。
+- 开关：`OPS_ALERT_DEMO_ENABLED=false` 时接口不会写入数据。
+- 返回：
+
+```json
+{
+  "enabled": true,
+  "created": 4,
+  "items": [],
+  "summary": {},
+  "checked_at": "2026-07-13 10:00:00"
+}
+```
+
 ### 确认告警
 
 - 方法：`POST`
@@ -163,6 +185,7 @@ OPS_ALERT_DOCKER_EXITED_ENABLED=true
 OPS_ALERT_AUTO_RESOLVE_ENABLED=true
 OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES=5
 OPS_ALERT_NOTIFICATION_REPEAT_MINUTES=30
+OPS_ALERT_DEMO_ENABLED=true
 OPS_ALERT_TELEGRAM_ENABLED=false
 OPS_ALERT_TELEGRAM_BOT_TOKEN=
 OPS_ALERT_TELEGRAM_CHAT_ID=

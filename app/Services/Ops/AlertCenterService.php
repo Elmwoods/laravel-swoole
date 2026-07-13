@@ -133,6 +133,125 @@ class AlertCenterService
     }
 
     /**
+     * 生成告警中心演示数据。
+     *
+     * 该方法只写入轻量告警摘要，用固定 fingerprint 幂等更新同一批演示告警，
+     * 便于本地和测试环境快速展示“触发 -> 确认 -> 恢复”的真实处理流程。
+     */
+    public function demoScenarios(): array
+    {
+        if (! (bool) config('ops.alerts.demo.enabled', true)) {
+            return [
+                'enabled' => false,
+                'created' => 0,
+                'items' => [],
+                'summary' => $this->summary(),
+                'checked_at' => now()->toDateTimeString(),
+            ];
+        }
+
+        $now = now();
+        $scenarios = [
+            [
+                'fingerprint' => 'demo:disk-critical',
+                'source' => 'disk',
+                'severity' => 'critical',
+                'title' => '模拟：磁盘使用率超过 95%',
+                'message' => '生产目录 /var/www/html 当前使用率 96%，需要立即清理日志或扩容磁盘。',
+                'context' => [
+                    'is_demo' => true,
+                    'step' => '1. 规则命中并触发严重告警',
+                    'target' => '/var/www/html',
+                    'usage' => 96,
+                    'threshold' => 95,
+                ],
+                'status' => 'open',
+                'last_seen_at' => $now->copy()->subMinutes(1),
+                'acknowledged_at' => null,
+                'acknowledged_by' => null,
+                'acknowledge_note' => null,
+            ],
+            [
+                'fingerprint' => 'demo:queue-warning',
+                'source' => 'queue',
+                'severity' => 'warning',
+                'title' => '模拟：default 队列堆积',
+                'message' => 'default 队列待处理任务 128 个，建议检查 queue worker 与下游服务响应。',
+                'context' => [
+                    'is_demo' => true,
+                    'step' => '2. 业务队列出现积压',
+                    'queue' => 'default',
+                    'pending_jobs' => 128,
+                    'threshold' => 100,
+                ],
+                'status' => 'open',
+                'last_seen_at' => $now->copy()->subMinutes(3),
+                'acknowledged_at' => null,
+                'acknowledged_by' => null,
+                'acknowledge_note' => null,
+            ],
+            [
+                'fingerprint' => 'demo:docker-acknowledged',
+                'source' => 'docker',
+                'severity' => 'warning',
+                'title' => '模拟：Octane 容器重启中',
+                'message' => 'laravel.test 容器出现短暂异常，值班人员已确认并正在观察 Octane reload 状态。',
+                'context' => [
+                    'is_demo' => true,
+                    'step' => '3. 值班人员确认处理中',
+                    'container' => 'laravel.test',
+                    'action' => 'octane reload',
+                ],
+                'status' => 'acknowledged',
+                'last_seen_at' => $now->copy()->subMinutes(8),
+                'acknowledged_at' => $now->copy()->subMinutes(6),
+                'acknowledged_by' => 'demo-operator',
+                'acknowledge_note' => '模拟流程：已通知值班同学处理，观察容器恢复情况。',
+            ],
+            [
+                'fingerprint' => 'demo:network-resolved',
+                'source' => 'network',
+                'severity' => 'info',
+                'title' => '模拟：网络流量恢复',
+                'message' => '出口流量已回落到正常范围，关联告警已完成恢复闭环。',
+                'context' => [
+                    'is_demo' => true,
+                    'step' => '4. 指标恢复并关闭告警',
+                    'rx_mb_s' => 4.2,
+                    'tx_mb_s' => 3.8,
+                ],
+                'status' => 'resolved',
+                'last_seen_at' => $now->copy()->subMinutes(15),
+                'acknowledged_at' => $now->copy()->subMinutes(10),
+                'acknowledged_by' => 'demo-operator',
+                'acknowledge_note' => '模拟流程：指标恢复后关闭，保留历史用于审计。',
+            ],
+        ];
+
+        $alerts = collect($scenarios)->map(function (array $scenario): OpsAlert {
+            $alert = OpsAlert::query()->firstOrNew([
+                'fingerprint' => $scenario['fingerprint'],
+            ]);
+
+            $alert->fill($scenario);
+            $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
+            $alert->save();
+
+            broadcast(new AlertTriggered($alert));
+
+            return $alert->refresh();
+        });
+
+        return [
+            'enabled' => true,
+            'created' => $alerts->count(),
+            'items' => $alerts->map(fn (OpsAlert $alert): array => $this->serialize($alert))->values()->all(),
+            'summary' => $this->summary(),
+            'checked_at' => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
      * 确认告警。
      */
     public function acknowledge(OpsAlert $alert, array $payload): OpsAlert

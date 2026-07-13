@@ -122,6 +122,57 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.mail.missing', ['enabled', 'to']);
     }
 
+    public function test_demo_scenarios_create_realistic_alert_flow(): void
+    {
+        config()->set('ops.alerts.demo.enabled', true);
+
+        $this->postJson('/api/ops/alerts/demo-scenarios')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.enabled', true)
+            ->assertJsonPath('data.created', 4)
+            ->assertJsonPath('data.items.0.context.is_demo', true);
+
+        $this->assertDatabaseHas('ops_alerts', [
+            'fingerprint' => 'demo:disk-critical',
+            'source' => 'disk',
+            'severity' => 'critical',
+            'status' => 'open',
+        ]);
+        $this->assertDatabaseHas('ops_alerts', [
+            'fingerprint' => 'demo:queue-warning',
+            'source' => 'queue',
+            'severity' => 'warning',
+            'status' => 'open',
+        ]);
+        $this->assertDatabaseHas('ops_alerts', [
+            'fingerprint' => 'demo:docker-acknowledged',
+            'source' => 'docker',
+            'status' => 'acknowledged',
+            'acknowledged_by' => 'demo-operator',
+        ]);
+        $this->assertDatabaseHas('ops_alerts', [
+            'fingerprint' => 'demo:network-resolved',
+            'source' => 'network',
+            'status' => 'resolved',
+            'acknowledged_by' => 'demo-operator',
+        ]);
+    }
+
+    public function test_demo_scenarios_can_be_disabled(): void
+    {
+        config()->set('ops.alerts.demo.enabled', false);
+
+        $this->postJson('/api/ops/alerts/demo-scenarios')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.enabled', false)
+            ->assertJsonPath('data.created', 0)
+            ->assertJsonPath('data.items', []);
+
+        $this->assertDatabaseCount('ops_alerts', 0);
+    }
+
     public function test_dashboard_includes_alert_summary(): void
     {
         $this->mock(SystemMonitorService::class, function ($mock): void {

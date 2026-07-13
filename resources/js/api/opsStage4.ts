@@ -93,6 +93,14 @@ export interface AlertNotificationStatus {
     checked_at: string
 }
 
+export interface AlertDemoScenarioResult {
+    enabled: boolean
+    created: number
+    items: OpsAlert[]
+    summary: AlertSummary
+    checked_at: string
+}
+
 export interface AlertRealtimePayload {
     id: number
     source: string
@@ -118,6 +126,9 @@ export const evaluateAlerts = () =>
 
 export const testAlertNotification = (payload: { channels?: string[]; message?: string }) =>
     request.post<ApiResponse<AlertNotificationTestResult>>('/api/ops/alerts/test-notification', payload)
+
+export const createAlertDemoScenarios = () =>
+    request.post<ApiResponse<AlertDemoScenarioResult>>('/api/ops/alerts/demo-scenarios')
 
 export const acknowledgeAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/acknowledge`, payload)

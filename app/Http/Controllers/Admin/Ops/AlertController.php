@@ -78,6 +78,14 @@ class AlertController extends Controller
     }
 
     /**
+     * 生成告警中心演示数据。
+     */
+    public function demoScenarios(): JsonResponse
+    {
+        return $this->success($this->service->demoScenarios());
+    }
+
+    /**
      * 确认告警。
      */
     public function acknowledge(AlertAcknowledgeRequest $request, OpsAlert $alert): JsonResponse
