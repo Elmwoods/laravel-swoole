@@ -2,11 +2,18 @@
 
 namespace Tests\Feature\Ops;
 
+use App\DTO\Ops\AlertDTO;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\AlertNotificationService;
+use App\Services\Ops\AlertRuleEngineService;
+use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\MysqlService;
+use App\Services\Ops\NetworkTrafficService;
 use App\Services\Ops\OctaneControlService;
+use App\Services\Ops\QueueMonitorService;
 use App\Services\Ops\RedisService;
+use App\Services\Ops\System\DiskService;
 use App\Services\Ops\SystemMonitorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -165,5 +172,124 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.alerts.open_total', 2)
             ->assertJsonPath('data.alerts.critical', 1)
             ->assertJsonPath('data.alerts.warning', 1);
+    }
+
+    public function test_evaluate_auto_resolves_recovered_alerts_after_grace_period(): void
+    {
+        config()->set('ops.alerts.thresholds.auto_resolve_enabled', true);
+        config()->set('ops.alerts.thresholds.auto_resolve_grace_minutes', 1);
+
+        $alert = OpsAlert::query()->create([
+            'fingerprint' => sha1('recovered-disk-alert'),
+            'source' => 'disk',
+            'severity' => 'warning',
+            'title' => '磁盘使用率过高：/',
+            'message' => 'old alert',
+            'context' => ['target' => '/'],
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now()->subMinutes(2),
+            'created_at' => now()->subMinutes(2),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+
+        $this->mock(DiskService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['disks' => []]);
+        });
+        $this->mock(QueueMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['queues' => [], 'failed_jobs' => ['count' => 0]]);
+        });
+        $this->mock(DockerService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['unhealthy' => 0, 'exited' => 0]);
+        });
+        $this->mock(NetworkTrafficService::class, function ($mock): void {
+            $mock->shouldReceive('getSpeed')
+                ->once()
+                ->andReturn(['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]]);
+        });
+        $this->mock(AlertRuleEngineService::class, function ($mock): void {
+            $mock->shouldReceive('detect')
+                ->once()
+                ->andReturn([]);
+        });
+
+        $this->postJson('/api/ops/alerts/evaluate')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.auto_resolved', 1);
+
+        $this->assertSame('resolved', $alert->refresh()->status);
+        $this->assertSame('ops-auto-resolver', $alert->acknowledged_by);
+    }
+
+    public function test_evaluate_repeats_notification_after_cooldown(): void
+    {
+        config()->set('ops.alerts.thresholds.notification_repeat_minutes', 30);
+
+        $dto = new AlertDTO(
+            source: 'disk',
+            severity: 'warning',
+            title: '磁盘使用率过高：/',
+            message: 'disk warning',
+            context: ['target' => '/'],
+        );
+
+        OpsAlert::query()->create([
+            'fingerprint' => $dto->fingerprint(),
+            'source' => 'disk',
+            'severity' => 'warning',
+            'title' => '磁盘使用率过高：/',
+            'message' => 'old alert',
+            'context' => ['target' => '/'],
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now()->subMinutes(40),
+            'created_at' => now()->subMinutes(40),
+            'updated_at' => now()->subMinutes(40),
+        ]);
+
+        $this->mock(DiskService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['disks' => []]);
+        });
+        $this->mock(QueueMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['queues' => [], 'failed_jobs' => ['count' => 0]]);
+        });
+        $this->mock(DockerService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['unhealthy' => 0, 'exited' => 0]);
+        });
+        $this->mock(NetworkTrafficService::class, function ($mock): void {
+            $mock->shouldReceive('getSpeed')
+                ->once()
+                ->andReturn(['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]]);
+        });
+        $this->mock(AlertRuleEngineService::class, function ($mock) use ($dto): void {
+            $mock->shouldReceive('detect')
+                ->once()
+                ->andReturn([$dto]);
+        });
+        $this->mock(AlertNotificationService::class, function ($mock): void {
+            $mock->shouldReceive('send')
+                ->once()
+                ->andReturn(['telegram' => ['sent' => true]]);
+        });
+
+        $this->postJson('/api/ops/alerts/evaluate')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.detected', 1);
+
+        $this->assertSame(2, OpsAlert::query()->where('fingerprint', $dto->fingerprint())->value('hit_count'));
     }
 }

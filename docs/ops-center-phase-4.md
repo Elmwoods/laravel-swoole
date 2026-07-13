@@ -11,6 +11,8 @@
 - Telegram / 邮件通知通道状态展示
 - 侧边栏未处理告警数量徽标
 - Dashboard 告警摘要卡片与告警中心快捷入口
+- 告警恢复后自动关闭
+- 持续告警重复通知冷却时间
 - 告警规则评估命令与定时调度
 
 ## 文件路径
@@ -80,6 +82,7 @@
 - 方法：`POST`
 - 地址：`/api/ops/alerts/evaluate`
 - 说明：采集 Disk、Queue、Docker、Network 摘要并生成告警。
+- 返回：`detected` 表示当前命中规则数量，`auto_resolved` 表示超过宽限时间且本轮不再命中的自动恢复数量。
 
 ### 测试告警通知
 
@@ -157,6 +160,9 @@ OPS_ALERT_QUEUE_PENDING_WARNING=100
 OPS_ALERT_FAILED_JOBS_WARNING=1
 OPS_ALERT_NETWORK_MBPS_WARNING=50
 OPS_ALERT_DOCKER_EXITED_ENABLED=true
+OPS_ALERT_AUTO_RESOLVE_ENABLED=true
+OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES=5
+OPS_ALERT_NOTIFICATION_REPEAT_MINUTES=30
 OPS_ALERT_TELEGRAM_ENABLED=false
 OPS_ALERT_TELEGRAM_BOT_TOKEN=
 OPS_ALERT_TELEGRAM_CHAT_ID=

@@ -323,7 +323,7 @@ const handleEvaluate = async () => {
         summary.value = res.data.data.summary
         await loadAlerts()
         emitAlertStateChanged()
-        ElMessage.success(`评估完成，命中 ${res.data.data.detected} 条规则`)
+        ElMessage.success(`评估完成，命中 ${res.data.data.detected} 条规则，自动恢复 ${res.data.data.auto_resolved ?? 0} 条`)
     } catch {
         ElMessage.error('告警评估失败')
     } finally {

@@ -72,6 +72,9 @@ return [
             'failed_jobs_warning' => (int) env('OPS_ALERT_FAILED_JOBS_WARNING', 1),
             'network_mbps_warning' => (float) env('OPS_ALERT_NETWORK_MBPS_WARNING', 50),
             'docker_exited_enabled' => filter_var(env('OPS_ALERT_DOCKER_EXITED_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'auto_resolve_enabled' => filter_var(env('OPS_ALERT_AUTO_RESOLVE_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'auto_resolve_grace_minutes' => (int) env('OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES', 5),
+            'notification_repeat_minutes' => (int) env('OPS_ALERT_NOTIFICATION_REPEAT_MINUTES', 30),
         ],
 
         'telegram' => [

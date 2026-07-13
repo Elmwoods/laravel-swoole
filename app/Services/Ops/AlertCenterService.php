@@ -8,6 +8,7 @@ use App\Models\OpsAlert;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\System\DiskService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -85,21 +86,31 @@ class AlertCenterService
         $snapshot = $this->snapshot();
         $detected = $this->ruleEngine->detect($snapshot);
         $alerts = [];
+        $detectedFingerprints = collect($detected)
+            ->map(fn (AlertDTO $dto): string => $dto->fingerprint())
+            ->all();
 
         foreach ($detected as $dto) {
-            $alert = $this->storeAlert($dto);
+            [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
             $alerts[] = $alert;
 
-            if ($alert->wasRecentlyCreated) {
+            if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
                 $this->notification->send($alert);
             }
 
             broadcast(new AlertTriggered($alert));
         }
 
+        $resolvedAlerts = $this->autoResolveRecoveredAlerts($detectedFingerprints);
+
+        foreach ($resolvedAlerts as $alert) {
+            broadcast(new AlertTriggered($alert));
+        }
+
         return [
             'detected' => count($detected),
             'alerts' => collect($alerts)->map(fn (OpsAlert $alert): array => $this->serialize($alert))->all(),
+            'auto_resolved' => $resolvedAlerts->count(),
             'summary' => $this->summary(),
             'checked_at' => now()->toDateTimeString(),
         ];
@@ -192,12 +203,13 @@ class AlertCenterService
     /**
      * 保存或更新同类告警。
      */
-    private function storeAlert(AlertDTO $dto): OpsAlert
+    private function storeAlert(AlertDTO $dto): array
     {
         $data = $dto->toArray();
         $alert = OpsAlert::query()->firstOrNew([
             'fingerprint' => $data['fingerprint'],
         ]);
+        $shouldRepeatNotification = $alert->exists && $this->shouldRepeatNotification($alert);
 
         $alert->fill($data);
         $alert->status = 'open';
@@ -205,6 +217,60 @@ class AlertCenterService
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
 
-        return $alert;
+        return [$alert, $shouldRepeatNotification];
+    }
+
+    /**
+     * 判断是否需要重复通知。
+     *
+     * 同一告警持续存在时不每次刷屏，只按配置的冷却时间重复通知。
+     */
+    private function shouldRepeatNotification(OpsAlert $alert): bool
+    {
+        $minutes = max(0, (int) config('ops.alerts.thresholds.notification_repeat_minutes', 30));
+
+        if ($minutes === 0 || $alert->wasRecentlyCreated) {
+            return false;
+        }
+
+        $updatedAt = $alert->updated_at;
+
+        return $updatedAt !== null && $updatedAt->lte(now()->subMinutes($minutes));
+    }
+
+    /**
+     * 自动恢复已经不再命中的告警。
+     *
+     * 为避免短暂采集失败误关闭，只有超过宽限时间仍未命中的 open / acknowledged
+     * 告警才会被标记为 resolved。
+     */
+    private function autoResolveRecoveredAlerts(array $detectedFingerprints): Collection
+    {
+        if (! (bool) config('ops.alerts.thresholds.auto_resolve_enabled', true)) {
+            return collect();
+        }
+
+        $graceMinutes = max(1, (int) config('ops.alerts.thresholds.auto_resolve_grace_minutes', 5));
+        $managedSources = ['disk', 'queue', 'docker', 'network'];
+
+        return OpsAlert::query()
+            ->whereIn('source', $managedSources)
+            ->whereIn('status', ['open', 'acknowledged'])
+            ->where('last_seen_at', '<=', now()->subMinutes($graceMinutes))
+            ->when(
+                $detectedFingerprints !== [],
+                fn ($query) => $query->whereNotIn('fingerprint', $detectedFingerprints),
+            )
+            ->get()
+            ->map(function (OpsAlert $alert): OpsAlert {
+                $alert->forceFill([
+                    'status' => 'resolved',
+                    'acknowledged_at' => $alert->acknowledged_at ?: now(),
+                    'acknowledged_by' => $alert->acknowledged_by ?: 'ops-auto-resolver',
+                    'acknowledge_note' => '规则恢复后自动关闭',
+                ])->save();
+
+                return $alert->refresh();
+            });
     }
 }

@@ -64,6 +64,7 @@ export interface AlertQuery {
 export interface AlertEvaluateResult {
     detected: number
     alerts: OpsAlert[]
+    auto_resolved?: number
     summary: AlertSummary
     checked_at: string
 }
