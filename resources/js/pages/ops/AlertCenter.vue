@@ -78,26 +78,27 @@
                 <el-table-column prop="hit_count" label="次数" width="90" />
                 <el-table-column prop="last_seen_at" label="最后出现" width="180" />
 
-                <el-table-column label="操作" width="150" fixed="right">
+                <el-table-column label="操作" width="190" fixed="right">
                     <template #default="{ row }">
-                        <el-button
-                            v-if="row.status === 'open'"
-                            text
-                            type="primary"
-                            :loading="acknowledgingId === row.id"
-                            @click="handleAcknowledge(row)"
-                        >
-                            确认
-                        </el-button>
-                        <el-button
-                            v-else-if="row.status === 'acknowledged'"
-                            text
-                            type="success"
-                            :loading="resolvingId === row.id"
-                            @click="handleResolve(row)"
-                        >
-                            恢复
-                        </el-button>
+                        <div v-if="row.status !== 'resolved'" class="action-buttons">
+                            <el-button
+                                v-if="row.status === 'open'"
+                                text
+                                type="primary"
+                                :loading="acknowledgingId === row.id"
+                                @click="handleAcknowledge(row)"
+                            >
+                                确认
+                            </el-button>
+                            <el-button
+                                text
+                                type="success"
+                                :loading="resolvingId === row.id"
+                                @click="handleResolve(row)"
+                            >
+                                恢复
+                            </el-button>
+                        </div>
                         <span v-else class="muted">已恢复</span>
                     </template>
                 </el-table-column>
@@ -515,6 +516,16 @@ onBeforeUnmount(stopRealtime)
 .muted {
     color: #94a3b8;
     font-size: 12px;
+}
+
+.action-buttons {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+
+.action-buttons :deep(.el-button + .el-button) {
+    margin-left: 0;
 }
 
 .pagination-bar {

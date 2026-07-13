@@ -95,6 +95,7 @@
 
 - 方法：`POST`
 - 地址：`/api/ops/alerts/{id}/resolve`
+- 页面入口：告警中心表格“操作”列，`open` 和 `acknowledged` 状态都会显示“恢复”按钮。
 - Body：
 
 ```json
