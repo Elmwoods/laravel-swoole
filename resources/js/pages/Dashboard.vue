@@ -101,6 +101,7 @@ import {
     Operation,
     Refresh,
     Switch,
+    Warning,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SystemCard from '@/components/SystemCard.vue'
@@ -125,6 +126,12 @@ interface DashboardData {
         running?: boolean
         process_count?: number
         configured_workers?: number
+    }
+    alerts?: {
+        open_total?: number
+        critical?: number
+        warning?: number
+        info?: number
     }
 }
 
@@ -176,6 +183,17 @@ const summaryCards = computed(() => [
         tagType: 'info',
         icon: Monitor,
         iconClass: 'icon-slate',
+    },
+    {
+        title: 'Alerts',
+        value: `${data.value?.alerts?.open_total ?? 0} Open`,
+        desc: `Critical：${data.value?.alerts?.critical ?? 0} / Warning：${data.value?.alerts?.warning ?? 0}`,
+        status: (data.value?.alerts?.open_total ?? 0) > 0 ? '待处理' : '正常',
+        tagType: (data.value?.alerts?.critical ?? 0) > 0
+            ? 'danger'
+            : ((data.value?.alerts?.open_total ?? 0) > 0 ? 'warning' : 'success'),
+        icon: Warning,
+        iconClass: (data.value?.alerts?.open_total ?? 0) > 0 ? 'icon-orange' : 'icon-green',
     },
 ])
 
@@ -230,6 +248,12 @@ const services = [
         desc: '查看 Laravel、Octane、Redis 日志',
         path: '/admin/ops/logs',
         icon: Document,
+    },
+    {
+        title: 'Alert Center',
+        desc: '查看未处理告警和通知通道状态',
+        path: '/admin/ops/alerts',
+        icon: Warning,
     },
 ]
 
@@ -287,7 +311,7 @@ onBeforeUnmount(() => {
 .summary-grid {
     display: grid;
     gap: 16px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .summary-card {
@@ -420,6 +444,11 @@ onBeforeUnmount(() => {
 .icon-slate {
     background: #e5e7eb;
     color: #374151;
+}
+
+.icon-orange {
+    background: #ffedd5;
+    color: #c2410c;
 }
 
 @media (max-width: 1200px) {

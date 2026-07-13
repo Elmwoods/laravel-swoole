@@ -10,6 +10,7 @@
 - Telegram / 邮件通知测试入口
 - Telegram / 邮件通知通道状态展示
 - 侧边栏未处理告警数量徽标
+- Dashboard 告警摘要卡片与告警中心快捷入口
 - 告警规则评估命令与定时调度
 
 ## 文件路径
@@ -59,6 +60,13 @@
   - `warning`
   - `info`
   - `sources`
+
+### Dashboard 告警摘要
+
+- 方法：`GET`
+- 地址：`/api/ops/dashboard`
+- 新增字段：`alerts`
+- 说明：Dashboard 首页展示 `open_total`、`critical`、`warning`，并提供告警中心快捷入口。
 
 ### 通知通道状态
 

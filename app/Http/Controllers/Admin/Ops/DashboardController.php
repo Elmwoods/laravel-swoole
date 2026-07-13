@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
+use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\MysqlService;
 use App\Services\Ops\OctaneControlService;
 use App\Services\Ops\RedisService;
@@ -20,13 +21,15 @@ class DashboardController extends Controller
         SystemMonitorService $system,
         RedisService $redis,
         MysqlService $mysql,
-        OctaneControlService $octane
+        OctaneControlService $octane,
+        AlertCenterService $alerts,
     ) {
         return $this->success([
             'system' => $system->info(),
             'redis' => $redis->info(),
             'mysql' => $mysql->info(),
             'octane' => $octane->status(),
+            'alerts' => $alerts->summary(),
         ]);
     }
 }

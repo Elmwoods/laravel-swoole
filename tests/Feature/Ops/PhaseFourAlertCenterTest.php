@@ -3,6 +3,11 @@
 namespace Tests\Feature\Ops;
 
 use App\Models\OpsAlert;
+use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\MysqlService;
+use App\Services\Ops\OctaneControlService;
+use App\Services\Ops\RedisService;
+use App\Services\Ops\SystemMonitorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -108,5 +113,57 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.mail.enabled', false)
             ->assertJsonPath('data.mail.configured', false)
             ->assertJsonPath('data.mail.missing', ['enabled', 'to']);
+    }
+
+    public function test_dashboard_includes_alert_summary(): void
+    {
+        $this->mock(SystemMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn([
+                    'cpu_load' => 0.1,
+                    'memory' => ['used_mb' => 64],
+                ]);
+        });
+        $this->mock(RedisService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn(['connected' => true]);
+        });
+        $this->mock(MysqlService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn(['connected' => true]);
+        });
+        $this->mock(OctaneControlService::class, function ($mock): void {
+            $mock->shouldReceive('status')
+                ->once()
+                ->andReturn([
+                    'running' => true,
+                    'process_count' => 4,
+                    'configured_workers' => 4,
+                ]);
+        });
+        $this->mock(AlertCenterService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn([
+                    'open_total' => 2,
+                    'critical' => 1,
+                    'warning' => 1,
+                    'info' => 0,
+                    'sources' => [
+                        ['source' => 'disk', 'total' => 1],
+                    ],
+                    'checked_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $this->getJson('/api/ops/dashboard')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.alerts.open_total', 2)
+            ->assertJsonPath('data.alerts.critical', 1)
+            ->assertJsonPath('data.alerts.warning', 1);
     }
 }
