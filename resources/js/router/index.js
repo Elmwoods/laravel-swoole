@@ -111,16 +111,6 @@ const routes = [
                 },
             },
             {
-                path: 'daily-coin',
-                name: 'DailyCoinAssistant',
-                component: () => import('../pages/ops/DailyCoinAssistant.vue'),
-                meta: {
-                    title: '金币助手',
-                    description: '每日领取提醒、人工确认与合规安全边界',
-                    permission: 'ops.system.view',
-                },
-            },
-            {
                 path: 'logs',
                 name: 'Logs',
                 component: () => import('../pages/ops/logs/Logs.vue'),
