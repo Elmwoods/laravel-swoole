@@ -129,6 +129,8 @@
 - Payload：只包含 `id`、`source`、`severity`、`title`、`message`、`status`、`hit_count`、`last_seen_at`
 - 说明：禁止通过 WebSocket 推送大日志正文，详情通过 HTTP 分页读取。
 - 侧边栏：收到 `.alert.triggered` 后重新请求 `/api/ops/alerts/summary` 刷新未处理告警数量。
+- 本地同步：告警中心确认、恢复或手动评估后派发 `ops:alerts-updated` 浏览器事件，侧边栏立即刷新数量。
+- 兜底刷新：侧边栏每 30 秒重新请求一次告警汇总，避免漏掉其他客户端的确认/恢复操作。
 
 ## Docker + Sail + Octane 测试方法
 

@@ -322,6 +322,7 @@ const handleEvaluate = async () => {
         const res = await evaluateAlerts()
         summary.value = res.data.data.summary
         await loadAlerts()
+        emitAlertStateChanged()
         ElMessage.success(`评估完成，命中 ${res.data.data.detected} 条规则`)
     } catch {
         ElMessage.error('告警评估失败')
@@ -393,6 +394,7 @@ const handleAcknowledge = async (alert: OpsAlert) => {
         })
 
         ElMessage.success('告警已确认')
+        emitAlertStateChanged()
         await Promise.all([loadSummary(), loadAlerts()])
     } catch (error) {
         if (error !== 'cancel') {
@@ -421,6 +423,7 @@ const handleResolve = async (alert: OpsAlert) => {
         })
 
         ElMessage.success('告警已恢复')
+        emitAlertStateChanged()
         await Promise.all([loadSummary(), loadAlerts()])
     } catch (error) {
         if (error !== 'cancel') {
@@ -429,6 +432,13 @@ const handleResolve = async (alert: OpsAlert) => {
     } finally {
         resolvingId.value = null
     }
+}
+
+/**
+ * 通知布局层刷新告警徽标。
+ */
+const emitAlertStateChanged = () => {
+    window.dispatchEvent(new CustomEvent('ops:alerts-updated'))
 }
 
 /**

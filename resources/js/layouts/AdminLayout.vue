@@ -124,6 +124,7 @@ import {
 const route = useRoute()
 const openAlertCount = ref(0)
 let alertChannel: any = null
+let alertCountTimer: number | null = null
 
 /**
  * 当前激活菜单路径。
@@ -169,9 +170,21 @@ const startAlertRealtime = () => {
         })
 }
 
+/**
+ * 同页内告警操作完成后刷新数量。
+ *
+ * AlertCenter 页面确认、恢复或手动评估告警后会派发该事件，避免侧边栏等到
+ * WebSocket 或下一轮刷新才更新，保持页面状态一致。
+ */
+const handleLocalAlertUpdate = () => {
+    loadAlertCount()
+}
+
 onMounted(async () => {
     await loadAlertCount()
     startAlertRealtime()
+    window.addEventListener('ops:alerts-updated', handleLocalAlertUpdate)
+    alertCountTimer = window.setInterval(loadAlertCount, 30000)
 })
 
 onBeforeUnmount(() => {
@@ -179,6 +192,13 @@ onBeforeUnmount(() => {
         echo.leaveChannel('ops.alerts')
         alertChannel = null
     }
+
+    if (alertCountTimer) {
+        window.clearInterval(alertCountTimer)
+        alertCountTimer = null
+    }
+
+    window.removeEventListener('ops:alerts-updated', handleLocalAlertUpdate)
 })
 </script>
 
