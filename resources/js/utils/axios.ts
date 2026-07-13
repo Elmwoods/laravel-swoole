@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 
 /**
  * 统一 Axios 实例
@@ -7,6 +8,7 @@ import axios from 'axios'
 const instance = axios.create({
     baseURL: '/',
     timeout: 10000,
+    withCredentials: true,
     headers: {
         'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json',
@@ -34,6 +36,16 @@ instance.interceptors.response.use(
         return response
     },
     (error) => {
+
+        const status = error?.response?.status
+
+        if (status === 401 && window.location.pathname !== '/admin/login') {
+            window.location.href = `/admin/login?redirect=${encodeURIComponent(window.location.pathname)}`
+        }
+
+        if (status === 403) {
+            ElMessage.error(error?.response?.data?.message || '没有权限执行该操作')
+        }
 
         console.error('API Error:', error)
 

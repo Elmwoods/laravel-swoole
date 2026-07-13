@@ -15,37 +15,37 @@
                 class="ops-menu"
                 router
             >
-                <el-menu-item index="/admin/ops">
+                <el-menu-item v-if="hasPermission('ops.dashboard.view')" index="/admin/ops">
                     <el-icon><Monitor /></el-icon>
                     <span>运维总览</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/octane">
+                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/octane">
                     <el-icon><Cpu /></el-icon>
                     <span>Octane</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/redis">
+                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/redis">
                     <el-icon><Coin /></el-icon>
                     <span>Redis</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/queue">
+                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/queue">
                     <el-icon><List /></el-icon>
                     <span>Queue</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/supervisor">
+                <el-menu-item v-if="hasPermission('ops.supervisor.view')" index="/admin/ops/supervisor">
                     <el-icon><Operation /></el-icon>
                     <span>Supervisor</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/docker">
+                <el-menu-item v-if="hasPermission('ops.docker.view')" index="/admin/ops/docker">
                     <el-icon><Box /></el-icon>
                     <span>Docker</span>
                 </el-menu-item>
 
-                <el-sub-menu index="system">
+                <el-sub-menu v-if="hasPermission('ops.system.view')" index="system">
                     <template #title>
                         <el-icon><DataLine /></el-icon>
                         <span>系统资源</span>
@@ -62,12 +62,12 @@
                     </el-menu-item>
                 </el-sub-menu>
 
-                <el-menu-item index="/admin/ops/logs">
+                <el-menu-item v-if="hasPermission('ops.logs.view')" index="/admin/ops/logs">
                     <el-icon><Document /></el-icon>
                     <span>日志中心</span>
                 </el-menu-item>
 
-                <el-menu-item index="/admin/ops/alerts">
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts">
                     <el-icon><Bell /></el-icon>
                     <span class="menu-label">
                         <span>告警中心</span>
@@ -79,6 +79,28 @@
                         />
                     </span>
                 </el-menu-item>
+
+                <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view'])" index="security">
+                    <template #title>
+                        <el-icon><Lock /></el-icon>
+                        <span>安全管理</span>
+                    </template>
+
+                    <el-menu-item v-if="hasPermission('admin.users.manage')" index="/admin/ops/admin-users">
+                        <el-icon><User /></el-icon>
+                        <span>管理员</span>
+                    </el-menu-item>
+
+                    <el-menu-item v-if="hasPermission('admin.roles.manage')" index="/admin/ops/admin-roles">
+                        <el-icon><Key /></el-icon>
+                        <span>角色权限</span>
+                    </el-menu-item>
+
+                    <el-menu-item v-if="hasPermission('admin.audit.view')" index="/admin/ops/admin-audit-logs">
+                        <el-icon><Tickets /></el-icon>
+                        <span>审计日志</span>
+                    </el-menu-item>
+                </el-sub-menu>
             </el-menu>
         </el-aside>
 
@@ -90,8 +112,10 @@
                 </div>
 
                 <el-space>
+                    <span class="admin-name">{{ auth.profile?.admin?.name }}</span>
                     <el-tag type="success" effect="plain">Swoole</el-tag>
                     <el-tag type="info" effect="plain">Docker Sail</el-tag>
+                    <el-button text type="primary" @click="logout">退出</el-button>
                 </el-space>
             </el-header>
 
@@ -104,8 +128,9 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getAlertSummary } from '@/api/opsStage4'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 import echo from '@/utils/echo'
 import {
     Bell,
@@ -116,12 +141,18 @@ import {
     DataLine,
     Document,
     FolderOpened,
+    Key,
     List,
+    Lock,
     Monitor,
     Operation,
+    Tickets,
+    User,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAdminAuthStore()
 const openAlertCount = ref(0)
 let alertChannel: any = null
 let alertCountTimer: number | null = null
@@ -147,6 +178,10 @@ const pageDescription = computed(() => route.meta.description || 'Ops Center 企
  * 侧边栏只展示计数，不拉取告警详情，避免布局组件承担过多业务数据。
  */
 const loadAlertCount = async () => {
+    if (!hasPermission('ops.alerts.view')) {
+        return
+    }
+
     try {
         const res = await getAlertSummary()
         openAlertCount.value = res.data.data.open_total
@@ -159,6 +194,10 @@ const loadAlertCount = async () => {
  * 监听告警轻量事件，刷新侧边栏计数。
  */
 const startAlertRealtime = () => {
+    if (!hasPermission('ops.alerts.view')) {
+        return
+    }
+
     if (alertChannel) {
         return
     }
@@ -180,7 +219,20 @@ const handleLocalAlertUpdate = () => {
     loadAlertCount()
 }
 
+const hasPermission = (permission: string): boolean => auth.hasPermission(permission)
+
+const hasAnyPermission = (permissions: string[]): boolean => permissions.some(hasPermission)
+
+const logout = async () => {
+    await auth.logout()
+    await router.replace('/admin/login')
+}
+
 onMounted(async () => {
+    if (!auth.loaded) {
+        await auth.loadProfile()
+    }
+
     await loadAlertCount()
     startAlertRealtime()
     window.addEventListener('ops:alerts-updated', handleLocalAlertUpdate)
@@ -326,6 +378,15 @@ onBeforeUnmount(() => {
     color: #6b7280;
     font-size: 13px;
     margin-top: 4px;
+}
+
+.admin-name {
+    color: #334155;
+    font-size: 13px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ops-content {
