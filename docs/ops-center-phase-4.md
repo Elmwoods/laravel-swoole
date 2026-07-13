@@ -9,6 +9,7 @@
 - 邮件告警配置位
 - Telegram / 邮件通知测试入口
 - Telegram / 邮件通知通道状态展示
+- 侧边栏未处理告警数量徽标
 - 告警规则评估命令与定时调度
 
 ## 文件路径
@@ -119,6 +120,7 @@
 - 事件：`.alert.triggered`
 - Payload：只包含 `id`、`source`、`severity`、`title`、`message`、`status`、`hit_count`、`last_seen_at`
 - 说明：禁止通过 WebSocket 推送大日志正文，详情通过 HTTP 分页读取。
+- 侧边栏：收到 `.alert.triggered` 后重新请求 `/api/ops/alerts/summary` 刷新未处理告警数量。
 
 ## Docker + Sail + Octane 测试方法
 

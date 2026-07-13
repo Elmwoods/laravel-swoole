@@ -69,7 +69,15 @@
 
                 <el-menu-item index="/admin/ops/alerts">
                     <el-icon><Bell /></el-icon>
-                    <span>告警中心</span>
+                    <span class="menu-label">
+                        <span>告警中心</span>
+                        <el-badge
+                            v-if="openAlertCount > 0"
+                            :value="openAlertCount"
+                            :max="99"
+                            type="danger"
+                        />
+                    </span>
                 </el-menu-item>
             </el-menu>
         </el-aside>
@@ -95,8 +103,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { getAlertSummary } from '@/api/opsStage4'
+import echo from '@/utils/echo'
 import {
     Bell,
     Box,
@@ -112,6 +122,8 @@ import {
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const openAlertCount = ref(0)
+let alertChannel: any = null
 
 /**
  * 当前激活菜单路径。
@@ -127,6 +139,47 @@ const pageTitle = computed(() => route.meta.title || '运维总览')
  * 顶部副标题来自路由 meta。
  */
 const pageDescription = computed(() => route.meta.description || 'Ops Center 企业级运维后台')
+
+/**
+ * 加载未处理告警数量。
+ *
+ * 侧边栏只展示计数，不拉取告警详情，避免布局组件承担过多业务数据。
+ */
+const loadAlertCount = async () => {
+    try {
+        const res = await getAlertSummary()
+        openAlertCount.value = res.data.data.open_total
+    } catch {
+        openAlertCount.value = 0
+    }
+}
+
+/**
+ * 监听告警轻量事件，刷新侧边栏计数。
+ */
+const startAlertRealtime = () => {
+    if (alertChannel) {
+        return
+    }
+
+    alertChannel = echo.channel('ops.alerts')
+        .listen('.alert.triggered', loadAlertCount)
+        .error(() => {
+            alertChannel = null
+        })
+}
+
+onMounted(async () => {
+    await loadAlertCount()
+    startAlertRealtime()
+})
+
+onBeforeUnmount(() => {
+    if (alertChannel) {
+        echo.leaveChannel('ops.alerts')
+        alertChannel = null
+    }
+})
 </script>
 
 <style scoped>
@@ -211,6 +264,20 @@ const pageDescription = computed(() => route.meta.description || 'Ops Center 企
 .ops-menu :deep(.el-sub-menu__title:hover) {
     background: #1f2937;
     color: #fff;
+}
+
+.menu-label {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    min-width: 0;
+    width: 100%;
+}
+
+.menu-label :deep(.el-badge__content) {
+    border: 0;
+    box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.2);
 }
 
 .ops-main {
