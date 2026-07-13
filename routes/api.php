@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\DailyCoinAssistantController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
@@ -145,6 +146,18 @@ Route::prefix('/ops')
 
         Route::get('/network', [NetworkController::class, 'index'])
             ->middleware('admin.permission:ops.system.view');
+
+        Route::prefix('coin-assistant')
+            ->middleware('admin.permission:ops.system.view')
+            ->group(function (): void {
+                Route::get('/summary', [DailyCoinAssistantController::class, 'summary']);
+                Route::post('/reminder', [DailyCoinAssistantController::class, 'reminder'])
+                    ->middleware('admin.audit:ops.coin_assistant,reminder');
+                Route::post('/confirm', [DailyCoinAssistantController::class, 'confirm'])
+                    ->middleware('admin.audit:ops.coin_assistant,confirm');
+                Route::post('/automation-request', [DailyCoinAssistantController::class, 'automationRequest'])
+                    ->middleware('admin.audit:ops.coin_assistant,automation_request');
+            });
 
         Route::prefix('alerts')
             ->middleware('admin.permission:ops.alerts.view')

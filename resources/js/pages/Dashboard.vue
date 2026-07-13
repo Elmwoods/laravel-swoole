@@ -244,6 +244,12 @@ const services = [
         icon: FolderOpened,
     },
     {
+        title: 'Daily Coin',
+        desc: '记录每日领取提醒和人工确认',
+        path: '/admin/ops/daily-coin',
+        icon: Coin,
+    },
+    {
         title: 'Logs',
         desc: '查看 Laravel、Octane、Redis 日志',
         path: '/admin/ops/logs',

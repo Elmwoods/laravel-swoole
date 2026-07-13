@@ -60,6 +60,11 @@
                         <el-icon><FolderOpened /></el-icon>
                         <span>磁盘监控</span>
                     </el-menu-item>
+
+                    <el-menu-item index="/admin/ops/daily-coin">
+                        <el-icon><Coin /></el-icon>
+                        <span>金币助手</span>
+                    </el-menu-item>
                 </el-sub-menu>
 
                 <el-menu-item v-if="hasPermission('ops.logs.view')" index="/admin/ops/logs">
