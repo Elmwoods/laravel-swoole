@@ -2,10 +2,12 @@
 .DS_Store
 .env
 .env.backup
+.env.example
 .env.production
 .phpactor.json
 .phpunit.result.cache
 /.codex
+/.codex.zip
 /.cursor/
 /.idea
 /.nova
