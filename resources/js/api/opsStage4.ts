@@ -78,6 +78,20 @@ export interface AlertNotificationTestResult {
     checked_at: string
 }
 
+export interface AlertNotificationStatus {
+    telegram: {
+        enabled: boolean
+        configured: boolean
+        missing: string[]
+    }
+    mail: {
+        enabled: boolean
+        configured: boolean
+        missing: string[]
+    }
+    checked_at: string
+}
+
 export interface AlertRealtimePayload {
     id: number
     source: string
@@ -91,6 +105,9 @@ export interface AlertRealtimePayload {
 
 export const getAlertSummary = () =>
     request.get<ApiResponse<AlertSummary>>('/api/ops/alerts/summary')
+
+export const getAlertNotificationStatus = () =>
+    request.get<ApiResponse<AlertNotificationStatus>>('/api/ops/alerts/notification-status')
 
 export const getAlerts = (query: AlertQuery) =>
     request.get<ApiResponse<AlertListResult>>('/api/ops/alerts', { params: query })

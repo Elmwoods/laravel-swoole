@@ -8,6 +8,7 @@
 - Telegram 告警配置位
 - 邮件告警配置位
 - Telegram / 邮件通知测试入口
+- Telegram / 邮件通知通道状态展示
 - 告警规则评估命令与定时调度
 
 ## 文件路径
@@ -57,6 +58,13 @@
   - `warning`
   - `info`
   - `sources`
+
+### 通知通道状态
+
+- 方法：`GET`
+- 地址：`/api/ops/alerts/notification-status`
+- 说明：返回 Telegram / 邮件是否启用、是否配置完整和缺失项。
+- 安全约束：不返回 `bot_token`、`chat_id`、收件邮箱等敏感配置。
 
 ### 手动评估告警
 
@@ -121,6 +129,7 @@ sail artisan route:list --path=ops/alerts
 sail artisan test --filter AlertRuleEngineServiceTest
 sail artisan test --filter PhaseFourAlertCenterTest
 sail artisan ops:alerts:evaluate
+curl -s http://127.0.0.1:8080/api/ops/alerts/notification-status
 curl -X POST http://127.0.0.1:8080/api/ops/alerts/test-notification \
   -H "Content-Type: application/json" \
   -d '{"channels":["telegram"],"message":"Ops Center Telegram 测试"}'

@@ -54,6 +54,14 @@ class AlertController extends Controller
     }
 
     /**
+     * 通知通道配置状态。
+     */
+    public function notificationStatus(): JsonResponse
+    {
+        return $this->success($this->service->notificationStatus());
+    }
+
+    /**
      * 手动触发一次告警评估。
      */
     public function evaluate(): JsonResponse

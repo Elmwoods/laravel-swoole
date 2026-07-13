@@ -15,6 +15,41 @@ use Illuminate\Support\Facades\Mail;
 class AlertNotificationService
 {
     /**
+     * 获取通知通道配置状态。
+     *
+     * 只返回是否启用和是否配置完整，不返回 token、chat_id、邮箱等敏感值。
+     */
+    public function status(): array
+    {
+        $telegramEnabled = (bool) config('ops.alerts.telegram.enabled', false);
+        $telegramToken = (string) config('ops.alerts.telegram.bot_token', '');
+        $telegramChatId = (string) config('ops.alerts.telegram.chat_id', '');
+        $mailEnabled = (bool) config('ops.alerts.mail.enabled', false);
+        $mailTo = array_values(array_filter((array) config('ops.alerts.mail.to', [])));
+
+        return [
+            'telegram' => [
+                'enabled' => $telegramEnabled,
+                'configured' => $telegramEnabled && $telegramToken !== '' && $telegramChatId !== '',
+                'missing' => array_values(array_filter([
+                    $telegramEnabled ? null : 'enabled',
+                    $telegramToken === '' ? 'bot_token' : null,
+                    $telegramChatId === '' ? 'chat_id' : null,
+                ])),
+            ],
+            'mail' => [
+                'enabled' => $mailEnabled,
+                'configured' => $mailEnabled && $mailTo !== [],
+                'missing' => array_values(array_filter([
+                    $mailEnabled ? null : 'enabled',
+                    $mailTo === [] ? 'to' : null,
+                ])),
+            ],
+            'checked_at' => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
      * 发送告警通知。
      */
     public function send(OpsAlert $alert): array

@@ -70,6 +70,14 @@ class AlertCenterService
     }
 
     /**
+     * 通知通道配置状态。
+     */
+    public function notificationStatus(): array
+    {
+        return $this->notification->status();
+    }
+
+    /**
      * 执行一次告警评估。
      */
     public function evaluate(): array

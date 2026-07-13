@@ -68,4 +68,45 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.result.mail.enabled', false)
             ->assertJsonPath('data.result.mail.sent', false);
     }
+
+    public function test_notification_status_hides_sensitive_configuration(): void
+    {
+        config()->set('ops.alerts.telegram.enabled', true);
+        config()->set('ops.alerts.telegram.bot_token', 'secret-token');
+        config()->set('ops.alerts.telegram.chat_id', '123456');
+        config()->set('ops.alerts.mail.enabled', true);
+        config()->set('ops.alerts.mail.to', ['ops@example.com']);
+
+        $response = $this->getJson('/api/ops/alerts/notification-status')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.telegram.enabled', true)
+            ->assertJsonPath('data.telegram.configured', true)
+            ->assertJsonPath('data.telegram.missing', [])
+            ->assertJsonPath('data.mail.enabled', true)
+            ->assertJsonPath('data.mail.configured', true)
+            ->assertJsonPath('data.mail.missing', []);
+
+        $response->assertDontSee('secret-token')
+            ->assertDontSee('123456')
+            ->assertDontSee('ops@example.com');
+    }
+
+    public function test_notification_status_reports_missing_configuration(): void
+    {
+        config()->set('ops.alerts.telegram.enabled', true);
+        config()->set('ops.alerts.telegram.bot_token', '');
+        config()->set('ops.alerts.telegram.chat_id', '');
+        config()->set('ops.alerts.mail.enabled', false);
+        config()->set('ops.alerts.mail.to', []);
+
+        $this->getJson('/api/ops/alerts/notification-status')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.telegram.configured', false)
+            ->assertJsonPath('data.telegram.missing', ['bot_token', 'chat_id'])
+            ->assertJsonPath('data.mail.enabled', false)
+            ->assertJsonPath('data.mail.configured', false)
+            ->assertJsonPath('data.mail.missing', ['enabled', 'to']);
+    }
 }

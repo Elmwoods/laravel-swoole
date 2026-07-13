@@ -8,6 +8,40 @@
             </el-card>
         </div>
 
+        <el-card shadow="never" class="notification-card">
+            <div class="notification-header">
+                <div>
+                    <div class="panel-title">通知通道</div>
+                    <div class="panel-subtitle">Telegram 与邮件告警配置状态</div>
+                </div>
+
+                <el-button text :loading="notificationLoading" @click="loadNotificationStatus">
+                    刷新状态
+                </el-button>
+            </div>
+
+            <div class="notification-grid">
+                <div
+                    v-for="channel in notificationChannels"
+                    :key="channel.name"
+                    class="notification-item"
+                >
+                    <div class="channel-title">
+                        <span>{{ channel.label }}</span>
+                        <el-tag :type="channel.configured ? 'success' : 'warning'" effect="plain">
+                            {{ channel.configured ? '可用' : '未就绪' }}
+                        </el-tag>
+                    </div>
+                    <div class="channel-desc">
+                        {{ channel.enabled ? '已启用' : '未启用' }}
+                        <template v-if="channel.missing.length">
+                            · 缺少 {{ channel.missing.join(', ') }}
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </el-card>
+
         <el-card shadow="never" class="alert-panel">
             <template #header>
                 <div class="panel-header">
@@ -128,11 +162,13 @@ import echo from '@/utils/echo'
 import {
     acknowledgeAlert,
     evaluateAlerts,
+    getAlertNotificationStatus,
     getAlerts,
     getAlertSummary,
     resolveAlert,
     testAlertNotification,
     type AlertRealtimePayload,
+    type AlertNotificationStatus,
     type AlertSummary,
     type AlertStatus,
     type OpsAlert,
@@ -141,6 +177,7 @@ import {
 const loading = ref(false)
 const evaluating = ref(false)
 const testingNotification = ref(false)
+const notificationLoading = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
 const resolvingId = ref<number | null>(null)
@@ -162,6 +199,19 @@ const summary = ref<AlertSummary>({
     warning: 0,
     info: 0,
     sources: [],
+    checked_at: '-',
+})
+const notificationStatus = ref<AlertNotificationStatus>({
+    telegram: {
+        enabled: false,
+        configured: false,
+        missing: ['enabled'],
+    },
+    mail: {
+        enabled: false,
+        configured: false,
+        missing: ['enabled'],
+    },
     checked_at: '-',
 })
 let channel: any = null
@@ -199,12 +249,41 @@ const summaryCards = computed(() => [
     },
 ])
 
+const notificationChannels = computed(() => [
+    {
+        name: 'telegram',
+        label: 'Telegram',
+        ...notificationStatus.value.telegram,
+    },
+    {
+        name: 'mail',
+        label: '邮件',
+        ...notificationStatus.value.mail,
+    },
+])
+
 /**
  * 加载告警汇总。
  */
 const loadSummary = async () => {
     const res = await getAlertSummary()
     summary.value = res.data.data
+}
+
+/**
+ * 加载通知通道配置状态。
+ */
+const loadNotificationStatus = async () => {
+    notificationLoading.value = true
+
+    try {
+        const res = await getAlertNotificationStatus()
+        notificationStatus.value = res.data.data
+    } catch {
+        ElMessage.error('通知通道状态加载失败')
+    } finally {
+        notificationLoading.value = false
+    }
 }
 
 /**
@@ -410,7 +489,7 @@ const statusLabel = (value: string) => {
 }
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus()])
     startRealtime()
 })
 
@@ -428,6 +507,45 @@ onBeforeUnmount(stopRealtime)
     display: grid;
     gap: 14px;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.notification-card {
+    border-radius: 8px;
+}
+
+.notification-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+}
+
+.notification-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+}
+
+.notification-item {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.channel-title {
+    align-items: center;
+    color: #111827;
+    display: flex;
+    font-weight: 700;
+    justify-content: space-between;
+}
+
+.channel-desc {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.6;
+    margin-top: 8px;
 }
 
 .summary-card {
@@ -541,6 +659,10 @@ onBeforeUnmount(stopRealtime)
 
 @media (max-width: 760px) {
     .summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .notification-grid {
         grid-template-columns: 1fr;
     }
 
