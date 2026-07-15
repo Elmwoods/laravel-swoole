@@ -15,7 +15,8 @@ class AdminLoginRequest extends FormRequest
     {
         return [
             'email' => ['required', 'email', 'max:255'],
-            'password' => ['required', 'string', 'min:8', 'max:255'],
+            'password_encrypted' => ['required', 'string', 'max:4096'],
+            'password_key_id' => ['required', 'string', 'size:16'],
         ];
     }
 }

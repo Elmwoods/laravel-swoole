@@ -17,7 +17,8 @@ class AdminUserStoreRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:80'],
             'email' => ['required', 'email', 'max:255', 'unique:admin_users,email'],
-            'password' => ['required', 'string', 'min:8', 'max:255'],
+            'password_encrypted' => ['required', 'string', 'max:4096'],
+            'password_key_id' => ['required', 'string', 'size:16'],
             'is_active' => ['sometimes', 'boolean'],
             'role_ids' => ['array'],
             'role_ids.*' => ['integer', Rule::exists('admin_roles', 'id')],

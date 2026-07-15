@@ -25,6 +25,7 @@ Route::prefix('/admin')
     ->middleware('web')
     ->group(function (): void {
         Route::prefix('auth')->group(function (): void {
+            Route::get('/password-key', [AdminAuthController::class, 'passwordKey']);
             Route::post('/login', [AdminAuthController::class, 'login']);
 
             Route::middleware('admin.auth')->group(function (): void {

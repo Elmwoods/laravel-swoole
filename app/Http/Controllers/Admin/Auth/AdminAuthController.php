@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\Auth\AdminLoginRequest;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
 use App\Services\Admin\AdminLoginThrottleService;
+use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -18,14 +19,20 @@ class AdminAuthController extends Controller
     public function __construct(
         private readonly AdminAuditService $audit,
         private readonly AdminLoginThrottleService $throttle,
+        private readonly AdminPasswordCryptoService $passwordCrypto,
         private readonly AdminPermissionRegistry $permissions,
     ) {}
+
+    public function passwordKey(): JsonResponse
+    {
+        return $this->success($this->passwordCrypto->publicKeyPayload());
+    }
 
     public function login(AdminLoginRequest $request): JsonResponse
     {
         $this->permissions->syncDefaults();
         $email = $request->validated('email');
-        $password = $request->validated('password');
+        $password = $this->passwordCrypto->decryptPasswordFromPayload($request->validated());
         $ip = (string) $request->ip();
 
         if ($this->throttle->tooManyAttempts($email, $ip)) {

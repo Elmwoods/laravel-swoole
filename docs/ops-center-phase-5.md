@@ -11,6 +11,7 @@
 - 超级管理员重置密码后，目标管理员旧会话立即失效。
 - 只有启用状态的 `super_admin` 角色持有者可以重置任一管理员密码；普通管理员即使拥有 `admin.users.manage` 也不能改密码。
 - 前端密码输入不提供明文显示按钮，请求错误日志不输出请求体。
+- 后台登录、新增管理员、重置密码请求均使用 RSA-OAEP 密文密码字段，前端请求 payload 不再提交明文密码。
 - 管理员、角色权限、审计日志三个后台管理页面。
 - Docker、Supervisor、Octane、告警处理、管理员和角色变更等敏感操作写入审计日志。
 - 审计 payload 自动脱敏密码、Token、Cookie、Telegram 配置等敏感字段。
@@ -25,6 +26,7 @@
 - 审计日志模型：`/Users/ggbond/PHPProjects/swoole/app/Models/AdminAuditLog.php`
 - 权限白名单服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminPermissionRegistry.php`
 - 登录限流服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminLoginThrottleService.php`
+- 密码请求加密服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminPasswordCryptoService.php`
 - 审计服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminAuditService.php`
 - 后台认证控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Auth/AdminAuthController.php`
 - 管理员/角色/审计控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Security`
@@ -42,9 +44,13 @@
 
 ### 后台认证
 
+- `GET /api/admin/auth/password-key`
+  - 返回当前后台密码加密公钥、key id 和算法。
+  - 不返回私钥。
 - `POST /api/admin/auth/login`
   - 登录失败 5 次后，15 分钟窗口内返回 429。
   - 登录成功会清除该邮箱/IP 的失败计数。
+  - 请求字段使用 `password_encrypted` 和 `password_key_id`，不再接受明文 `password`。
 - `POST /api/admin/auth/logout`
 - `GET /api/admin/auth/me`
 
@@ -56,6 +62,7 @@
 - `POST /api/admin/users/{adminUser}/reset-password`
   - 仅 `super_admin` 可调用。
   - 重置后目标管理员 `session_version` 递增，旧会话访问后台接口返回 401。
+  - 新增管理员和重置密码均使用密文密码字段。
 
 ### 角色权限
 
@@ -104,6 +111,19 @@ sail artisan test
 npm run build
 ```
 
+## 密码请求加密配置
+
+生产环境建议在 `.env` 配置后台密码请求私钥：
+
+```env
+ADMIN_PASSWORD_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+```
+
+如果未配置，系统会在 `storage/app/private/admin-password-private.pem` 自动生成本地 RSA 私钥。该文件必须限制访问权限，并且多实例部署时应改用统一环境变量私钥，避免不同实例公私钥不一致。
+私钥建议使用 4096 位 RSA，以兼容当前 255 位密码长度上限。
+
+本次密码请求加密不涉及数据库字段变更，无需新增 SQL。
+
 ## 安全说明
 
 - 后台账号独立于普通用户表，避免前后台身份混淆。
@@ -113,5 +133,7 @@ npm run build
 - 后台 session 记录登录时的 `session_version`，密码重置后版本不一致会强制重新登录。
 - 重置密码入口同时做权限点和超级管理员角色校验，避免普通用户管理员扩大密码管理权限。
 - 密码只允许作为请求输入进入服务端，接口响应、审计日志、前端错误日志均不得展示或记录明文密码。
+- 前端使用 `/api/admin/auth/password-key` 获取公钥后，通过 WebCrypto 加密密码；请求体只包含密文和 key id。
+- 后端只在内存中短暂解密密码用于校验或生成 hash，不返回、不记录明文。
 - 审计日志会记录成功和失败操作，但不会保存密码、Token、Cookie、Telegram token、chat id 等敏感值。
 - WebSocket 仍只推送轻量告警 payload，大日志继续通过 HTTP 权限接口读取。

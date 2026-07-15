@@ -7,6 +7,7 @@ use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
 use App\Services\Admin\AdminLoginThrottleService;
+use App\Services\Admin\AdminPasswordCryptoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -86,6 +87,26 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertSame('[FILTERED]', $payload['token']);
         $this->assertSame('[FILTERED]', $payload['nested']['bot_token']);
         $this->assertSame('[FILTERED]', $payload['nested']['chat_id']);
+    }
+
+    public function test_password_crypto_decrypts_ciphertext_and_rejects_wrong_key(): void
+    {
+        $service = app(AdminPasswordCryptoService::class);
+        $ciphertext = '';
+        $ok = openssl_public_encrypt('secret-password', $ciphertext, $service->publicKey(), OPENSSL_PKCS1_OAEP_PADDING);
+
+        $this->assertTrue($ok);
+        $this->assertSame('secret-password', $service->decryptPasswordFromPayload([
+            'password_encrypted' => base64_encode($ciphertext),
+            'password_key_id' => $service->publicKeyPayload()['key_id'],
+        ]));
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+
+        $service->decryptPasswordFromPayload([
+            'password_encrypted' => base64_encode($ciphertext),
+            'password_key_id' => 'invalid-key-id!!',
+        ]);
     }
 
     public function test_login_throttle_key_normalizes_email_and_includes_ip(): void

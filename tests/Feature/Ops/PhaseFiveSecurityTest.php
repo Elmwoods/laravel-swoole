@@ -6,6 +6,7 @@ use App\Models\AdminAuditLog;
 use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
+use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Ops\SupervisorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -29,10 +30,9 @@ class PhaseFiveSecurityTest extends TestCase
     {
         $admin = $this->createAdmin(['ops.dashboard.view']);
 
-        $this->postJson('/api/admin/auth/login', [
+        $this->postJson('/api/admin/auth/login', array_merge([
             'email' => $admin->email,
-            'password' => 'secret-password',
-        ])
+        ], $this->encryptedPasswordPayload('secret-password')))
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.admin.email', $admin->email)
@@ -49,14 +49,34 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertStatus(401);
     }
 
-    public function test_disabled_admin_cannot_login(): void
+    public function test_admin_password_key_endpoint_does_not_return_private_key(): void
     {
-        $admin = $this->createAdmin(['ops.dashboard.view'], ['is_active' => false]);
+        $this->getJson('/api/admin/auth/password-key')
+            ->assertOk()
+            ->assertJsonPath('data.algorithm', 'RSA-OAEP-SHA1')
+            ->assertJsonStructure(['data' => ['key_id', 'algorithm', 'public_key']])
+            ->assertJsonMissingPath('data.private_key');
+    }
+
+    public function test_plaintext_admin_login_password_is_rejected(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
 
         $this->postJson('/api/admin/auth/login', [
             'email' => $admin->email,
             'password' => 'secret-password',
         ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['password_encrypted', 'password_key_id']);
+    }
+
+    public function test_disabled_admin_cannot_login(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view'], ['is_active' => false]);
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))
             ->assertStatus(422)
             ->assertJsonPath('message', '后台账号已被禁用。');
 
@@ -74,16 +94,14 @@ class PhaseFiveSecurityTest extends TestCase
         $admin = $this->createAdmin(['ops.dashboard.view']);
 
         for ($attempt = 1; $attempt <= 5; $attempt++) {
-            $this->postJson('/api/admin/auth/login', [
+            $this->postJson('/api/admin/auth/login', array_merge([
                 'email' => Str::upper($admin->email),
-                'password' => 'wrong-password',
-            ])->assertStatus(422);
+            ], $this->encryptedPasswordPayload('wrong-password')))->assertStatus(422);
         }
 
-        $this->postJson('/api/admin/auth/login', [
+        $this->postJson('/api/admin/auth/login', array_merge([
             'email' => Str::upper($admin->email),
-            'password' => 'wrong-password',
-        ])
+        ], $this->encryptedPasswordPayload('wrong-password')))
             ->assertStatus(429)
             ->assertJsonPath('code', 429);
 
@@ -101,26 +119,22 @@ class PhaseFiveSecurityTest extends TestCase
         $admin = $this->createAdmin(['ops.dashboard.view']);
 
         for ($attempt = 1; $attempt <= 4; $attempt++) {
-            $this->postJson('/api/admin/auth/login', [
+            $this->postJson('/api/admin/auth/login', array_merge([
                 'email' => $admin->email,
-                'password' => 'wrong-password',
-            ])->assertStatus(422);
+            ], $this->encryptedPasswordPayload('wrong-password')))->assertStatus(422);
         }
 
-        $this->postJson('/api/admin/auth/login', [
+        $this->postJson('/api/admin/auth/login', array_merge([
             'email' => $admin->email,
-            'password' => 'secret-password',
-        ])->assertOk();
+        ], $this->encryptedPasswordPayload('secret-password')))->assertOk();
 
-        $this->postJson('/api/admin/auth/login', [
+        $this->postJson('/api/admin/auth/login', array_merge([
             'email' => $admin->email,
-            'password' => 'wrong-password',
-        ])->assertStatus(422);
+        ], $this->encryptedPasswordPayload('wrong-password')))->assertStatus(422);
 
-        $this->postJson('/api/admin/auth/login', [
+        $this->postJson('/api/admin/auth/login', array_merge([
             'email' => $admin->email,
-            'password' => 'wrong-password',
-        ])->assertStatus(422);
+        ], $this->encryptedPasswordPayload('wrong-password')))->assertStatus(422);
     }
 
     public function test_missing_permission_returns_forbidden(): void
@@ -171,13 +185,12 @@ class PhaseFiveSecurityTest extends TestCase
         ]);
 
         $this->actingAs($admin, 'admin')
-            ->postJson('/api/admin/users', [
+            ->postJson('/api/admin/users', array_merge([
                 'name' => 'New Admin',
                 'email' => 'new-admin@example.com',
-                'password' => 'created-password',
                 'is_active' => true,
                 'role_ids' => [$role->id],
-            ])
+            ], $this->encryptedPasswordPayload('created-password')))
             ->assertStatus(201)
             ->assertJsonPath('data.email', 'new-admin@example.com')
             ->assertJsonMissingPath('data.password');
@@ -192,7 +205,8 @@ class PhaseFiveSecurityTest extends TestCase
             ->where('action', 'create')
             ->firstOrFail();
 
-        $this->assertSame('[FILTERED]', $log->payload['password']);
+        $this->assertArrayNotHasKey('password', $log->payload);
+        $this->assertSame('[FILTERED]', $log->payload['password_encrypted']);
     }
 
     public function test_role_management_assigns_permissions_from_whitelist(): void
@@ -242,10 +256,7 @@ class PhaseFiveSecurityTest extends TestCase
         $target = $this->createAdmin(['ops.dashboard.view']);
 
         $this->actingAs($superAdmin, 'admin')
-            ->postJson("/api/admin/users/{$target->id}/reset-password", [
-                'password' => 'new-secret-password',
-                'password_confirmation' => 'new-secret-password',
-            ])
+            ->postJson("/api/admin/users/{$target->id}/reset-password", $this->encryptedPasswordResetPayload('new-secret-password'))
             ->assertOk()
             ->assertJsonPath('data.id', $target->id)
             ->assertJsonMissingPath('data.password');
@@ -267,8 +278,10 @@ class PhaseFiveSecurityTest extends TestCase
             ->where('action', 'reset_password')
             ->firstOrFail();
 
-        $this->assertSame('[FILTERED]', $log->payload['password']);
-        $this->assertSame('[FILTERED]', $log->payload['password_confirmation']);
+        $this->assertArrayNotHasKey('password', $log->payload);
+        $this->assertArrayNotHasKey('password_confirmation', $log->payload);
+        $this->assertSame('[FILTERED]', $log->payload['password_encrypted']);
+        $this->assertSame('[FILTERED]', $log->payload['password_confirmation_encrypted']);
     }
 
     public function test_non_super_admin_cannot_reset_password_even_with_user_manage_permission(): void
@@ -277,10 +290,7 @@ class PhaseFiveSecurityTest extends TestCase
         $target = $this->createAdmin(['ops.dashboard.view']);
 
         $this->actingAs($admin, 'admin')
-            ->postJson("/api/admin/users/{$target->id}/reset-password", [
-                'password' => 'new-secret-password',
-                'password_confirmation' => 'new-secret-password',
-            ])
+            ->postJson("/api/admin/users/{$target->id}/reset-password", $this->encryptedPasswordResetPayload('new-secret-password'))
             ->assertStatus(403)
             ->assertJsonPath('message', '只有超级管理员可以重置密码。');
 
@@ -316,6 +326,38 @@ class PhaseFiveSecurityTest extends TestCase
         $admin->roles()->attach($role->id);
 
         return $admin;
+    }
+
+    private function encryptedPasswordPayload(string $password): array
+    {
+        return [
+            'password_encrypted' => $this->encryptPassword($password),
+            'password_key_id' => app(AdminPasswordCryptoService::class)->publicKeyPayload()['key_id'],
+        ];
+    }
+
+    private function encryptedPasswordResetPayload(string $password, ?string $confirmation = null): array
+    {
+        return [
+            'password_encrypted' => $this->encryptPassword($password),
+            'password_confirmation_encrypted' => $this->encryptPassword($confirmation ?? $password),
+            'password_key_id' => app(AdminPasswordCryptoService::class)->publicKeyPayload()['key_id'],
+        ];
+    }
+
+    private function encryptPassword(string $password): string
+    {
+        $encrypted = '';
+        $ok = openssl_public_encrypt(
+            $password,
+            $encrypted,
+            app(AdminPasswordCryptoService::class)->publicKey(),
+            OPENSSL_PKCS1_OAEP_PADDING,
+        );
+
+        $this->assertTrue($ok);
+
+        return base64_encode($encrypted);
     }
 
     private function createSuperAdmin(): AdminUser

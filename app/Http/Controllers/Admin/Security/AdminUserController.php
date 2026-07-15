@@ -8,11 +8,16 @@ use App\Http\Requests\Admin\Security\AdminUserStoreRequest;
 use App\Http\Requests\Admin\Security\AdminUserUpdateRequest;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
+use App\Services\Admin\AdminPasswordCryptoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
 class AdminUserController extends Controller
 {
+    public function __construct(
+        private readonly AdminPasswordCryptoService $passwordCrypto,
+    ) {}
+
     public function index(): JsonResponse
     {
         $users = AdminUser::query()
@@ -40,7 +45,7 @@ class AdminUserController extends Controller
         $user = AdminUser::query()->create([
             'name' => $data['name'],
             'email' => $data['email'],
-            'password' => $data['password'],
+            'password' => $this->passwordCrypto->decryptPasswordFromPayload($data),
             'is_active' => $data['is_active'] ?? true,
         ]);
         $user->roles()->sync($data['role_ids'] ?? []);
@@ -85,7 +90,7 @@ class AdminUserController extends Controller
         }
 
         $adminUser->forceFill([
-            'password' => $request->validated('password'),
+            'password' => $this->passwordCrypto->decryptPasswordFromPayload($request->validated()),
             'password_changed_at' => now(),
             'session_version' => ((int) $adminUser->session_version) + 1,
         ])->save();
