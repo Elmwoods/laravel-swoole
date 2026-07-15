@@ -52,6 +52,7 @@
 - 后台布局菜单：`/Users/ggbond/PHPProjects/swoole/resources/js/layouts/AdminLayout.vue`
 - Feature 测试：`/Users/ggbond/PHPProjects/swoole/tests/Feature/Ops/PhaseFiveSecurityTest.php`
 - Unit 测试：`/Users/ggbond/PHPProjects/swoole/tests/Unit/Admin/AdminSecurityServiceTest.php`
+- 发布验收清单：`/Users/ggbond/PHPProjects/swoole/docs/ops-center-phase-5-release.md`
 
 ## API 文档
 
@@ -138,6 +139,9 @@ php artisan admin:audit-prune --days=180 --dry-run
 
 ## Docker + Sail + Octane 测试方法
 
+完整发布验收步骤见 `/Users/ggbond/PHPProjects/swoole/docs/ops-center-phase-5-release.md`。
+以下命令需要顺序执行，避免多个测试进程同时刷新同一个 `testing` 数据库。
+
 ```bash
 sail artisan migrate
 sail artisan admin:create-super --name="Ops Admin" --email="ops@example.com" --password="change-me-strong-password"
@@ -184,3 +188,12 @@ ADMIN_PASSWORD_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE K
 - 审计日志清理只删除保留天数以前的记录，边界内记录保留；非法保留天数会失败且不删除数据。
 - 审计日志页面支持操作者、模块、动作、结果、时间范围和分页查询，并展示真实状态码。
 - WebSocket 仍只推送轻量告警 payload，大日志继续通过 HTTP 权限接口读取。
+
+## 发布与回滚
+
+- 发布前按发布验收清单顺序执行构建、路由和测试命令。
+- 多实例生产环境必须配置统一的 `ADMIN_PASSWORD_PRIVATE_KEY`。
+- 修改 `.env`、session/cache/queue 配置或 Octane/Swoole 配置后，需要清理配置缓存并重启长驻进程。
+- 代码回滚不会自动删除后台安全表、审计表或登录安全字段。
+- 密码重置造成的旧 session 失效不可逆，用户需要重新登录。
+- 审计日志清理删除的数据不可逆，生产执行前应确认备份和 dry-run 数量。
