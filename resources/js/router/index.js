@@ -160,6 +160,15 @@ const routes = [
                     permission: 'admin.audit.view',
                 },
             },
+            {
+                path: 'no-permission',
+                name: 'AdminNoPermission',
+                component: () => import('../pages/admin/NoPermission.vue'),
+                meta: {
+                    title: '暂无权限',
+                    description: '当前账号没有可访问的后台功能',
+                },
+            },
         ],
     },
     {
@@ -191,6 +200,10 @@ router.beforeEach(async (to) => {
         }
     }
 
+    if (to.name === 'AdminNoPermission') {
+        return true
+    }
+
     const permission = to.meta.permission
 
     if (typeof permission === 'string' && !auth.hasPermission(permission)) {
@@ -214,7 +227,7 @@ const firstAllowedPath = (permissions) => {
     ]
     const allowed = candidates.find(([permission]) => permissions.includes(permission))
 
-    return allowed ? allowed[1] : '/admin/login'
+    return allowed ? allowed[1] : '/admin/ops/no-permission'
 }
 
 export default router

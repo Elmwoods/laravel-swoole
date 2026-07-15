@@ -6,10 +6,13 @@ use App\Models\AdminAuditLog;
 use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
+use App\Models\OpsAlert;
+use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Ops\SupervisorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -166,6 +169,91 @@ class PhaseFiveSecurityTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->getJson('/api/ops/logs/laravel')
             ->assertStatus(403);
+    }
+
+    public function test_admin_and_ops_routes_reject_authenticated_admins_without_required_permission(): void
+    {
+        $admin = $this->createAdmin([]);
+        $targetAdmin = $this->createAdmin(['ops.dashboard.view']);
+        $role = AdminRole::query()->create([
+            'name' => '矩阵测试角色',
+            'slug' => 'matrix-role',
+            'description' => '矩阵测试角色',
+            'is_active' => true,
+            'is_system' => false,
+        ]);
+        $alert = OpsAlert::query()->create([
+            'fingerprint' => 'matrix-alert',
+            'source' => 'disk',
+            'severity' => 'warning',
+            'title' => 'Matrix Alert',
+            'message' => 'Matrix alert for permission tests.',
+            'status' => 'open',
+            'last_seen_at' => now(),
+        ]);
+
+        foreach ($this->permissionProtectedEndpoints($targetAdmin, $role, $alert) as [$method, $uri, $payload]) {
+            $this->actingAs($admin, 'admin')
+                ->json($method, $uri, $payload)
+                ->assertStatus(403)
+                ->assertJsonPath('code', 403);
+        }
+    }
+
+    public function test_all_route_permission_slugs_are_registered_in_permission_registry(): void
+    {
+        $routePermissions = collect(Route::getRoutes())
+            ->flatMap(fn ($route) => $route->gatherMiddleware())
+            ->filter(fn (string $middleware): bool => str_starts_with($middleware, 'admin.permission:'))
+            ->map(fn (string $middleware): string => Str::after($middleware, 'admin.permission:'))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertNotEmpty($routePermissions);
+        $this->assertSame([], array_values(array_diff($routePermissions, AdminPermissionRegistry::slugs())));
+    }
+
+    public function test_sensitive_ops_control_routes_are_audited(): void
+    {
+        $missingAudit = collect(Route::getRoutes())
+            ->filter(fn ($route): bool => in_array('POST', $route->methods(), true))
+            ->filter(fn ($route): bool => str_starts_with($route->uri(), 'api/ops/'))
+            ->reject(fn ($route): bool => collect($route->gatherMiddleware())
+                ->contains(fn (string $middleware): bool => str_starts_with($middleware, 'admin.audit:')))
+            ->map(fn ($route): string => $route->uri())
+            ->values()
+            ->all();
+
+        $this->assertSame([], $missingAudit);
+    }
+
+    public function test_admin_permissions_allow_requests_to_reach_controller_or_validation_layer(): void
+    {
+        $userManager = $this->createAdmin(['admin.users.manage']);
+        $roleManager = $this->createAdmin(['admin.roles.manage']);
+        $auditViewer = $this->createAdmin(['admin.audit.view']);
+
+        $this->actingAs($userManager, 'admin')
+            ->getJson('/api/admin/users')
+            ->assertOk();
+
+        $this->actingAs($userManager, 'admin')
+            ->postJson('/api/admin/users', [])
+            ->assertStatus(422);
+
+        $this->actingAs($roleManager, 'admin')
+            ->getJson('/api/admin/roles')
+            ->assertOk();
+
+        $this->actingAs($roleManager, 'admin')
+            ->postJson('/api/admin/roles', [])
+            ->assertStatus(422);
+
+        $this->actingAs($auditViewer, 'admin')
+            ->getJson('/api/admin/audit-logs')
+            ->assertOk();
     }
 
     public function test_supervisor_control_requires_permission_and_is_audited(): void
@@ -577,5 +665,36 @@ class PhaseFiveSecurityTest extends TestCase
         $admin->roles()->syncWithoutDetaching([$superRole->id]);
 
         return $admin->refresh();
+    }
+
+    private function permissionProtectedEndpoints(AdminUser $targetAdmin, AdminRole $role, OpsAlert $alert): array
+    {
+        return [
+            ['GET', '/api/admin/users', []],
+            ['POST', '/api/admin/users', []],
+            ['PUT', "/api/admin/users/{$targetAdmin->id}", []],
+            ['POST', "/api/admin/users/{$targetAdmin->id}/reset-password", []],
+            ['GET', '/api/admin/roles', []],
+            ['POST', '/api/admin/roles', []],
+            ['PUT', "/api/admin/roles/{$role->id}", []],
+            ['GET', '/api/admin/audit-logs', []],
+            ['GET', '/api/ops/dashboard', []],
+            ['GET', '/api/ops/octane/status', []],
+            ['POST', '/api/ops/octane/reload', []],
+            ['GET', '/api/ops/redis/info', []],
+            ['GET', '/api/ops/redis-metrics/push', []],
+            ['GET', '/api/ops/queue/summary', []],
+            ['GET', '/api/ops/supervisor/status', []],
+            ['POST', '/api/ops/supervisor/start/octane', []],
+            ['GET', '/api/ops/docker/summary', []],
+            ['POST', '/api/ops/docker/restart/container-id', []],
+            ['GET', '/api/ops/system/summary', []],
+            ['GET', '/api/ops/network', []],
+            ['GET', '/api/ops/alerts', []],
+            ['POST', '/api/ops/alerts/evaluate', []],
+            ['POST', "/api/ops/alerts/{$alert->id}/acknowledge", []],
+            ['GET', '/api/ops/logs/laravel', []],
+            ['GET', '/api/ops/test-broadcast', []],
+        ];
     }
 }

@@ -19,6 +19,8 @@
 - 管理员、角色权限、审计日志三个后台管理页面。
 - Docker、Supervisor、Octane、告警处理、管理员和角色变更等敏感操作写入审计日志。
 - 审计 payload 自动脱敏密码、Token、Cookie、Telegram 配置等敏感字段。
+- 权限覆盖矩阵测试会校验 Ops/Admin 路由的权限 slug、敏感控制接口审计中间件和缺权限 403 行为。
+- 已登录但没有任何可访问功能的后台账号会进入 `/admin/ops/no-permission`，不再被误导回登录页。
 
 ## 文件路径
 
@@ -40,6 +42,7 @@
 - 前端 API：`/Users/ggbond/PHPProjects/swoole/resources/js/api/adminSecurity.ts`
 - 前端登录与安全页面：`/Users/ggbond/PHPProjects/swoole/resources/js/pages/admin`
 - 前端路由守卫：`/Users/ggbond/PHPProjects/swoole/resources/js/router/index.js`
+- 前端无权限页面：`/Users/ggbond/PHPProjects/swoole/resources/js/pages/admin/NoPermission.vue`
 - 后台布局菜单：`/Users/ggbond/PHPProjects/swoole/resources/js/layouts/AdminLayout.vue`
 - Feature 测试：`/Users/ggbond/PHPProjects/swoole/tests/Feature/Ops/PhaseFiveSecurityTest.php`
 - Unit 测试：`/Users/ggbond/PHPProjects/swoole/tests/Unit/Admin/AdminSecurityServiceTest.php`
@@ -79,6 +82,13 @@
 - `GET /api/admin/audit-logs`
 - 查询参数：`admin_user_id`、`module`、`action`、`result`、`from`、`to`、`page`、`per_page`
 
+### 前端无权限落点
+
+- `/admin/ops/no-permission`
+  - 仅要求后台登录。
+  - 已登录但没有任何前端可访问权限时进入该页面。
+  - 页面提供刷新权限和退出登录操作。
+
 ## 权限点
 
 - `ops.dashboard.view`
@@ -113,6 +123,7 @@ sail artisan test --filter PhaseFiveSecurityTest
 sail artisan test --filter AdminSecurityServiceTest
 sail artisan test
 npm run build
+git diff --check
 ```
 
 ## 密码请求加密配置
@@ -135,6 +146,8 @@ ADMIN_PASSWORD_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE K
 - 管理员绑定角色只接受启用角色，避免禁用角色继续扩散到新账号。
 - 超级管理员角色保持启用和全权限，避免后台被配置成无超级管理员或超级管理员失去安全兜底权限。
 - `/api/ops/*` 不再公开访问，未登录返回 401，无权限返回 403。
+- 所有路由中使用的 `admin.permission:*` slug 必须存在于系统权限白名单。
+- Ops 敏感 POST 控制接口必须配置审计中间件，避免控制操作无法追溯。
 - 登录限流 key 使用小写邮箱和 IP，防止大小写绕过计数。
 - 后台 session 记录登录时的 `session_version`，密码重置后版本不一致会强制重新登录。
 - 重置密码入口同时做权限点和超级管理员角色校验，避免普通用户管理员扩大密码管理权限。
