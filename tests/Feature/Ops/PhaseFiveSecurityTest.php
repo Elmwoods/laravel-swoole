@@ -719,7 +719,7 @@ class PhaseFiveSecurityTest extends TestCase
 
         $admin->roles()->attach($role->id);
 
-        return $admin;
+        return $admin->refresh();
     }
 
     private function encryptedPasswordPayload(string $password): array
