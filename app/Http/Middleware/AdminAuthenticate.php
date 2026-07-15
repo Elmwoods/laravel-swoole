@@ -2,12 +2,15 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Admin\AdminSessionSecurityService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class AdminAuthenticate
 {
+    public function __construct(private readonly AdminSessionSecurityService $sessions) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $admin = $request->user('admin');
@@ -27,6 +30,7 @@ class AdminAuthenticate
 
         if ($sessionVersion === null) {
             $request->session()->put('admin_session_version', (int) $admin->session_version);
+            $this->sessions->touch($request);
 
             return $next($request);
         }
@@ -43,6 +47,21 @@ class AdminAuthenticate
                 'timestamp' => now()->timestamp,
             ], 401);
         }
+
+        if ($this->sessions->isIdleTimedOut($this->sessions->lastActivityAt($request))) {
+            auth('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return response()->json([
+                'code' => 401,
+                'message' => '登录已超时，请重新登录后台。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 401);
+        }
+
+        $this->sessions->touch($request);
 
         return $next($request);
     }

@@ -6,10 +6,13 @@ use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminAuditPruneService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
+use App\Services\Admin\AdminSessionSecurityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 /**
@@ -152,6 +155,35 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertTrue($admin->sessionVersionMatches(3));
         $this->assertFalse($admin->sessionVersionMatches(2));
         $this->assertFalse($admin->sessionVersionMatches(null));
+    }
+
+    public function test_admin_session_idle_timeout_handles_missing_boundary_and_expired_activity(): void
+    {
+        $service = app(AdminSessionSecurityService::class);
+        $now = now();
+
+        $this->assertFalse($service->isIdleTimedOut(null, $now));
+        $this->assertFalse($service->isIdleTimedOut($now->copy()->subSeconds(AdminSessionSecurityService::IDLE_TIMEOUT_SECONDS)->timestamp, $now));
+        $this->assertTrue($service->isIdleTimedOut($now->copy()->subSeconds(AdminSessionSecurityService::IDLE_TIMEOUT_SECONDS + 1)->timestamp, $now));
+    }
+
+    public function test_audit_prune_service_validates_retention_days(): void
+    {
+        $service = app(AdminAuditPruneService::class);
+
+        $this->assertSame(180, $service->normalizeRetentionDays(null));
+        $this->assertSame(30, $service->normalizeRetentionDays(30));
+        $this->assertSame(3650, $service->normalizeRetentionDays(3650));
+
+        $this->expectException(InvalidArgumentException::class);
+        $service->normalizeRetentionDays(29);
+    }
+
+    public function test_audit_prune_service_rejects_retention_days_above_maximum(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        app(AdminAuditPruneService::class)->normalizeRetentionDays(3651);
     }
 
     public function test_is_super_admin_requires_active_user_and_active_super_role(): void

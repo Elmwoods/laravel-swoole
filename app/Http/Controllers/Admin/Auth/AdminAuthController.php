@@ -9,6 +9,7 @@ use App\Services\Admin\AdminAuditService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
+use App\Services\Admin\AdminSessionSecurityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -21,6 +22,7 @@ class AdminAuthController extends Controller
         private readonly AdminLoginThrottleService $throttle,
         private readonly AdminPasswordCryptoService $passwordCrypto,
         private readonly AdminPermissionRegistry $permissions,
+        private readonly AdminSessionSecurityService $sessions,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -72,6 +74,7 @@ class AdminAuthController extends Controller
         auth('admin')->login($admin);
         $request->session()->regenerate();
         $request->session()->put('admin_session_version', (int) $admin->session_version);
+        $this->sessions->touch($request);
         $this->throttle->clear($email, $ip);
 
         $admin->forceFill([

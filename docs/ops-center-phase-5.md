@@ -9,6 +9,7 @@
 - `/api/ops/*` 默认要求后台登录，并按权限点控制访问。
 - 后台登录失败限流：同一邮箱和 IP 组合 15 分钟内最多 5 次失败，第 6 次返回 429。
 - 超级管理员重置密码后，目标管理员旧会话立即失效。
+- 后台 session 默认 120 分钟空闲超时，超时后受保护后台接口返回 401 并要求重新登录。
 - 只有启用状态的 `super_admin` 角色持有者可以重置任一管理员密码；普通管理员即使拥有 `admin.users.manage` 也不能改密码。
 - 最后一个启用超级管理员不能被禁用，也不能通过编辑管理员角色时移除 `super_admin` 身份。
 - `super_admin` 系统角色不能被禁用，不能被移除任一系统白名单权限。
@@ -19,6 +20,7 @@
 - 管理员、角色权限、审计日志三个后台管理页面。
 - Docker、Supervisor、Octane、告警处理、管理员和角色变更等敏感操作写入审计日志。
 - 审计 payload 自动脱敏密码、Token、Cookie、Telegram 配置等敏感字段。
+- 审计日志提供 `admin:audit-prune` 清理命令，默认保留 180 天，支持 dry-run。
 - 权限覆盖矩阵测试会校验 Ops/Admin 路由的权限 slug、敏感控制接口审计中间件和缺权限 403 行为。
 - 已登录但没有任何可访问功能的后台账号会进入 `/admin/ops/no-permission`，不再被误导回登录页。
 
@@ -34,10 +36,14 @@
 - 登录限流服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminLoginThrottleService.php`
 - 密码请求加密服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminPasswordCryptoService.php`
 - 审计服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminAuditService.php`
+- 后台会话安全服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminSessionSecurityService.php`
+- 审计日志清理服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminAuditPruneService.php`
 - 后台认证控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Auth/AdminAuthController.php`
 - 管理员/角色/审计控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Security`
 - 后台认证与权限中间件：`/Users/ggbond/PHPProjects/swoole/app/Http/Middleware`
 - 首个超级管理员命令：`/Users/ggbond/PHPProjects/swoole/app/Console/Commands/Admin/CreateSuperAdminCommand.php`
+- 审计日志清理命令：`/Users/ggbond/PHPProjects/swoole/app/Console/Commands/Admin/PruneAuditLogsCommand.php`
+- Artisan 命令发现配置：`/Users/ggbond/PHPProjects/swoole/bootstrap/app.php`
 - API 路由：`/Users/ggbond/PHPProjects/swoole/routes/api.php`
 - 前端 API：`/Users/ggbond/PHPProjects/swoole/resources/js/api/adminSecurity.ts`
 - 前端登录与安全页面：`/Users/ggbond/PHPProjects/swoole/resources/js/pages/admin`
@@ -57,9 +63,13 @@
 - `POST /api/admin/auth/login`
   - 登录失败 5 次后，15 分钟窗口内返回 429。
   - 登录成功会清除该邮箱/IP 的失败计数。
+  - 登录成功会写入 `admin_session_version` 和 `admin_last_activity_at`。
   - 请求字段使用 `password_encrypted` 和 `password_key_id`，不再接受明文 `password`。
 - `POST /api/admin/auth/logout`
 - `GET /api/admin/auth/me`
+  - 每次通过后台认证会刷新 `admin_last_activity_at`。
+  - `session_version` 不一致优先返回“登录状态已失效，请重新登录后台。”
+  - 空闲超过 120 分钟返回“登录已超时，请重新登录后台。”
 
 ### 管理员管理
 
@@ -113,11 +123,25 @@ php artisan admin:create-super \
   --password="change-me-strong-password"
 ```
 
+## 审计日志保留
+
+```bash
+php artisan admin:audit-prune
+php artisan admin:audit-prune --days=365
+php artisan admin:audit-prune --days=180 --dry-run
+```
+
+- 默认保留 180 天审计日志。
+- `--days` 允许范围为 30 到 3650 天。
+- `--dry-run` 只输出将删除数量，不实际删除。
+- 清理命令本身不写入 `admin_audit_logs`，避免批量清理时产生循环审计。
+
 ## Docker + Sail + Octane 测试方法
 
 ```bash
 sail artisan migrate
 sail artisan admin:create-super --name="Ops Admin" --email="ops@example.com" --password="change-me-strong-password"
+sail artisan admin:audit-prune --days=180 --dry-run
 sail artisan route:list --path=ops
 sail artisan test --filter PhaseFiveSecurityTest
 sail artisan test --filter AdminSecurityServiceTest
@@ -150,11 +174,13 @@ ADMIN_PASSWORD_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE K
 - Ops 敏感 POST 控制接口必须配置审计中间件，避免控制操作无法追溯。
 - 登录限流 key 使用小写邮箱和 IP，防止大小写绕过计数。
 - 后台 session 记录登录时的 `session_version`，密码重置后版本不一致会强制重新登录。
+- 后台 session 同时记录最后活动时间，空闲超过 120 分钟后强制重新登录；旧会话版本失效规则优先于空闲超时提示。
 - 重置密码入口同时做权限点和超级管理员角色校验，避免普通用户管理员扩大密码管理权限。
 - 密码只允许作为请求输入进入服务端，接口响应、审计日志、前端错误日志均不得展示或记录明文密码。
 - 前端使用 `/api/admin/auth/password-key` 获取公钥后，通过 WebCrypto 加密密码；请求体只包含密文和 key id。
 - 前端公钥缓存失效时会刷新公钥并重试一次；登录、创建管理员、重置密码提交后会清空本地密码字段。
 - 后端只在内存中短暂解密密码用于校验或生成 hash，不返回、不记录明文。
 - 审计日志会记录成功和失败操作，但不会保存密码、Token、Cookie、Telegram token、chat id 等敏感值。
+- 审计日志清理只删除保留天数以前的记录，边界内记录保留；非法保留天数会失败且不删除数据。
 - 审计日志页面支持操作者、模块、动作、结果、时间范围和分页查询，并展示真实状态码。
 - WebSocket 仍只推送轻量告警 payload，大日志继续通过 HTTP 权限接口读取。

@@ -35,6 +35,8 @@ return Application::configure(
 
     )
 
+    ->withCommands()
+
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuthenticate::class,

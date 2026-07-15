@@ -52,6 +52,65 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertStatus(401);
     }
 
+    public function test_admin_login_stores_session_version_and_last_activity_timestamp(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))
+            ->assertOk()
+            ->assertSessionHas('admin_session_version', (int) $admin->session_version)
+            ->assertSessionHas('admin_last_activity_at');
+
+        $this->assertIsInt(session('admin_last_activity_at'));
+    }
+
+    public function test_admin_request_refreshes_last_activity_before_idle_timeout(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+        $staleActivity = now()->subMinutes(119)->timestamp;
+
+        $this->actingAs($admin, 'admin')
+            ->withSession([
+                'admin_session_version' => (int) $admin->session_version,
+                'admin_last_activity_at' => $staleActivity,
+            ])
+            ->getJson('/api/admin/auth/me')
+            ->assertOk()
+            ->assertSessionHas('admin_last_activity_at');
+
+        $this->assertGreaterThan($staleActivity, (int) session('admin_last_activity_at'));
+    }
+
+    public function test_idle_admin_session_expires_and_clears_login_state(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+
+        $this->actingAs($admin, 'admin')
+            ->withSession([
+                'admin_session_version' => (int) $admin->session_version,
+                'admin_last_activity_at' => now()->subMinutes(121)->timestamp,
+            ])
+            ->getJson('/api/admin/auth/me')
+            ->assertStatus(401)
+            ->assertJsonPath('message', '登录已超时，请重新登录后台。');
+    }
+
+    public function test_session_version_mismatch_takes_priority_over_idle_timeout(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view'], ['session_version' => 2]);
+
+        $this->actingAs($admin, 'admin')
+            ->withSession([
+                'admin_session_version' => 1,
+                'admin_last_activity_at' => now()->subMinutes(121)->timestamp,
+            ])
+            ->getJson('/api/admin/auth/me')
+            ->assertStatus(401)
+            ->assertJsonPath('message', '登录状态已失效，请重新登录后台。');
+    }
+
     public function test_admin_password_key_endpoint_does_not_return_private_key(): void
     {
         $this->getJson('/api/admin/auth/password-key')
@@ -572,6 +631,46 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertJsonPath('data.pagination.total', 1);
     }
 
+    public function test_audit_prune_dry_run_reports_count_without_deleting_logs(): void
+    {
+        $oldLog = $this->createAuditLog(['module' => 'admin.users'], now()->subDays(200));
+        $recentLog = $this->createAuditLog(['module' => 'admin.roles'], now()->subDays(10));
+
+        $this->artisan('admin:audit-prune', [
+            '--days' => 180,
+            '--dry-run' => true,
+        ])
+            ->expectsOutput('将删除 1 条 180 天以前的审计日志。')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseHas('admin_audit_logs', ['id' => $oldLog->id]);
+        $this->assertDatabaseHas('admin_audit_logs', ['id' => $recentLog->id]);
+    }
+
+    public function test_audit_prune_deletes_logs_older_than_retention_only(): void
+    {
+        $oldLog = $this->createAuditLog(['module' => 'admin.users'], now()->subDays(181));
+        $recentLog = $this->createAuditLog(['module' => 'admin.roles'], now()->subDays(179));
+
+        $this->artisan('admin:audit-prune', ['--days' => 180])
+            ->expectsOutput('已删除 1 条 180 天以前的审计日志。')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('admin_audit_logs', ['id' => $oldLog->id]);
+        $this->assertDatabaseHas('admin_audit_logs', ['id' => $recentLog->id]);
+    }
+
+    public function test_audit_prune_rejects_invalid_retention_days_without_deleting(): void
+    {
+        $oldLog = $this->createAuditLog(['module' => 'admin.users'], now()->subDays(200));
+
+        $this->artisan('admin:audit-prune', ['--days' => 29])
+            ->expectsOutput('审计日志保留天数必须在 30 到 3650 天之间。')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseHas('admin_audit_logs', ['id' => $oldLog->id]);
+    }
+
     public function test_non_super_admin_reset_password_does_not_decrypt_password_payload(): void
     {
         $admin = $this->createAdmin(['admin.users.manage']);
@@ -665,6 +764,27 @@ class PhaseFiveSecurityTest extends TestCase
         $admin->roles()->syncWithoutDetaching([$superRole->id]);
 
         return $admin->refresh();
+    }
+
+    private function createAuditLog(array $overrides, \DateTimeInterface $createdAt): AdminAuditLog
+    {
+        $log = AdminAuditLog::query()->create(array_merge([
+            'admin_user_id' => null,
+            'admin_email' => null,
+            'module' => 'admin.audit',
+            'action' => 'test',
+            'result' => 'success',
+            'status_code' => 200,
+            'payload' => [],
+            'ip_address' => '127.0.0.1',
+        ], $overrides));
+
+        $log->forceFill([
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
+        ])->save();
+
+        return $log->refresh();
     }
 
     private function permissionProtectedEndpoints(AdminUser $targetAdmin, AdminRole $role, OpsAlert $alert): array
