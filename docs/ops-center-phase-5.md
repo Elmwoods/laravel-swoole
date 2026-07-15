@@ -7,6 +7,10 @@
 - 完全自定义 RBAC：管理员绑定角色，角色绑定系统白名单权限点。
 - 首个超级管理员通过 Artisan 命令创建。
 - `/api/ops/*` 默认要求后台登录，并按权限点控制访问。
+- 后台登录失败限流：同一邮箱和 IP 组合 15 分钟内最多 5 次失败，第 6 次返回 429。
+- 超级管理员重置密码后，目标管理员旧会话立即失效。
+- 只有启用状态的 `super_admin` 角色持有者可以重置任一管理员密码；普通管理员即使拥有 `admin.users.manage` 也不能改密码。
+- 前端密码输入不提供明文显示按钮，请求错误日志不输出请求体。
 - 管理员、角色权限、审计日志三个后台管理页面。
 - Docker、Supervisor、Octane、告警处理、管理员和角色变更等敏感操作写入审计日志。
 - 审计 payload 自动脱敏密码、Token、Cookie、Telegram 配置等敏感字段。
@@ -14,11 +18,13 @@
 ## 文件路径
 
 - 后台安全表迁移：`/Users/ggbond/PHPProjects/swoole/database/migrations/2026_07_13_050000_create_admin_security_tables.php`
+- 登录安全字段迁移：`/Users/ggbond/PHPProjects/swoole/database/migrations/2026_07_13_060000_add_login_security_fields_to_admin_users_table.php`
 - 后台账号模型：`/Users/ggbond/PHPProjects/swoole/app/Models/AdminUser.php`
 - 后台角色模型：`/Users/ggbond/PHPProjects/swoole/app/Models/AdminRole.php`
 - 后台权限模型：`/Users/ggbond/PHPProjects/swoole/app/Models/AdminPermission.php`
 - 审计日志模型：`/Users/ggbond/PHPProjects/swoole/app/Models/AdminAuditLog.php`
 - 权限白名单服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminPermissionRegistry.php`
+- 登录限流服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminLoginThrottleService.php`
 - 审计服务：`/Users/ggbond/PHPProjects/swoole/app/Services/Admin/AdminAuditService.php`
 - 后台认证控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Auth/AdminAuthController.php`
 - 管理员/角色/审计控制器：`/Users/ggbond/PHPProjects/swoole/app/Http/Controllers/Admin/Security`
@@ -37,6 +43,8 @@
 ### 后台认证
 
 - `POST /api/admin/auth/login`
+  - 登录失败 5 次后，15 分钟窗口内返回 429。
+  - 登录成功会清除该邮箱/IP 的失败计数。
 - `POST /api/admin/auth/logout`
 - `GET /api/admin/auth/me`
 
@@ -46,6 +54,8 @@
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{adminUser}`
 - `POST /api/admin/users/{adminUser}/reset-password`
+  - 仅 `super_admin` 可调用。
+  - 重置后目标管理员 `session_version` 递增，旧会话访问后台接口返回 401。
 
 ### 角色权限
 
@@ -99,5 +109,9 @@ npm run build
 - 后台账号独立于普通用户表，避免前后台身份混淆。
 - 权限点由系统白名单维护，页面只允许角色勾选已有权限。
 - `/api/ops/*` 不再公开访问，未登录返回 401，无权限返回 403。
+- 登录限流 key 使用小写邮箱和 IP，防止大小写绕过计数。
+- 后台 session 记录登录时的 `session_version`，密码重置后版本不一致会强制重新登录。
+- 重置密码入口同时做权限点和超级管理员角色校验，避免普通用户管理员扩大密码管理权限。
+- 密码只允许作为请求输入进入服务端，接口响应、审计日志、前端错误日志均不得展示或记录明文密码。
 - 审计日志会记录成功和失败操作，但不会保存密码、Token、Cookie、Telegram token、chat id 等敏感值。
 - WebSocket 仍只推送轻量告警 payload，大日志继续通过 HTTP 权限接口读取。

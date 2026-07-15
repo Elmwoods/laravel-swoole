@@ -22,7 +22,6 @@
                     <el-input
                         v-model="form.password"
                         autocomplete="current-password"
-                        show-password
                         type="password"
                     />
                 </el-form-item>

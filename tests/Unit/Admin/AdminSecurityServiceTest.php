@@ -6,6 +6,7 @@ use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminLoginThrottleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -85,5 +86,59 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertSame('[FILTERED]', $payload['token']);
         $this->assertSame('[FILTERED]', $payload['nested']['bot_token']);
         $this->assertSame('[FILTERED]', $payload['nested']['chat_id']);
+    }
+
+    public function test_login_throttle_key_normalizes_email_and_includes_ip(): void
+    {
+        $service = app(AdminLoginThrottleService::class);
+
+        $this->assertSame(
+            $service->key('ADMIN@example.com', '127.0.0.1'),
+            $service->key('admin@example.com', '127.0.0.1'),
+        );
+        $this->assertNotSame(
+            $service->key('admin@example.com', '127.0.0.1'),
+            $service->key('admin@example.com', '127.0.0.2'),
+        );
+    }
+
+    public function test_session_version_must_match_current_admin_version(): void
+    {
+        $admin = AdminUser::query()->create([
+            'name' => 'Admin',
+            'email' => 'admin@example.com',
+            'password' => Hash::make('password'),
+            'is_active' => true,
+            'session_version' => 3,
+        ]);
+
+        $this->assertTrue($admin->sessionVersionMatches(3));
+        $this->assertFalse($admin->sessionVersionMatches(2));
+        $this->assertFalse($admin->sessionVersionMatches(null));
+    }
+
+    public function test_is_super_admin_requires_active_user_and_active_super_role(): void
+    {
+        $admin = AdminUser::query()->create([
+            'name' => 'Admin',
+            'email' => 'admin@example.com',
+            'password' => Hash::make('password'),
+            'is_active' => true,
+        ]);
+        $superRole = AdminRole::query()->create([
+            'name' => 'Super',
+            'slug' => 'super_admin',
+            'is_active' => true,
+        ]);
+        $admin->roles()->attach($superRole->id);
+
+        $this->assertTrue($admin->isSuperAdmin());
+
+        $superRole->forceFill(['is_active' => false])->save();
+        $this->assertFalse($admin->refresh()->isSuperAdmin());
+
+        $superRole->forceFill(['is_active' => true])->save();
+        $admin->forceFill(['is_active' => false])->save();
+        $this->assertFalse($admin->refresh()->isSuperAdmin());
     }
 }

@@ -75,8 +75,19 @@ class AdminUserController extends Controller
 
     public function resetPassword(AdminPasswordResetRequest $request, AdminUser $adminUser): JsonResponse
     {
+        if (! $request->user('admin')?->isSuperAdmin()) {
+            return response()->json([
+                'code' => 403,
+                'message' => '只有超级管理员可以重置密码。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 403);
+        }
+
         $adminUser->forceFill([
             'password' => $request->validated('password'),
+            'password_changed_at' => now(),
+            'session_version' => ((int) $adminUser->session_version) + 1,
         ])->save();
 
         return $this->success($this->serialize($adminUser->refresh()->load('roles')));

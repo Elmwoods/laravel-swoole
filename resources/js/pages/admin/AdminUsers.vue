@@ -22,7 +22,7 @@
             <el-table-column label="操作" width="210">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                    <el-button link type="warning" @click="openPassword(row)">重置密码</el-button>
+                    <el-button v-if="auth.isSuperAdmin" link type="warning" @click="openPassword(row)">重置密码</el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -31,7 +31,7 @@
             <el-form :model="form" label-position="top">
                 <el-form-item label="姓名"><el-input v-model="form.name" /></el-form-item>
                 <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
-                <el-form-item v-if="!editing" label="密码"><el-input v-model="form.password" show-password type="password" /></el-form-item>
+                <el-form-item v-if="!editing" label="密码"><el-input v-model="form.password" type="password" /></el-form-item>
                 <el-form-item label="状态"><el-switch v-model="form.is_active" /></el-form-item>
                 <el-form-item label="角色">
                     <el-select v-model="form.role_ids" multiple>
@@ -47,8 +47,8 @@
 
         <el-dialog v-model="passwordVisible" title="重置密码" width="420px">
             <el-form :model="passwordForm" label-position="top">
-                <el-form-item label="新密码"><el-input v-model="passwordForm.password" show-password type="password" /></el-form-item>
-                <el-form-item label="确认密码"><el-input v-model="passwordForm.password_confirmation" show-password type="password" /></el-form-item>
+                <el-form-item label="新密码"><el-input v-model="passwordForm.password" type="password" /></el-form-item>
+                <el-form-item label="确认密码"><el-input v-model="passwordForm.password_confirmation" type="password" /></el-form-item>
             </el-form>
             <template #footer>
                 <el-button @click="passwordVisible = false">取消</el-button>
@@ -61,6 +61,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 import {
     createAdminUser,
     getAdminRoles,
@@ -71,6 +72,7 @@ import {
     type AdminUser,
 } from '@/api/adminSecurity'
 
+const auth = useAdminAuthStore()
 const users = ref<AdminUser[]>([])
 const roles = ref<AdminRole[]>([])
 const dialogVisible = ref(false)

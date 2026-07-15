@@ -23,6 +23,27 @@ class AdminAuthenticate
             ], 401);
         }
 
+        $sessionVersion = $request->session()->get('admin_session_version');
+
+        if ($sessionVersion === null) {
+            $request->session()->put('admin_session_version', (int) $admin->session_version);
+
+            return $next($request);
+        }
+
+        if (! $admin->sessionVersionMatches((int) $sessionVersion)) {
+            auth('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return response()->json([
+                'code' => 401,
+                'message' => '登录状态已失效，请重新登录后台。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 401);
+        }
+
         return $next($request);
     }
 }

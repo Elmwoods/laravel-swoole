@@ -18,6 +18,8 @@ class AdminUser extends Authenticatable
         'name',
         'email',
         'password',
+        'password_changed_at',
+        'session_version',
         'is_active',
         'last_login_at',
         'last_login_ip',
@@ -27,6 +29,8 @@ class AdminUser extends Authenticatable
     {
         return [
             'is_active' => 'boolean',
+            'password_changed_at' => 'datetime',
+            'session_version' => 'integer',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -80,5 +84,10 @@ class AdminUser extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->is_active && $this->activeRoles()->where('slug', 'super_admin')->exists();
+    }
+
+    public function sessionVersionMatches(?int $sessionVersion): bool
+    {
+        return $sessionVersion !== null && $sessionVersion === (int) $this->session_version;
     }
 }

@@ -9,6 +9,10 @@ export const useAdminAuthStore = defineStore('adminAuth', {
     getters: {
         isAuthenticated: state => Boolean(state.profile?.admin),
         permissions: state => state.profile?.permissions ?? [],
+        isSuperAdmin: state => Boolean(
+            state.profile?.admin?.is_active &&
+            state.profile?.roles?.some(role => role.slug === 'super_admin' && role.is_active),
+        ),
     },
     actions: {
         hasPermission(permission: string) {
