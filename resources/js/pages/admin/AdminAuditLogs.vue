@@ -1,6 +1,7 @@
 <template>
     <div class="security-page">
         <el-form :inline="true" :model="filters" class="filters">
+            <el-form-item label="操作者ID"><el-input-number v-model="filters.admin_user_id" :min="1" controls-position="right" /></el-form-item>
             <el-form-item label="模块"><el-input v-model="filters.module" clearable /></el-form-item>
             <el-form-item label="动作"><el-input v-model="filters.action" clearable /></el-form-item>
             <el-form-item label="结果">
@@ -9,14 +10,28 @@
                     <el-option label="失败" value="failure" />
                 </el-select>
             </el-form-item>
-            <el-form-item><el-button type="primary" @click="load">查询</el-button></el-form-item>
+            <el-form-item label="时间">
+                <el-date-picker
+                    v-model="filters.range"
+                    type="datetimerange"
+                    range-separator="至"
+                    start-placeholder="开始时间"
+                    end-placeholder="结束时间"
+                    value-format="YYYY-MM-DD HH:mm:ss"
+                />
+            </el-form-item>
+            <el-form-item>
+                <el-button :loading="loading" type="primary" @click="search">查询</el-button>
+                <el-button :disabled="loading" @click="reset">重置</el-button>
+            </el-form-item>
         </el-form>
 
-        <el-table :data="logs" border>
+        <el-table v-loading="loading" :data="logs" border empty-text="暂无审计日志">
             <el-table-column label="时间" prop="created_at" min-width="160" />
             <el-table-column label="操作者" min-width="180">
                 <template #default="{ row }">{{ row.admin_name || row.admin_email || '-' }}</template>
             </el-table-column>
+            <el-table-column label="操作者ID" prop="admin_user_id" width="100" />
             <el-table-column label="模块" prop="module" min-width="150" />
             <el-table-column label="动作" prop="action" min-width="130" />
             <el-table-column label="结果" width="90">
@@ -26,6 +41,7 @@
                     </el-tag>
                 </template>
             </el-table-column>
+            <el-table-column label="状态码" prop="status_code" width="90" />
             <el-table-column label="IP" prop="ip_address" min-width="130" />
             <el-table-column label="摘要" min-width="220">
                 <template #default="{ row }">
@@ -33,6 +49,18 @@
                 </template>
             </el-table-column>
         </el-table>
+
+        <div class="pagination">
+            <el-pagination
+                v-model:current-page="pagination.current_page"
+                v-model:page-size="pagination.per_page"
+                :page-sizes="[10, 20, 50, 100]"
+                layout="total, sizes, prev, pager, next"
+                :total="pagination.total"
+                @current-change="load"
+                @size-change="changePageSize"
+            />
+        </div>
     </div>
 </template>
 
@@ -41,16 +69,71 @@ import { onMounted, reactive, ref } from 'vue'
 import { getAdminAuditLogs, type AdminAuditLog } from '@/api/adminSecurity'
 
 const logs = ref<AdminAuditLog[]>([])
+const loading = ref(false)
 const filters = reactive({
+    admin_user_id: undefined as number | undefined,
     module: '',
     action: '',
     result: '',
+    range: [] as string[],
+})
+const pagination = reactive({
+    current_page: 1,
+    per_page: 20,
+    total: 0,
+    last_page: 1,
 })
 
 const load = async () => {
-    const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== ''))
-    const res = await getAdminAuditLogs(params)
-    logs.value = res.data.data.items
+    loading.value = true
+
+    try {
+        const params = auditLogParams()
+        const res = await getAdminAuditLogs(params)
+        logs.value = res.data.data.items
+        Object.assign(pagination, res.data.data.pagination)
+    } finally {
+        loading.value = false
+    }
+}
+
+const auditLogParams = () => {
+    const params: Record<string, string | number> = {
+        page: pagination.current_page,
+        per_page: pagination.per_page,
+    }
+
+    if (filters.admin_user_id) params.admin_user_id = filters.admin_user_id
+    if (filters.module) params.module = filters.module
+    if (filters.action) params.action = filters.action
+    if (filters.result) params.result = filters.result
+    if (filters.range?.[0]) params.from = filters.range[0]
+    if (filters.range?.[1]) params.to = filters.range[1]
+
+    return params
+}
+
+const search = async () => {
+    pagination.current_page = 1
+    await load()
+}
+
+const reset = async () => {
+    Object.assign(filters, {
+        admin_user_id: undefined,
+        module: '',
+        action: '',
+        result: '',
+        range: [],
+    })
+    pagination.current_page = 1
+    await load()
+}
+
+const changePageSize = async (size: number) => {
+    pagination.per_page = size
+    pagination.current_page = 1
+    await load()
 }
 
 onMounted(load)
@@ -74,5 +157,10 @@ code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     white-space: normal;
     word-break: break-word;
+}
+
+.pagination {
+    display: flex;
+    justify-content: flex-end;
 }
 </style>

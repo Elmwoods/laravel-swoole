@@ -76,6 +76,12 @@ class AdminRoleController extends Controller
             ]);
         }
 
+        if ($adminRole->slug === 'super_admin' && ! $this->permissionIdsIncludeAllSystemPermissions($data['permission_ids'] ?? [])) {
+            throw ValidationException::withMessages([
+                'permission_ids' => ['超级管理员角色必须保留全部系统权限。'],
+            ]);
+        }
+
         $adminRole->forceFill([
             'name' => $data['name'],
             'slug' => $adminRole->is_system ? $adminRole->slug : $data['slug'],
@@ -110,5 +116,16 @@ class AdminRoleController extends Controller
                 ->values()
                 ->all(),
         ];
+    }
+
+    private function permissionIdsIncludeAllSystemPermissions(array $permissionIds): bool
+    {
+        $selectedSlugs = AdminPermission::query()
+            ->whereIn('id', $permissionIds)
+            ->whereIn('slug', AdminPermissionRegistry::slugs())
+            ->pluck('slug')
+            ->all();
+
+        return empty(array_diff(AdminPermissionRegistry::slugs(), $selectedSlugs));
     }
 }

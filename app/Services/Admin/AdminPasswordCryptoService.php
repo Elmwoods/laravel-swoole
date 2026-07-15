@@ -65,6 +65,20 @@ class AdminPasswordCryptoService
         return $password;
     }
 
+    public function decryptConfirmedPasswordFromPayload(array $payload): string
+    {
+        $password = $this->decryptPasswordFromPayload($payload);
+        $confirmation = $this->decryptPasswordFromPayload($payload, 'password_confirmation_encrypted');
+
+        if ($password !== $confirmation) {
+            throw ValidationException::withMessages([
+                'password_confirmation_encrypted' => ['两次输入的密码不一致。'],
+            ]);
+        }
+
+        return $password;
+    }
+
     public function publicKey(): string
     {
         $details = openssl_pkey_get_details($this->privateKeyResource());

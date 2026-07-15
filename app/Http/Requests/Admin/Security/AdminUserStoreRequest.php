@@ -20,8 +20,11 @@ class AdminUserStoreRequest extends FormRequest
             'password_encrypted' => ['required', 'string', 'max:4096'],
             'password_key_id' => ['required', 'string', 'size:16'],
             'is_active' => ['sometimes', 'boolean'],
-            'role_ids' => ['array'],
-            'role_ids.*' => ['integer', Rule::exists('admin_roles', 'id')],
+            'role_ids' => ['required', 'array', 'min:1'],
+            'role_ids.*' => [
+                'integer',
+                Rule::exists('admin_roles', 'id')->where('is_active', true),
+            ],
         ];
     }
 }

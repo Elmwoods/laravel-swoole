@@ -89,6 +89,22 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertSame('[FILTERED]', $payload['nested']['chat_id']);
     }
 
+    public function test_audit_payload_truncates_long_strings_without_filtering_safe_keys(): void
+    {
+        $payload = app(AdminAuditService::class)->sanitizePayload([
+            'message' => str_repeat('A', 800),
+            'nested' => [
+                'description' => str_repeat('B', 800),
+                'api_key_preview' => 'must-filter',
+            ],
+        ]);
+
+        $this->assertLessThanOrEqual(503, mb_strlen($payload['message']));
+        $this->assertStringEndsWith('...', $payload['message']);
+        $this->assertLessThanOrEqual(503, mb_strlen($payload['nested']['description']));
+        $this->assertSame('[FILTERED]', $payload['nested']['api_key_preview']);
+    }
+
     public function test_password_crypto_decrypts_ciphertext_and_rejects_wrong_key(): void
     {
         $service = app(AdminPasswordCryptoService::class);

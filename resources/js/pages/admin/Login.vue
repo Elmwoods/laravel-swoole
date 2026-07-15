@@ -61,14 +61,18 @@ const rules: FormRules = {
 }
 
 const submit = async () => {
+    if (loading.value) return
+
     await formRef.value?.validate()
     loading.value = true
 
     try {
         await auth.login(form)
+        form.password = ''
         const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/admin/ops'
         await router.replace(redirect)
     } catch (error: any) {
+        form.password = ''
         ElMessage.error(error?.response?.data?.message || '登录失败')
     } finally {
         loading.value = false

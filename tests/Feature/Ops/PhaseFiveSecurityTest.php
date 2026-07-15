@@ -114,6 +114,28 @@ class PhaseFiveSecurityTest extends TestCase
         ]);
     }
 
+    public function test_locked_admin_login_does_not_decrypt_password_payload(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+        $email = Str::upper($admin->email);
+
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            app(\App\Services\Admin\AdminLoginThrottleService::class)->hit($email, '127.0.0.1');
+        }
+
+        $this->mock(AdminPasswordCryptoService::class, function ($mock): void {
+            $mock->shouldNotReceive('decryptPasswordFromPayload');
+        });
+
+        $this->postJson('/api/admin/auth/login', [
+            'email' => $email,
+            'password_encrypted' => 'ciphertext-not-needed-when-locked',
+            'password_key_id' => '1234567890abcdef',
+        ])
+            ->assertStatus(429)
+            ->assertJsonPath('code', 429);
+    }
+
     public function test_successful_admin_login_clears_failed_attempts(): void
     {
         $admin = $this->createAdmin(['ops.dashboard.view']);
@@ -250,6 +272,105 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertJsonPath('message', '不能禁用最后一个超级管理员。');
     }
 
+    public function test_last_super_admin_cannot_have_super_role_removed(): void
+    {
+        $admin = $this->createAdmin(['admin.users.manage']);
+        $superRole = AdminRole::query()->firstOrCreate(
+            ['slug' => 'super_admin'],
+            ['name' => '超级管理员', 'is_active' => true, 'is_system' => true],
+        );
+        $normalRole = AdminRole::query()->create([
+            'name' => '普通管理员',
+            'slug' => 'normal-admin',
+            'description' => '普通后台管理员',
+            'is_active' => true,
+            'is_system' => false,
+        ]);
+        $admin->roles()->syncWithoutDetaching([$superRole->id]);
+
+        $this->actingAs($admin, 'admin')
+            ->putJson("/api/admin/users/{$admin->id}", [
+                'name' => $admin->name,
+                'email' => $admin->email,
+                'is_active' => true,
+                'role_ids' => [$normalRole->id],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['role_ids']);
+
+        $this->assertTrue($admin->refresh()->isSuperAdmin());
+    }
+
+    public function test_admin_user_cannot_bind_disabled_role(): void
+    {
+        $admin = $this->createAdmin(['admin.users.manage']);
+        $disabledRole = AdminRole::query()->create([
+            'name' => '禁用角色',
+            'slug' => 'disabled-role',
+            'description' => '禁用角色',
+            'is_active' => false,
+            'is_system' => false,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/admin/users', array_merge([
+                'name' => 'Disabled Role Admin',
+                'email' => 'disabled-role-admin@example.com',
+                'is_active' => true,
+                'role_ids' => [$disabledRole->id],
+            ], $this->encryptedPasswordPayload('created-password')))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['role_ids.0']);
+    }
+
+    public function test_admin_user_requires_at_least_one_active_role(): void
+    {
+        $admin = $this->createAdmin(['admin.users.manage']);
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/admin/users', array_merge([
+                'name' => 'No Role Admin',
+                'email' => 'no-role-admin@example.com',
+                'is_active' => true,
+                'role_ids' => [],
+            ], $this->encryptedPasswordPayload('created-password')))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['role_ids']);
+    }
+
+    public function test_super_admin_role_cannot_be_disabled_or_lose_permissions(): void
+    {
+        $admin = $this->createAdmin(['admin.roles.manage']);
+        app(\App\Services\Admin\AdminPermissionRegistry::class)->syncDefaults();
+        $superRole = AdminRole::query()->where('slug', 'super_admin')->firstOrFail();
+        $permissionIds = AdminPermission::query()
+            ->whereIn('slug', \App\Services\Admin\AdminPermissionRegistry::slugs())
+            ->pluck('id')
+            ->all();
+
+        $this->actingAs($admin, 'admin')
+            ->putJson("/api/admin/roles/{$superRole->id}", [
+                'name' => '超级管理员',
+                'slug' => 'super_admin',
+                'description' => '拥有所有后台权限',
+                'is_active' => false,
+                'permission_ids' => $permissionIds,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['is_active']);
+
+        $this->actingAs($admin, 'admin')
+            ->putJson("/api/admin/roles/{$superRole->id}", [
+                'name' => '超级管理员',
+                'slug' => 'super_admin',
+                'description' => '拥有所有后台权限',
+                'is_active' => true,
+                'permission_ids' => array_slice($permissionIds, 0, -1),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['permission_ids']);
+    }
+
     public function test_super_admin_can_reset_admin_password_and_invalidate_old_session(): void
     {
         $superAdmin = $this->createSuperAdmin();
@@ -284,6 +405,29 @@ class PhaseFiveSecurityTest extends TestCase
         $this->assertSame('[FILTERED]', $log->payload['password_confirmation_encrypted']);
     }
 
+    public function test_super_admin_reset_password_rejects_mismatched_confirmation(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $target = $this->createAdmin(['ops.dashboard.view']);
+
+        $this->actingAs($superAdmin, 'admin')
+            ->postJson(
+                "/api/admin/users/{$target->id}/reset-password",
+                $this->encryptedPasswordResetPayload('new-secret-password', 'different-secret-password'),
+            )
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['password_confirmation_encrypted']);
+
+        $this->assertFalse(Hash::check('new-secret-password', $target->refresh()->password));
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'admin_user_id' => $superAdmin->id,
+            'module' => 'admin.users',
+            'action' => 'reset_password',
+            'result' => 'failure',
+            'status_code' => 422,
+        ]);
+    }
+
     public function test_non_super_admin_cannot_reset_password_even_with_user_manage_permission(): void
     {
         $admin = $this->createAdmin(['admin.users.manage']);
@@ -295,6 +439,69 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertJsonPath('message', '只有超级管理员可以重置密码。');
 
         $this->assertFalse(Hash::check('new-secret-password', $target->refresh()->password));
+    }
+
+    public function test_audit_log_filters_by_actor_module_action_result_and_time(): void
+    {
+        $viewer = $this->createAdmin(['admin.audit.view']);
+        $other = $this->createAdmin(['admin.audit.view']);
+        $matched = AdminAuditLog::query()->create([
+            'admin_user_id' => $viewer->id,
+            'admin_email' => $viewer->email,
+            'module' => 'admin.roles',
+            'action' => 'update',
+            'result' => 'failure',
+            'status_code' => 422,
+            'payload' => ['role' => 'super_admin'],
+            'ip_address' => '127.0.0.1',
+            'created_at' => now()->subHour(),
+            'updated_at' => now()->subHour(),
+        ]);
+        AdminAuditLog::query()->create([
+            'admin_user_id' => $other->id,
+            'admin_email' => $other->email,
+            'module' => 'admin.users',
+            'action' => 'create',
+            'result' => 'success',
+            'status_code' => 201,
+            'payload' => [],
+            'ip_address' => '127.0.0.1',
+            'created_at' => now()->subDays(2),
+            'updated_at' => now()->subDays(2),
+        ]);
+
+        $this->actingAs($viewer, 'admin')
+            ->getJson('/api/admin/audit-logs?'.http_build_query([
+                'admin_user_id' => $viewer->id,
+                'module' => 'admin.roles',
+                'action' => 'update',
+                'result' => 'failure',
+                'from' => now()->subHours(2)->toDateTimeString(),
+                'to' => now()->toDateTimeString(),
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.items.0.id', $matched->id)
+            ->assertJsonPath('data.pagination.total', 1);
+    }
+
+    public function test_non_super_admin_reset_password_does_not_decrypt_password_payload(): void
+    {
+        $admin = $this->createAdmin(['admin.users.manage']);
+        $target = $this->createAdmin(['ops.dashboard.view']);
+
+        $this->mock(AdminPasswordCryptoService::class, function ($mock): void {
+            $mock->shouldNotReceive('decryptPasswordFromPayload');
+            $mock->shouldNotReceive('decryptConfirmedPasswordFromPayload');
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->postJson("/api/admin/users/{$target->id}/reset-password", [
+                'password_encrypted' => 'ciphertext-not-needed-when-forbidden',
+                'password_confirmation_encrypted' => 'ciphertext-not-needed-when-forbidden',
+                'password_key_id' => '1234567890abcdef',
+            ])
+            ->assertStatus(403)
+            ->assertJsonPath('message', '只有超级管理员可以重置密码。');
     }
 
     private function createAdmin(array $permissions, array $overrides = []): AdminUser

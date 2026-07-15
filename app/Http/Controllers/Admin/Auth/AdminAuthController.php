@@ -32,7 +32,6 @@ class AdminAuthController extends Controller
     {
         $this->permissions->syncDefaults();
         $email = $request->validated('email');
-        $password = $this->passwordCrypto->decryptPasswordFromPayload($request->validated());
         $ip = (string) $request->ip();
 
         if ($this->throttle->tooManyAttempts($email, $ip)) {
@@ -47,6 +46,7 @@ class AdminAuthController extends Controller
             ], 429);
         }
 
+        $password = $this->passwordCrypto->decryptPasswordFromPayload($request->validated());
         $admin = AdminUser::query()
             ->whereRaw('LOWER(email) = ?', [Str::lower($email)])
             ->first();

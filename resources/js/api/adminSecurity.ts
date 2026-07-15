@@ -35,12 +35,15 @@ export interface AdminProfile {
 
 export interface AdminAuditLog {
     id: number
+    admin_user_id: number | null
     admin_email: string | null
     admin_name: string | null
     module: string
     action: string
     result: 'success' | 'failure'
     status_code: number | null
+    target_type: string | null
+    target_id: string | null
     payload: Record<string, unknown>
     ip_address: string | null
     message: string | null
@@ -73,6 +76,38 @@ export const getAdminPasswordKey = async () => {
     cachedPasswordKey = res.data.data
 
     return cachedPasswordKey
+}
+
+const clearAdminPasswordKey = () => {
+    cachedPasswordKey = null
+}
+
+const isRetryablePasswordKeyError = (error: any) => {
+    if (error?.response?.status !== 422) return false
+
+    const errors = error?.response?.data?.errors ?? {}
+    const messages = Object.values(errors)
+        .flat()
+        .filter((message): message is string => typeof message === 'string')
+
+    return messages.some(message =>
+        message.includes('密码加密密钥已失效') ||
+        message.includes('密码密文无法解密')
+    )
+}
+
+const withPasswordKeyRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+    try {
+        return await operation()
+    } catch (error) {
+        if (!isRetryablePasswordKeyError(error)) {
+            throw error
+        }
+
+        clearAdminPasswordKey()
+
+        return operation()
+    }
 }
 
 const pemToArrayBuffer = (pem: string) => {
@@ -127,11 +162,13 @@ const encryptAdminPassword = async (password: string): Promise<EncryptedPassword
 }
 
 export const adminLogin = async (payload: { email: string; password: string }) => {
-    const encryptedPassword = await encryptAdminPassword(payload.password)
+    return withPasswordKeyRetry(async () => {
+        const encryptedPassword = await encryptAdminPassword(payload.password)
 
-    return request.post<ApiResponse<AdminProfile>>('/api/admin/auth/login', {
-        email: payload.email,
-        ...encryptedPassword,
+        return request.post<ApiResponse<AdminProfile>>('/api/admin/auth/login', {
+            email: payload.email,
+            ...encryptedPassword,
+        })
     })
 }
 
@@ -145,12 +182,14 @@ export const getAdminUsers = (params = {}) =>
     request.get<ApiResponse<{ items: AdminUser[]; pagination: any }>>('/api/admin/users', { params })
 
 export const createAdminUser = async (payload: any) => {
-    const { password, ...rest } = payload
-    const encryptedPassword = await encryptAdminPassword(password)
+    return withPasswordKeyRetry(async () => {
+        const { password, ...rest } = payload
+        const encryptedPassword = await encryptAdminPassword(password)
 
-    return request.post<ApiResponse<AdminUser>>('/api/admin/users', {
-        ...rest,
-        ...encryptedPassword,
+        return request.post<ApiResponse<AdminUser>>('/api/admin/users', {
+            ...rest,
+            ...encryptedPassword,
+        })
     })
 }
 
@@ -158,13 +197,15 @@ export const updateAdminUser = (id: number, payload: any) =>
     request.put<ApiResponse<AdminUser>>(`/api/admin/users/${id}`, payload)
 
 export const resetAdminPassword = async (id: number, payload: any) => {
-    const password = await encryptAdminPassword(payload.password)
-    const confirmation = await encryptAdminPassword(payload.password_confirmation)
+    return withPasswordKeyRetry(async () => {
+        const password = await encryptAdminPassword(payload.password)
+        const confirmation = await encryptAdminPassword(payload.password_confirmation)
 
-    return request.post<ApiResponse<AdminUser>>(`/api/admin/users/${id}/reset-password`, {
-        password_encrypted: password.password_encrypted,
-        password_confirmation_encrypted: confirmation.password_encrypted,
-        password_key_id: password.password_key_id,
+        return request.post<ApiResponse<AdminUser>>(`/api/admin/users/${id}/reset-password`, {
+            password_encrypted: password.password_encrypted,
+            password_confirmation_encrypted: confirmation.password_encrypted,
+            password_key_id: password.password_key_id,
+        })
     })
 }
 

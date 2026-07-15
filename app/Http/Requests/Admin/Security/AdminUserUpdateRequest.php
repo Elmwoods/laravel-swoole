@@ -25,8 +25,11 @@ class AdminUserUpdateRequest extends FormRequest
                 Rule::unique('admin_users', 'email')->ignore($adminUser?->id),
             ],
             'is_active' => ['required', 'boolean'],
-            'role_ids' => ['array'],
-            'role_ids.*' => ['integer', Rule::exists('admin_roles', 'id')],
+            'role_ids' => ['required', 'array', 'min:1'],
+            'role_ids.*' => [
+                'integer',
+                Rule::exists('admin_roles', 'id')->where('is_active', true),
+            ],
         ];
     }
 }

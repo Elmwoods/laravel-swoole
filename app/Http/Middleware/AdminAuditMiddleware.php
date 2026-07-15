@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use App\Services\Admin\AdminAuditService;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 class AdminAuditMiddleware
@@ -28,16 +30,31 @@ class AdminAuditMiddleware
 
             return $response;
         } catch (Throwable $e) {
+            $statusCode = $this->statusCodeForException($e);
+
             $this->audit->record(
                 request: $request,
                 module: $module,
                 action: $action,
                 result: 'failure',
-                statusCode: 500,
+                statusCode: $statusCode,
                 message: $e->getMessage(),
             );
 
             throw $e;
         }
+    }
+
+    private function statusCodeForException(Throwable $e): int
+    {
+        if ($e instanceof ValidationException) {
+            return 422;
+        }
+
+        if ($e instanceof HttpExceptionInterface) {
+            return $e->getStatusCode();
+        }
+
+        return 500;
     }
 }

@@ -62,10 +62,18 @@ class AdminUserController extends Controller
     {
         $data = $request->validated();
 
-        if (! $data['is_active'] && $adminUser->isSuperAdmin() && $this->superAdminCount() <= 1) {
-            throw ValidationException::withMessages([
-                'is_active' => ['不能禁用最后一个超级管理员。'],
-            ]);
+        if ($adminUser->isSuperAdmin() && $this->superAdminCount() <= 1) {
+            if (! $data['is_active']) {
+                throw ValidationException::withMessages([
+                    'is_active' => ['不能禁用最后一个超级管理员。'],
+                ]);
+            }
+
+            if (! $this->roleIdsIncludeActiveSuperAdmin($data['role_ids'])) {
+                throw ValidationException::withMessages([
+                    'role_ids' => ['不能移除最后一个超级管理员的超级管理员角色。'],
+                ]);
+            }
         }
 
         $adminUser->forceFill([
@@ -89,8 +97,10 @@ class AdminUserController extends Controller
             ], 403);
         }
 
+        $password = $this->passwordCrypto->decryptConfirmedPasswordFromPayload($request->validated());
+
         $adminUser->forceFill([
-            'password' => $this->passwordCrypto->decryptPasswordFromPayload($request->validated()),
+            'password' => $password,
             'password_changed_at' => now(),
             'session_version' => ((int) $adminUser->session_version) + 1,
         ])->save();
@@ -127,5 +137,14 @@ class AdminUserController extends Controller
             ->where('is_active', true)
             ->whereHas('roles', fn ($query) => $query->where('slug', 'super_admin')->where('is_active', true))
             ->count();
+    }
+
+    private function roleIdsIncludeActiveSuperAdmin(array $roleIds): bool
+    {
+        return AdminRole::query()
+            ->whereIn('id', $roleIds)
+            ->where('slug', 'super_admin')
+            ->where('is_active', true)
+            ->exists();
     }
 }

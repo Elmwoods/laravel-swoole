@@ -4,7 +4,7 @@
             <el-button type="primary" @click="openCreate">新增角色</el-button>
         </div>
 
-        <el-table :data="roles" border>
+        <el-table v-loading="loading" :data="roles" border empty-text="暂无角色">
             <el-table-column label="角色" prop="name" />
             <el-table-column label="标识" prop="slug" />
             <el-table-column label="权限数" width="100">
@@ -32,13 +32,22 @@
                 <el-form-item label="角色名称"><el-input v-model="form.name" /></el-form-item>
                 <el-form-item label="角色标识"><el-input v-model="form.slug" :disabled="editing?.is_system" /></el-form-item>
                 <el-form-item label="描述"><el-input v-model="form.description" /></el-form-item>
-                <el-form-item label="状态"><el-switch v-model="form.is_active" /></el-form-item>
+                <el-alert
+                    v-if="isEditingSuperAdmin"
+                    class="system-alert"
+                    type="warning"
+                    show-icon
+                    :closable="false"
+                    title="超级管理员角色必须保持启用并拥有全部权限"
+                />
+                <el-form-item label="状态"><el-switch v-model="form.is_active" :disabled="isEditingSuperAdmin" /></el-form-item>
                 <el-form-item label="权限">
                     <el-checkbox-group v-model="form.permission_ids" class="permission-grid">
                         <el-checkbox
                             v-for="permission in permissions"
                             :key="permission.id"
                             :label="permission.id"
+                            :disabled="isEditingSuperAdmin"
                         >
                             <span>{{ permission.name }}</span>
                             <small>{{ permission.slug }}</small>
@@ -47,15 +56,15 @@
                 </el-form-item>
             </el-form>
             <template #footer>
-                <el-button @click="dialogVisible = false">取消</el-button>
-                <el-button type="primary" @click="save">保存</el-button>
+                <el-button :disabled="saving" @click="dialogVisible = false">取消</el-button>
+                <el-button :loading="saving" type="primary" @click="save">保存</el-button>
             </template>
         </el-dialog>
     </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
     createAdminRole,
@@ -68,6 +77,8 @@ import {
 const roles = ref<AdminRole[]>([])
 const permissions = ref<AdminPermission[]>([])
 const dialogVisible = ref(false)
+const loading = ref(false)
+const saving = ref(false)
 const editing = ref<AdminRole | null>(null)
 const form = reactive<any>({
     name: '',
@@ -77,10 +88,18 @@ const form = reactive<any>({
     permission_ids: [],
 })
 
+const isEditingSuperAdmin = computed(() => editing.value?.slug === 'super_admin')
+
 const load = async () => {
-    const res = await getAdminRoles()
-    roles.value = res.data.data.roles
-    permissions.value = res.data.data.permissions
+    loading.value = true
+
+    try {
+        const res = await getAdminRoles()
+        roles.value = res.data.data.roles
+        permissions.value = res.data.data.permissions
+    } finally {
+        loading.value = false
+    }
 }
 
 const openCreate = () => {
@@ -102,16 +121,36 @@ const openEdit = (row: AdminRole) => {
 }
 
 const save = async () => {
-    if (editing.value) {
-        await updateAdminRole(editing.value.id, form)
-    } else {
-        await createAdminRole(form)
-    }
+    if (saving.value) return
 
-    ElMessage.success('已保存')
-    dialogVisible.value = false
-    await load()
+    saving.value = true
+
+    try {
+        if (isEditingSuperAdmin.value) {
+            form.is_active = true
+            form.permission_ids = permissions.value.map(permission => permission.id)
+        }
+
+        if (editing.value) {
+            await updateAdminRole(editing.value.id, form)
+        } else {
+            await createAdminRole(form)
+        }
+
+        ElMessage.success('已保存')
+        dialogVisible.value = false
+        await load()
+    } finally {
+        saving.value = false
+    }
 }
+
+watch(isEditingSuperAdmin, value => {
+    if (!value) return
+
+    form.is_active = true
+    form.permission_ids = permissions.value.map(permission => permission.id)
+})
 
 onMounted(load)
 </script>
@@ -125,6 +164,10 @@ onMounted(load)
 .toolbar {
     display: flex;
     justify-content: flex-end;
+}
+
+.system-alert {
+    margin-bottom: 14px;
 }
 
 .permission-grid {
