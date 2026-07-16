@@ -19,14 +19,20 @@ class DockerLogService
             return $this->reader->emptyResult('docker', 'Docker 容器标识不合法');
         }
 
-        $process = new Process([
+        $command = [
             'docker',
             'logs',
-            '--tail=' . max(10, min($dto->lines, 1000)),
-            $container,
-        ]);
+        ];
 
-        $process->setTimeout(10);
+        if ($dto->mode !== 'full') {
+            $command[] = '--tail=' . max(10, min($dto->lines, 1000));
+        }
+
+        $command[] = $container;
+
+        $process = new Process($command);
+
+        $process->setTimeout($dto->mode === 'full' ? 20 : 10);
         $process->run();
 
         $output = $process->getOutput() ?: $process->getErrorOutput();
@@ -39,6 +45,7 @@ class DockerLogService
         }
 
         $result = $this->reader->fromLines($lines, $dto, 'docker:'.$container);
+        $result['mode'] = $dto->mode;
 
         if (! $process->isSuccessful()) {
             $result['available'] = false;

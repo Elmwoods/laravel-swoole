@@ -59,6 +59,30 @@ GET /api/ops/logs/docker?container=<container-name-or-id>&tail=50
 - System 来源必须来自 `/api/ops/logs/system/sources` 返回的白名单 key。
 - Docker 容器标识只允许字母、数字、下划线、点、冒号和短横线。
 
+### 全部分页浏览
+
+```text
+GET /api/ops/logs/laravel?mode=full&page=1&per_page=20
+GET /api/ops/logs/octane?mode=full&page=2&per_page=50&keyword=error
+GET /api/ops/logs/system?mode=full&source=<whitelisted-key>&page=1&per_page=20
+GET /api/ops/logs/docker?mode=full&container=<container-name-or-id>&page=1&per_page=20
+```
+
+预期结果：
+
+- Laravel、Octane、System 文件日志可以通过分页从第一页浏览到最后一页，不再受 1000 行 tail 窗口截断。
+- 在页面切到“全部分页”后，第 1 页显示最新日志，最后 1 页显示更早日志；两页内容应不同。
+- 展开一条多行日志后可以收起，翻页后旧页展开状态不会污染新页。
+- 快速连续翻页时，以最后一次翻页请求的结果为准，旧请求返回后不应覆盖当前页。
+- `mode=tail` 或未传 `mode` 时仍保持最近 Tail 模式，`tail=1001` 返回 `422`。
+- Redis SlowLog 只分页 Redis 当前保留的 slowlog 记录，不代表无限历史。
+- Docker 全部分页依赖 `docker logs` 输出能力，底层失败时返回安全错误，不泄露宿主机路径。
+
+日志下载验收：
+
+- “导出当前范围”和“导出全部匹配”都应按最新时间到最早时间输出。
+- 审计日志只记录来源、筛选条件、模式、数量和结果，不包含日志正文。
+
 ## 失败边界验收
 
 按以下条件逐项验证：
@@ -101,10 +125,22 @@ rg -n "show-password|console\\.error\\(error\\)" resources/js
 ./vendor/bin/sail artisan route:list --path=ops
 ./vendor/bin/sail artisan test --filter PhaseThreeLogCenterTest
 ./vendor/bin/sail artisan test --filter LogFileReaderServiceTest
+./vendor/bin/sail artisan test --filter LogErrorWatcher
 ./vendor/bin/sail artisan test
 ```
 
 PHPUnit 命令必须顺序执行，避免多个进程同时刷新同一个 `testing` 数据库。
+
+## Docker 镜像构建
+
+Sail 镜像的 Dockerfile 依赖同目录下的 `start-container`、`supervisord.conf` 和 `php.ini`。不要从仓库根目录直接执行 `docker build -f docker/8.4/Dockerfile .`，否则构建上下文不包含这些文件，会出现 `COPY ... not found`。
+
+推荐命令：
+
+```bash
+docker compose build laravel.test
+docker build -f docker/8.4/Dockerfile docker/8.4
+```
 
 ## 环境限制
 

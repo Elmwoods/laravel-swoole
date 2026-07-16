@@ -10,7 +10,7 @@ use Illuminate\Foundation\Http\FormRequest;
  * 说明：
  * - 容器 ID 由路由参数传入，例如 /api/ops/docker/stats/{id}。
  * - 这里只允许容器短 ID、完整 ID 或常见容器名称字符，避免任意字符串进入 Docker API 路径。
- * - 业务权限后续可在 authorize 中接入管理员 RBAC。
+ * - RBAC 已由 admin.auth 与 admin.permission 中间件统一处理。
  */
 class DockerContainerRequest extends FormRequest
 {

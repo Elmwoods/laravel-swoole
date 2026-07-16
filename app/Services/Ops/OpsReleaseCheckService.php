@@ -122,9 +122,32 @@ class OpsReleaseCheckService
             $this->check('数据库', 'Database Connection', $connected, 'fail', $connected ? '数据库连接正常。' : '数据库连接失败。', '检查 DB_HOST、DB_DATABASE、DB_USERNAME 和网络连通性。'),
         ];
 
-        foreach (['admin_users', 'admin_roles', 'admin_permissions', 'admin_audit_logs', 'ops_alerts', 'ops_alert_rules'] as $table) {
+        foreach ([
+            'admin_users',
+            'admin_roles',
+            'admin_permissions',
+            'admin_audit_logs',
+            'ops_alerts',
+            'ops_alert_rules',
+            'ops_alert_evaluations',
+            'ops_alert_events',
+            'ops_alert_settings',
+            'cache',
+        ] as $table) {
             $exists = $connected && Schema::hasTable($table);
             $checks[] = $this->check('数据库', "Table {$table}", $exists, 'fail', $exists ? "表 {$table} 存在。" : "表 {$table} 缺失。", '执行 php artisan migrate。');
+        }
+
+        if ((string) config('cache.default') === 'database') {
+            $cacheLocksExists = $connected && Schema::hasTable('cache_locks');
+            $checks[] = $this->check(
+                '数据库',
+                'Table cache_locks',
+                $cacheLocksExists,
+                'fail',
+                $cacheLocksExists ? '表 cache_locks 存在。' : '数据库缓存锁表 cache_locks 缺失。',
+                '执行 php artisan migrate，或生产环境改用 Redis cache lock。',
+            );
         }
 
         $migrationsReadable = $connected && Schema::hasTable('migrations');

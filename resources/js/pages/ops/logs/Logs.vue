@@ -8,18 +8,27 @@
                         <div class="subtitle">{{ currentDescription }}</div>
                     </div>
 
-                    <el-space>
+                    <el-space wrap>
                         <el-switch
                             v-model="autoRefresh"
+                            :disabled="logMode === 'full'"
                             active-text="自动刷新"
                             inactive-text="手动"
                         />
                         <el-button :icon="Refresh" :loading="loading" @click="loadLogs">
                             刷新
                         </el-button>
-                        <el-button :loading="downloading" :disabled="loading" @click="downloadLogs">
-                            导出
-                        </el-button>
+                        <el-dropdown :disabled="loading || downloading" @command="downloadLogs">
+                            <el-button :loading="downloading">
+                                导出
+                            </el-button>
+                            <template #dropdown>
+                                <el-dropdown-menu>
+                                    <el-dropdown-item command="current">导出当前范围</el-dropdown-item>
+                                    <el-dropdown-item command="full">导出全部匹配</el-dropdown-item>
+                                </el-dropdown-menu>
+                            </template>
+                        </el-dropdown>
                     </el-space>
                 </div>
             </template>
@@ -34,6 +43,13 @@
                 </el-tabs>
 
                 <div class="filters">
+                    <el-segmented
+                        v-model="logMode"
+                        :options="logModeOptions"
+                        class="mode-segment"
+                        @change="handleModeChange"
+                    />
+
                     <el-select
                         v-if="active === 'system'"
                         v-model="systemSource"
@@ -90,6 +106,7 @@
                     />
 
                     <el-input-number
+                        v-if="logMode === 'tail'"
                         v-model="lines"
                         :min="10"
                         :max="1000"
@@ -106,6 +123,15 @@
                 class="notice"
                 :title="notice"
                 type="warning"
+                show-icon
+                :closable="false"
+            />
+
+            <el-alert
+                v-if="logMode === 'full'"
+                class="notice"
+                title="当前为全部分页模式：后端会扫描完整日志来源并按最新时间优先分页返回，自动刷新已关闭。Docker 与 Redis 受底层日志保留能力限制。"
+                type="info"
                 show-icon
                 :closable="false"
             />
@@ -184,7 +210,7 @@
                                 :total="redisPagination.total"
                                 background
                                 layout="total, sizes, prev, pager, next, jumper"
-                                @current-change="loadLogs"
+                                @current-change="handlePageChange"
                                 @size-change="handlePageSizeChange"
                             />
                         </div>
@@ -261,7 +287,7 @@
                                 :total="pagination.total"
                                 background
                                 layout="total, sizes, prev, pager, next, jumper"
-                                @current-change="loadLogs"
+                                @current-change="handlePageChange"
                                 @size-change="handlePageSizeChange"
                             />
                         </div>
@@ -300,6 +326,7 @@ const active = ref<LogTab>('laravel')
 const loading = ref(false)
 const downloading = ref(false)
 const autoRefresh = ref(true)
+const logMode = ref<'tail' | 'full'>('tail')
 const keyword = ref('')
 const lines = ref(200)
 const page = ref(1)
@@ -322,13 +349,14 @@ const viewMode = ref<'entries' | 'raw'>('entries')
 const selectedLevel = ref('')
 const expandedEntries = ref(new Set<string>())
 let timer: number | null = null
+let logRequestSeq = 0
 
 const descriptions: Record<LogTab, string> = {
-    laravel: 'Laravel 应用日志，支持关键词过滤和自动刷新',
-    octane: 'Octane / Swoole 运行日志，用于排查 Worker 与请求异常',
-    redis: 'Redis SLOWLOG 慢查询记录，用于定位慢命令',
-    system: '容器内系统与 Supervisor 相关日志，来源受后端白名单保护',
-    docker: 'Docker 容器日志，容器标识与读取行数均受后端边界控制',
+    laravel: 'Laravel 应用日志，最新时间优先，支持关键词过滤和自动刷新',
+    octane: 'Octane / Swoole 运行日志，最新时间优先，用于排查 Worker 与请求异常',
+    redis: 'Redis SLOWLOG 慢查询记录，最新记录优先，用于定位慢命令',
+    system: '容器内系统与 Supervisor 相关日志，最新时间优先，来源受后端白名单保护',
+    docker: 'Docker 容器日志，最新时间优先，容器标识与读取行数均受后端边界控制',
 }
 
 const currentDescription = computed(() => descriptions[active.value])
@@ -356,6 +384,10 @@ const sourceCards = computed(() => [
 const viewOptions = [
     { label: '事件', value: 'entries' },
     { label: '原文', value: 'raw' },
+]
+const logModeOptions = [
+    { label: '最近 Tail', value: 'tail' },
+    { label: '全部分页', value: 'full' },
 ]
 
 /**
@@ -406,15 +438,23 @@ const firstLine = (text: string) => text.split(/\r?\n/)[0] || ''
 /**
  * 日志事件稳定 key。
  *
- * 展开状态需要跨自动刷新保留，所以不能使用列表下标作为唯一依据。
- * 这里把日志来源、时间、级别和摘要压成短 hash，同一条日志刷新后仍能匹配。
+ * 全部分页模式下不同页可能出现相同时间、级别和摘要，key 需要带上当前查询范围、
+ * 页码、下标和内容 hash，避免展开状态污染其他页的同名日志。
  */
-const entryKey = (entry: LogEntry, _index: number) => {
+const entryKey = (entry: LogEntry, index: number) => {
+    const contentHash = hashText([
+        entry.content || '',
+        ...(entry.lines ?? []),
+    ].join('\n'))
     const rawKey = [
         active.value,
+        logMode.value,
+        pagination.value.current_page,
+        index,
         entry.time || 'no-time',
         entry.level || 'INFO',
         entry.summary || firstLine(entry.content || ''),
+        contentHash,
     ].join('|')
 
     return `log-${hashText(rawKey)}`
@@ -449,6 +489,28 @@ const toggleEntry = (key: string) => {
     }
 
     expandedEntries.value = next
+}
+
+/**
+ * 清理当前页展开状态。
+ */
+const resetExpandedEntries = () => {
+    expandedEntries.value = new Set<string>()
+}
+
+/**
+ * 清理旧日志结果，避免模式或来源切换时短暂展示旧数据。
+ */
+const resetLogResults = () => {
+    logResult.value = null
+    redisEntries.value = []
+    redisPagination.value = {
+        current_page: 1,
+        per_page: perPage.value,
+        total: 0,
+        last_page: 1,
+        has_more: false,
+    }
 }
 
 /**
@@ -497,6 +559,7 @@ const switchSource = async (source: LogTab) => {
 const selectLevel = async (level: string) => {
     selectedLevel.value = level
     page.value = 1
+    resetExpandedEntries()
     await loadLogs()
 }
 
@@ -505,6 +568,15 @@ const selectLevel = async (level: string) => {
  */
 const handleQueryChange = async () => {
     page.value = 1
+    resetExpandedEntries()
+    await loadLogs()
+}
+
+/**
+ * 页码变化后刷新当前页。
+ */
+const handlePageChange = async () => {
+    resetExpandedEntries()
     await loadLogs()
 }
 
@@ -513,6 +585,23 @@ const handleQueryChange = async () => {
  */
 const handlePageSizeChange = async () => {
     page.value = 1
+    resetExpandedEntries()
+    await loadLogs()
+}
+
+/**
+ * 查看范围切换后回到第一页。
+ */
+const handleModeChange = async () => {
+    page.value = 1
+    resetExpandedEntries()
+    resetLogResults()
+
+    if (logMode.value === 'full') {
+        autoRefresh.value = false
+        resetTimer()
+    }
+
     await loadLogs()
 }
 
@@ -521,12 +610,13 @@ const handlePageSizeChange = async () => {
  */
 const timelineWidth = (total: number) => `${Math.max(8, (total / maxTimelineTotal.value) * 100)}%`
 
-const currentQuery = () => {
+const currentQuery = (mode: 'tail' | 'full' = logMode.value) => {
     const [from, to] = timeRange.value
 
     return {
         lines: lines.value,
-        tail: lines.value,
+        mode,
+        tail: mode === 'tail' ? lines.value : undefined,
         page: page.value,
         per_page: perPage.value,
         keyword: keyword.value,
@@ -564,6 +654,8 @@ const loadSources = async () => {
  * 根据当前标签加载日志。
  */
 const loadLogs = async () => {
+    const requestSeq = ++logRequestSeq
+
     loading.value = true
     notice.value = ''
 
@@ -572,24 +664,36 @@ const loadLogs = async () => {
 
         if (active.value === 'laravel') {
             const res = await getLaravelLogs(query)
+            if (requestSeq !== logRequestSeq) {
+                return
+            }
             applyFileResult(res.data.data)
             return
         }
 
         if (active.value === 'octane') {
             const res = await getOctaneLogs(query)
+            if (requestSeq !== logRequestSeq) {
+                return
+            }
             applyFileResult(res.data.data)
             return
         }
 
         if (active.value === 'system') {
             const res = await getSystemLogs(query)
+            if (requestSeq !== logRequestSeq) {
+                return
+            }
             applyFileResult(res.data.data)
             return
         }
 
         if (active.value === 'docker') {
             if (!dockerContainer.value.trim()) {
+                if (requestSeq !== logRequestSeq) {
+                    return
+                }
                 logResult.value = null
                 redisEntries.value = []
                 notice.value = '请输入 Docker 容器名称或 ID'
@@ -597,11 +701,17 @@ const loadLogs = async () => {
             }
 
             const res = await getDockerLogs(query)
+            if (requestSeq !== logRequestSeq) {
+                return
+            }
             applyFileResult(res.data.data)
             return
         }
 
         const res = await getRedisSlowLogs(query)
+        if (requestSeq !== logRequestSeq) {
+            return
+        }
         redisEntries.value = res.data.data.entries
         redisPagination.value = res.data.data.pagination ?? {
             current_page: page.value,
@@ -615,14 +725,19 @@ const loadLogs = async () => {
         logResult.value = null
         notice.value = res.data.data.available ? '' : (res.data.data.message || 'Redis 慢日志不可用')
     } catch {
+        if (requestSeq !== logRequestSeq) {
+            return
+        }
         notice.value = '日志加载失败，请检查接口或容器内日志文件权限'
         ElMessage.error('日志加载失败')
     } finally {
-        loading.value = false
+        if (requestSeq === logRequestSeq) {
+            loading.value = false
+        }
     }
 }
 
-const downloadLogs = async () => {
+const downloadLogs = async (command: 'current' | 'full' = 'current') => {
     if (active.value === 'docker' && !dockerContainer.value.trim()) {
         ElMessage.warning('请输入 Docker 容器名称或 ID')
         return
@@ -631,7 +746,7 @@ const downloadLogs = async () => {
     downloading.value = true
 
     try {
-        const query = currentQuery()
+        const query = currentQuery(command === 'full' ? 'full' : logMode.value)
         let response
 
         if (active.value === 'laravel') {
@@ -646,7 +761,7 @@ const downloadLogs = async () => {
             response = await downloadRedisSlowLogs(query)
         }
 
-        saveBlob(response.data, `ops-logs-${active.value}.csv`)
+        saveBlob(response.data, `ops-logs-${active.value}-${query.mode || 'tail'}.csv`)
         ElMessage.success('日志导出已开始')
     } finally {
         downloading.value = false
@@ -725,6 +840,8 @@ const handleTabChange = async () => {
     notice.value = ''
     selectedLevel.value = ''
     page.value = 1
+    resetExpandedEntries()
+    resetLogResults()
 
     if (active.value === 'system' && systemSources.value.length === 0) {
         await loadSources()

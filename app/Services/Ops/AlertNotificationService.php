@@ -7,6 +7,7 @@ use App\Models\OpsAlertSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * 告警通知服务。
@@ -97,6 +98,10 @@ class AlertNotificationService
      */
     private function sendTelegram(OpsAlert $alert): array
     {
+        if (! $this->settingsAvailable()) {
+            return ['enabled' => true, 'sent' => false, 'reason' => 'settings_unavailable'];
+        }
+
         if (! $this->channelAllowed($alert, 'telegram')) {
             return ['enabled' => true, 'sent' => false, 'reason' => 'channel_disabled_by_policy'];
         }
@@ -127,7 +132,7 @@ class AlertNotificationService
         } catch (\Throwable $e) {
             Log::warning('Ops alert telegram notification failed', [
                 'alert_id' => $alert->id,
-                'message' => $e->getMessage(),
+                'message' => $this->safeExceptionMessage($e),
             ]);
 
             return ['enabled' => true, 'sent' => false, 'reason' => 'telegram_exception'];
@@ -139,6 +144,10 @@ class AlertNotificationService
      */
     private function sendMail(OpsAlert $alert): array
     {
+        if (! $this->settingsAvailable()) {
+            return ['enabled' => true, 'sent' => false, 'reason' => 'settings_unavailable'];
+        }
+
         if (! $this->channelAllowed($alert, 'mail')) {
             return ['enabled' => true, 'sent' => false, 'reason' => 'channel_disabled_by_policy'];
         }
@@ -163,7 +172,7 @@ class AlertNotificationService
         } catch (\Throwable $e) {
             Log::warning('Ops alert mail notification failed', [
                 'alert_id' => $alert->id,
-                'message' => $e->getMessage(),
+                'message' => $this->safeExceptionMessage($e),
             ]);
 
             return ['enabled' => true, 'sent' => false, 'reason' => 'mail_exception'];
@@ -199,5 +208,24 @@ class AlertNotificationService
         $severity = $alert->severity ?: 'warning';
 
         return (bool) data_get($matrix, "{$severity}.{$channel}", true);
+    }
+
+    private function settingsAvailable(): bool
+    {
+        try {
+            return Schema::hasTable('ops_alert_settings');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function safeExceptionMessage(\Throwable $e): string
+    {
+        $message = $e->getMessage();
+        $message = preg_replace('/https:\/\/api\.telegram\.org\/bot[^\/\s]+/i', 'https://api.telegram.org/bot[FILTERED]', $message) ?? $message;
+        $message = preg_replace('/(token|password|secret|api[_-]?key|auth_signature|chat_id)=([^&\s"]+)/i', '$1=[FILTERED]', $message) ?? $message;
+        $message = preg_replace('/Bearer\s+[A-Za-z0-9._-]+/i', 'Bearer [FILTERED]', $message) ?? $message;
+
+        return mb_strimwidth($message, 0, 500, '...');
     }
 }

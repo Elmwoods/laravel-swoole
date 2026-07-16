@@ -16,6 +16,12 @@ use App\Services\Ops\SupervisorService;
 use App\Services\Ops\System\DiskService;
 use App\Services\Ops\SystemMonitorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Mockery;
 use Tests\TestCase;
 
 class PhaseEightAlertOperationsTest extends TestCase
@@ -216,6 +222,82 @@ class PhaseEightAlertOperationsTest extends TestCase
         $this->assertSame('channel_disabled_by_policy', $result['mail']['reason']);
     }
 
+    public function test_notification_settings_fall_back_when_settings_table_is_missing(): void
+    {
+        try {
+            Schema::dropIfExists('ops_alert_settings');
+
+            $this->assertSame(
+                OpsAlertSetting::DEFAULT_SEVERITY_CHANNELS,
+                OpsAlertSetting::value('severity_channels'),
+            );
+
+            $alert = OpsAlert::query()->create([
+                'fingerprint' => sha1('missing-settings-table'),
+                'source' => 'logs:laravel',
+                'severity' => 'warning',
+                'title' => 'Log warning',
+                'message' => 'Missing settings table should not break notification policy',
+                'status' => 'open',
+                'hit_count' => 1,
+                'last_seen_at' => now(),
+            ]);
+
+            $result = app(AlertNotificationService::class)->send($alert);
+
+            $this->assertFalse($result['telegram']['sent']);
+            $this->assertSame('settings_unavailable', $result['telegram']['reason']);
+            $this->assertFalse($result['mail']['sent']);
+            $this->assertSame('settings_unavailable', $result['mail']['reason']);
+        } finally {
+            $this->restoreOpsAlertSettingsTable();
+        }
+    }
+
+    public function test_notification_failure_logs_are_sanitized(): void
+    {
+        config()->set('ops.alerts.telegram.enabled', true);
+        config()->set('ops.alerts.telegram.bot_token', 'secret-bot-token');
+        config()->set('ops.alerts.telegram.chat_id', '123456');
+        OpsAlertSetting::setValue('telegram_enabled', true);
+        OpsAlertSetting::setValue('severity_channels', [
+            'critical' => ['telegram' => true, 'mail' => false],
+            'warning' => ['telegram' => true, 'mail' => false],
+            'info' => ['telegram' => false, 'mail' => false],
+        ]);
+        Http::fake(function (): void {
+            throw new ConnectionException(
+                'Failed for https://api.telegram.org/botsecret-bot-token/sendMessage?chat_id=123456&auth_signature=abc123&password=secret',
+            );
+        });
+        Log::spy();
+
+        $alert = OpsAlert::query()->create([
+            'fingerprint' => sha1('telegram-sanitized'),
+            'source' => 'logs:laravel',
+            'severity' => 'warning',
+            'title' => 'Telegram warning',
+            'message' => 'Notification should sanitize logs',
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        $result = app(AlertNotificationService::class)->send($alert);
+
+        $this->assertFalse($result['telegram']['sent']);
+        $this->assertSame('telegram_exception', $result['telegram']['reason']);
+        Log::shouldHaveReceived('warning')
+            ->with('Ops alert telegram notification failed', Mockery::on(function (array $context): bool {
+                $json = json_encode($context, JSON_THROW_ON_ERROR);
+
+                return ! str_contains($json, 'secret-bot-token')
+                    && ! str_contains($json, 'auth_signature=abc123')
+                    && ! str_contains($json, 'password=secret')
+                    && str_contains($json, '[FILTERED]');
+            }));
+    }
+
     private function mockHealthySnapshot(): void
     {
         $this->mock(DiskService::class, function ($mock): void {
@@ -246,6 +328,21 @@ class PhaseEightAlertOperationsTest extends TestCase
             $mock->shouldReceive('status')->once()->andReturn([
                 ['name' => 'octane', 'state' => 'RUNNING'],
             ]);
+        });
+    }
+
+    private function restoreOpsAlertSettingsTable(): void
+    {
+        if (Schema::hasTable('ops_alert_settings')) {
+            return;
+        }
+
+        Schema::create('ops_alert_settings', function (Blueprint $table): void {
+            $table->id();
+            $table->string('key', 120)->unique();
+            $table->json('value');
+            $table->string('description', 300)->nullable();
+            $table->timestamps();
         });
     }
 }

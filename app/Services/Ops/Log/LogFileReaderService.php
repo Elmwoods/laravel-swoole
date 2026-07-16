@@ -13,6 +13,16 @@ use App\DTO\Ops\Log\LogQueryDTO;
 class LogFileReaderService
 {
     /**
+     * 根据查询模式读取日志。
+     */
+    public function read(string $file, LogQueryDTO $dto, string $source): array
+    {
+        return $dto->mode === 'full'
+            ? $this->full($file, $dto, $source)
+            : $this->tail($file, $dto, $source);
+    }
+
+    /**
      * 读取文件末尾日志。
      */
     public function tail(string $file, LogQueryDTO $dto, string $source): array
@@ -29,6 +39,28 @@ class LogFileReaderService
             'path' => $file,
             'exists' => true,
             'readable' => true,
+        ];
+    }
+
+    /**
+     * 读取完整文件日志并分页返回。
+     *
+     * 这里按行迭代读取，避免使用 file() 一次性读取整个文件。
+     */
+    public function full(string $file, LogQueryDTO $dto, string $source): array
+    {
+        if (! is_file($file) || ! is_readable($file)) {
+            return $this->emptyResult($source, '日志文件不存在或不可读', is_file($file), is_readable($file));
+        }
+
+        $result = $this->fromLines($this->readAllLines($file), $dto, $source);
+
+        return [
+            ...$result,
+            'path' => $file,
+            'exists' => true,
+            'readable' => true,
+            'mode' => 'full',
         ];
     }
 
@@ -66,12 +98,18 @@ class LogFileReaderService
                 ->all();
         }
 
-        $pagination = $this->pagination($entries, $dto);
-        $pagedEntries = array_slice(
-            $entries,
-            ($pagination['current_page'] - 1) * $pagination['per_page'],
-            $pagination['per_page'],
-        );
+        $entries = $this->sortLatestFirst($entries);
+
+        $pagination = $dto->forExport
+            ? $this->exportPagination($entries)
+            : $this->pagination($entries, $dto);
+        $pagedEntries = $dto->forExport
+            ? $entries
+            : array_slice(
+                $entries,
+                ($pagination['current_page'] - 1) * $pagination['per_page'],
+                $pagination['per_page'],
+            );
         $pagedEntries = array_map(
             fn (array $entry): array => $this->withPreview($entry),
             $pagedEntries,
@@ -172,6 +210,27 @@ class LogFileReaderService
     }
 
     /**
+     * 按行迭代读取完整日志文件。
+     */
+    private function readAllLines(string $file): array
+    {
+        $lines = [];
+        $handle = fopen($file, 'rb');
+
+        if ($handle === false) {
+            return [];
+        }
+
+        while (($line = fgets($handle)) !== false) {
+            $lines[] = rtrim($line, "\r\n");
+        }
+
+        fclose($handle);
+
+        return $lines;
+    }
+
+    /**
      * 限制日志行数范围。
      */
     private function normalizeLines(int $lines): int
@@ -195,6 +254,57 @@ class LogFileReaderService
             'total' => $total,
             'last_page' => $lastPage,
             'has_more' => $currentPage < $lastPage,
+        ];
+    }
+
+    /**
+     * 按日志时间倒序排列；同一时间保持文件内顺序，无时间日志排在最后。
+     */
+    private function sortLatestFirst(array $entries): array
+    {
+        $indexedEntries = array_map(
+            fn (array $entry, int $index): array => [
+                'entry' => $entry,
+                'index' => $index,
+                'timestamp' => isset($entry['time']) ? strtotime((string) $entry['time']) : false,
+            ],
+            $entries,
+            array_keys($entries),
+        );
+
+        usort($indexedEntries, function (array $left, array $right): int {
+            $leftTime = $left['timestamp'];
+            $rightTime = $right['timestamp'];
+            $leftHasTime = $leftTime !== false;
+            $rightHasTime = $rightTime !== false;
+
+            if ($leftHasTime && $rightHasTime && $leftTime !== $rightTime) {
+                return $rightTime <=> $leftTime;
+            }
+
+            if ($leftHasTime !== $rightHasTime) {
+                return $leftHasTime ? -1 : 1;
+            }
+
+            return $left['index'] <=> $right['index'];
+        });
+
+        return array_map(fn (array $item): array => $item['entry'], $indexedEntries);
+    }
+
+    /**
+     * 导出模式不分页，返回完整匹配结果。
+     */
+    private function exportPagination(array $entries): array
+    {
+        $total = count($entries);
+
+        return [
+            'current_page' => 1,
+            'per_page' => max($total, 1),
+            'total' => $total,
+            'last_page' => 1,
+            'has_more' => false,
         ];
     }
 

@@ -6,8 +6,10 @@ use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminPermissionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class OpsReleaseCheckTest extends TestCase
@@ -77,6 +79,37 @@ class OpsReleaseCheckTest extends TestCase
             ->assertExitCode(0);
     }
 
+    public function test_release_check_strict_fails_when_alert_settings_table_is_missing(): void
+    {
+        $this->createActiveSuperAdmin();
+
+        try {
+            Schema::dropIfExists('ops_alert_settings');
+
+            $this->artisan('ops:release-check', ['--strict' => true])
+                ->expectsOutputToContain('Table ops_alert_settings')
+                ->assertExitCode(1);
+        } finally {
+            $this->restoreOpsAlertSettingsTable();
+        }
+    }
+
+    public function test_release_check_strict_fails_when_database_cache_locks_table_is_missing(): void
+    {
+        $this->createActiveSuperAdmin();
+        config()->set('cache.default', 'database');
+
+        try {
+            Schema::dropIfExists('cache_locks');
+
+            $this->artisan('ops:release-check', ['--strict' => true])
+                ->expectsOutputToContain('Table cache_locks')
+                ->assertExitCode(1);
+        } finally {
+            $this->restoreCacheLocksTable();
+        }
+    }
+
     private function createActiveSuperAdmin(): AdminUser
     {
         app(AdminPermissionRegistry::class)->syncDefaults();
@@ -91,5 +124,33 @@ class OpsReleaseCheckTest extends TestCase
         $admin->roles()->attach($role->id);
 
         return $admin->refresh();
+    }
+
+    private function restoreOpsAlertSettingsTable(): void
+    {
+        if (Schema::hasTable('ops_alert_settings')) {
+            return;
+        }
+
+        Schema::create('ops_alert_settings', function (Blueprint $table): void {
+            $table->id();
+            $table->string('key', 120)->unique();
+            $table->json('value');
+            $table->string('description', 300)->nullable();
+            $table->timestamps();
+        });
+    }
+
+    private function restoreCacheLocksTable(): void
+    {
+        if (Schema::hasTable('cache_locks')) {
+            return;
+        }
+
+        Schema::create('cache_locks', function (Blueprint $table): void {
+            $table->string('key')->primary();
+            $table->string('owner');
+            $table->bigInteger('expiration')->index();
+        });
     }
 }

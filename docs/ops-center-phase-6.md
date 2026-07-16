@@ -6,8 +6,13 @@
 - 所有日志查看接口要求后台登录、`ops.logs.view` 权限，并记录 `ops.logs` 审计。
 - Laravel、Octane、System、Docker 日志统一返回分页日志事件结构。
 - Redis SlowLog 支持分页、关键词和时间范围筛选。
-- 日志查询支持 `page`、`per_page`、`keyword`、`level`、`from`、`to`、`tail`。
-- `tail` 限制为 10 到 1000 行，`per_page` 限制为 5 到 100，`keyword` 限制为 120 个字符。
+- 日志查询支持 `mode`、`page`、`per_page`、`keyword`、`level`、`from`、`to`、`tail`。
+- `mode=tail` 为默认模式，`tail` 限制为 10 到 1000 行。
+- `mode=full` 为全部分页模式，文件日志会扫描完整日志来源并按 `page/per_page` 返回。
+- 日志事件统一按最新时间优先返回；排序在后端筛选之后、分页和导出之前完成，第一页展示最新日志。
+- 全部分页模式下，前端日志条目展开状态按来源、模式、页码、下标和内容 hash 隔离；切换来源、筛选条件、页码或每页条数会清理旧展开状态。
+- 快速翻页时前端只接受最后一次日志请求响应，避免旧请求回写导致首页和末页显示相同数据。
+- `per_page` 限制为 5 到 100，`keyword` 限制为 120 个字符。
 - `from` 和 `to` 必须为 `YYYY-MM-DD HH:mm:ss`，且结束时间不能早于开始时间。
 - System 日志只允许读取 `ops.logs.system_sources` 配置中的白名单来源。
 - 日志文件不存在或不可读时返回安全错误，不向前端泄露宿主机完整路径。
@@ -64,8 +69,10 @@ rg -n "show-password|console\\.error\\(error\\)|password:|password_confirmation:
 
 ## 风险边界
 
-- 本阶段不新增日志下载接口。
+- 日志下载接口支持当前范围与 `mode=full` 全部匹配导出。
 - 本阶段不将大日志正文推送到 WebSocket。
 - 审计日志不保存日志正文，只保存日志来源、筛选条件、结果和状态码。
 - Docker 日志读取仍依赖宿主机或容器内 `docker logs` 可用性，不可用时返回安全失败信息。
-- 大日志读取仍通过 tail 行数上限控制，避免一次性读取完整大文件拖慢 Octane Worker。
+- 大日志默认仍通过 tail 行数上限控制；需要浏览完整文件日志时使用 `mode=full` 分页查看。
+- 导出结果与页面浏览一致，按最新时间到最早时间输出。
+- Redis 全部分页只覆盖 Redis 当前保留的 SlowLog，不代表无限历史。

@@ -164,6 +164,50 @@ class PhaseThreeLogCenterTest extends TestCase
             ->assertJsonValidationErrors('keyword');
     }
 
+    public function test_log_query_accepts_full_mode_without_tail_limit(): void
+    {
+        $this->mock(LaravelLogService::class, function ($mock): void {
+            $mock->shouldReceive('latest')
+                ->once()
+                ->with(\Mockery::on(fn (LogQueryDTO $dto): bool => $dto->mode === 'full'
+                    && $dto->forExport === false
+                    && $dto->page === 1
+                    && $dto->lines === 200))
+                ->andReturn([
+                    'source' => 'laravel',
+                    'path' => storage_path('logs/laravel.log'),
+                    'exists' => true,
+                    'readable' => true,
+                    'lines' => ['[2026-07-16 10:02:00] local.INFO: latest full page'],
+                    'entries' => [
+                        [
+                            'time' => '2026-07-16 10:02:00',
+                            'level' => 'INFO',
+                            'summary' => 'latest full page',
+                            'content' => '[2026-07-16 10:02:00] local.INFO: latest full page',
+                            'lines' => ['[2026-07-16 10:02:00] local.INFO: latest full page'],
+                        ],
+                    ],
+                    'count' => 1500,
+                    'entry_count' => 1500,
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 20,
+                        'total' => 1500,
+                        'last_page' => 75,
+                        'has_more' => true,
+                    ],
+                    'checked_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $this->getJson('/api/ops/logs/laravel?mode=full&page=1&per_page=20')
+            ->assertOk()
+            ->assertJsonPath('data.entries.0.summary', 'latest full page')
+            ->assertJsonPath('data.pagination.total', 1500)
+            ->assertJsonPath('data.pagination.last_page', 75);
+    }
+
     public function test_system_log_unreadable_source_returns_safe_error_without_path_leak(): void
     {
         config()->set('ops.logs.system_sources', [
@@ -218,6 +262,103 @@ class PhaseThreeLogCenterTest extends TestCase
             ->assertJsonPath('data.source', 'docker:web')
             ->assertJsonPath('data.pagination.total', 1)
             ->assertJsonPath('data.entries.0.level', 'INFO');
+    }
+
+    public function test_docker_full_mode_browser_query_stays_paginated(): void
+    {
+        $this->mock(DockerLogService::class, function ($mock): void {
+            $mock->shouldReceive('latest')
+                ->once()
+                ->with('web', \Mockery::on(fn (LogQueryDTO $dto): bool => $dto->mode === 'full' && $dto->forExport === false && $dto->page === 2))
+                ->andReturn([
+                    'source' => 'docker:web',
+                    'path' => null,
+                    'exists' => true,
+                    'readable' => true,
+                    'mode' => 'full',
+                    'lines' => ['2026-07-06 10:01:00 INFO second page'],
+                    'entries' => [
+                        [
+                            'time' => '2026-07-06 10:01:00',
+                            'level' => 'INFO',
+                            'summary' => 'INFO second page',
+                            'content' => '2026-07-06 10:01:00 INFO second page',
+                            'lines' => ['2026-07-06 10:01:00 INFO second page'],
+                        ],
+                    ],
+                    'count' => 120,
+                    'entry_count' => 120,
+                    'pagination' => [
+                        'current_page' => 2,
+                        'per_page' => 20,
+                        'total' => 120,
+                        'last_page' => 6,
+                        'has_more' => true,
+                    ],
+                    'checked_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $this->getJson('/api/ops/logs/docker?container=web&mode=full&page=2&per_page=20')
+            ->assertOk()
+            ->assertJsonPath('data.mode', 'full')
+            ->assertJsonPath('data.pagination.current_page', 2)
+            ->assertJsonPath('data.pagination.last_page', 6);
+    }
+
+    public function test_docker_full_mode_download_uses_export_dto(): void
+    {
+        $this->mock(DockerLogService::class, function ($mock): void {
+            $mock->shouldReceive('latest')
+                ->once()
+                ->with('web', \Mockery::on(fn (LogQueryDTO $dto): bool => $dto->mode === 'full'
+                    && $dto->forExport === true
+                    && $dto->page === 2
+                    && $dto->perPage === 20))
+                ->andReturn([
+                    'source' => 'docker:web',
+                    'path' => null,
+                    'exists' => true,
+                    'readable' => true,
+                    'mode' => 'full',
+                    'lines' => [
+                        '2026-07-06 10:00:00 INFO first page',
+                        '2026-07-06 10:01:00 INFO last page',
+                    ],
+                    'entries' => [
+                        [
+                            'time' => '2026-07-06 10:00:00',
+                            'level' => 'INFO',
+                            'summary' => 'INFO first page',
+                            'content' => '2026-07-06 10:00:00 INFO first page',
+                            'lines' => ['2026-07-06 10:00:00 INFO first page'],
+                        ],
+                        [
+                            'time' => '2026-07-06 10:01:00',
+                            'level' => 'INFO',
+                            'summary' => 'INFO last page',
+                            'content' => '2026-07-06 10:01:00 INFO last page',
+                            'lines' => ['2026-07-06 10:01:00 INFO last page'],
+                        ],
+                    ],
+                    'count' => 2,
+                    'entry_count' => 2,
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 2,
+                        'total' => 2,
+                        'last_page' => 1,
+                        'has_more' => false,
+                    ],
+                    'checked_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $response = $this->get('/api/ops/logs/docker/download?container=web&mode=full&page=2&per_page=20');
+
+        $response->assertOk()
+            ->assertHeader('content-disposition');
+        $this->assertStringContainsString('first page', $response->streamedContent());
     }
 
     public function test_log_reads_are_audited_without_log_content(): void

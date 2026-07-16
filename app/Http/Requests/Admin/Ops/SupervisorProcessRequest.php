@@ -15,8 +15,7 @@ use Illuminate\Foundation\Http\FormRequest;
 class SupervisorProcessRequest extends FormRequest
 {
     /**
-     * Ops Center 暂未接入权限系统，因此先允许请求通过。
-     * 后续接入 Sanctum/后台权限时，可在这里校验当前管理员是否具备运维权限。
+     * RBAC 已由 admin.auth 与 admin.permission 中间件统一处理。
      */
     public function authorize(): bool
     {

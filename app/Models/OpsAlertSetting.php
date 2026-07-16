@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Throwable;
 
 class OpsAlertSetting extends Model
 {
@@ -32,7 +33,11 @@ class OpsAlertSetting extends Model
 
     public static function value(string $key): mixed
     {
-        $setting = self::query()->where('key', $key)->first();
+        try {
+            $setting = self::query()->where('key', $key)->first();
+        } catch (Throwable) {
+            return self::defaults()[$key] ?? null;
+        }
 
         if ($setting !== null) {
             return $setting->value;
@@ -53,13 +58,17 @@ class OpsAlertSetting extends Model
     {
         $values = self::defaults();
 
-        self::query()
-            ->get()
-            ->each(function (self $setting) use (&$values): void {
-                if (array_key_exists($setting->key, $values)) {
-                    $values[$setting->key] = $setting->value;
-                }
-            });
+        try {
+            self::query()
+                ->get()
+                ->each(function (self $setting) use (&$values): void {
+                    if (array_key_exists($setting->key, $values)) {
+                        $values[$setting->key] = $setting->value;
+                    }
+                });
+        } catch (Throwable) {
+            return $values;
+        }
 
         return $values;
     }

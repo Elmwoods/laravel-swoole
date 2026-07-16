@@ -11,10 +11,10 @@ class AdminCsvExportService
         return response()->streamDownload(function () use ($headers, $rows): void {
             $handle = fopen('php://output', 'w');
 
-            fputcsv($handle, $headers);
+            fputcsv($handle, $headers, ',', '"', '\\');
 
             foreach ($rows as $row) {
-                fputcsv($handle, array_map(fn ($value): string => $this->escapeCell($value), $row));
+                fputcsv($handle, array_map(fn ($value): string => $this->escapeCell($value), $row), ',', '"', '\\');
             }
 
             fclose($handle);

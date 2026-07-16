@@ -14,6 +14,7 @@ export interface LogFileResult {
     path: string | null
     exists: boolean
     readable: boolean
+    mode?: 'tail' | 'full'
     message?: string
     lines: string[]
     entries?: LogEntry[]
@@ -87,6 +88,7 @@ export interface SystemLogSourcesResult {
 
 export interface LogQuery {
     lines: number
+    mode?: 'tail' | 'full'
     tail?: number
     page?: number
     per_page?: number
@@ -100,6 +102,7 @@ export interface LogQuery {
 
 const params = (query: LogQuery) => ({
     lines: query.lines,
+    mode: query.mode || undefined,
     tail: query.tail || undefined,
     page: query.page || undefined,
     per_page: query.per_page || undefined,

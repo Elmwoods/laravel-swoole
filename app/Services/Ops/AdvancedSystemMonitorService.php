@@ -151,6 +151,15 @@ class AdvancedSystemMonitorService
      */
     public function diskIO(): array
     {
+        if (! $this->hasExecutable('iostat')) {
+            return [
+                'available' => false,
+                'raw' => '',
+                'message' => 'iostat command unavailable',
+                'source' => 'availability-check',
+            ];
+        }
+
         $process = new Process(['iostat', '-dx', '1', '1']);
         $process->setTimeout(5);
         $process->run();
@@ -160,6 +169,7 @@ class AdvancedSystemMonitorService
                 'available' => false,
                 'raw' => '',
                 'message' => 'iostat command unavailable',
+                'source' => 'process',
             ];
         }
 
@@ -167,6 +177,25 @@ class AdvancedSystemMonitorService
             'available' => true,
             'raw' => $process->getOutput(),
         ];
+    }
+
+    protected function hasExecutable(string $command): bool
+    {
+        $paths = explode(PATH_SEPARATOR, (string) getenv('PATH'));
+
+        foreach ($paths as $path) {
+            if ($path === '') {
+                continue;
+            }
+
+            $candidate = rtrim($path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$command;
+
+            if (is_file($candidate) && is_executable($candidate)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

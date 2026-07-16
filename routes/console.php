@@ -31,3 +31,7 @@ Schedule::job(new CollectDockerLogsJob())
 Schedule::command('ops:alerts:evaluate')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('ops:logs:watch-errors --once')
+    ->everyMinute()
+    ->withoutOverlapping();

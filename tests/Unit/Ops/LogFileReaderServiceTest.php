@@ -24,11 +24,12 @@ class LogFileReaderServiceTest extends TestCase
         $result = app(LogFileReaderService::class)->tail($file, new LogQueryDTO(lines: 20), 'laravel');
 
         $this->assertSame(2, $result['entry_count']);
-        $this->assertSame('2026-07-06 10:00:00', $result['entries'][0]['time']);
-        $this->assertSame('ERROR', $result['entries'][0]['level']);
-        $this->assertCount(2, $result['entries'][0]['lines']);
-        $this->assertSame(2, $result['entries'][0]['line_count']);
-        $this->assertFalse($result['entries'][0]['truncated']);
+        $this->assertSame('2026-07-06 10:01:00', $result['entries'][0]['time']);
+        $this->assertSame('2026-07-06 10:00:00', $result['entries'][1]['time']);
+        $this->assertSame('ERROR', $result['entries'][1]['level']);
+        $this->assertCount(2, $result['entries'][1]['lines']);
+        $this->assertSame(2, $result['entries'][1]['line_count']);
+        $this->assertFalse($result['entries'][1]['truncated']);
         $this->assertSame('ERROR', $result['facets']['levels'][0]['name']);
         $this->assertSame('2026-07-06 10:00', $result['facets']['timeline'][0]['bucket']);
     }
@@ -74,7 +75,155 @@ class LogFileReaderServiceTest extends TestCase
         $this->assertSame(5, $result['pagination']['per_page']);
         $this->assertSame(1, count($result['entries']));
         $this->assertSame(1, count($result['lines']));
-        $this->assertStringContainsString('sixth', $result['entries'][0]['content']);
+        $this->assertStringContainsString('first', $result['entries'][0]['content']);
+    }
+
+    public function test_full_mode_paginates_entries_beyond_tail_limit(): void
+    {
+        $lines = [];
+
+        for ($index = 1; $index <= 1205; $index += 1) {
+            $lines[] = sprintf('[2026-07-06 10:%02d:%02d] local.INFO: full entry %04d', intdiv($index, 60) % 60, $index % 60, $index);
+        }
+
+        $file = $this->fakeLogFile($lines);
+
+        $result = app(LogFileReaderService::class)->read(
+            $file,
+            new LogQueryDTO(mode: 'full', page: 61, perPage: 20),
+            'laravel',
+        );
+
+        $this->assertSame(1205, $result['entry_count']);
+        $this->assertSame(61, $result['pagination']['current_page']);
+        $this->assertSame(61, $result['pagination']['last_page']);
+        $this->assertFalse($result['pagination']['has_more']);
+        $this->assertCount(5, $result['entries']);
+        $this->assertStringContainsString('full entry 0005', $result['entries'][0]['content']);
+        $this->assertStringContainsString('full entry 0001', $result['entries'][4]['content']);
+    }
+
+    public function test_full_mode_first_page_and_last_page_return_distinct_entries(): void
+    {
+        $lines = [];
+
+        for ($index = 1; $index <= 45; $index += 1) {
+            $lines[] = sprintf('[2026-07-06 11:%02d:00] local.INFO: full page entry %04d', $index % 60, $index);
+        }
+
+        $file = $this->fakeLogFile($lines);
+        $reader = app(LogFileReaderService::class);
+
+        $firstPage = $reader->read(
+            $file,
+            new LogQueryDTO(mode: 'full', page: 1, perPage: 20),
+            'laravel',
+        );
+        $lastPage = $reader->read(
+            $file,
+            new LogQueryDTO(mode: 'full', page: 3, perPage: 20),
+            'laravel',
+        );
+
+        $this->assertSame(1, $firstPage['pagination']['current_page']);
+        $this->assertSame(3, $lastPage['pagination']['current_page']);
+        $this->assertSame(3, $lastPage['pagination']['last_page']);
+        $this->assertCount(20, $firstPage['entries']);
+        $this->assertCount(5, $lastPage['entries']);
+        $this->assertStringContainsString('full page entry 0045', $firstPage['entries'][0]['content']);
+        $this->assertStringContainsString('full page entry 0005', $lastPage['entries'][0]['content']);
+        $this->assertNotSame($firstPage['entries'][0]['content'], $lastPage['entries'][0]['content']);
+    }
+
+    public function test_tail_mode_orders_recent_window_by_latest_time_first(): void
+    {
+        $file = $this->fakeLogFile([
+            '[2026-07-06 10:00:00] local.INFO: old',
+            '[2026-07-06 10:01:00] local.INFO: middle',
+            '[2026-07-06 10:02:00] local.INFO: newest',
+        ]);
+
+        $result = app(LogFileReaderService::class)->tail(
+            $file,
+            new LogQueryDTO(lines: 20, page: 1, perPage: 20),
+            'laravel',
+        );
+
+        $this->assertStringContainsString('newest', $result['entries'][0]['content']);
+        $this->assertStringContainsString('middle', $result['entries'][1]['content']);
+        $this->assertStringContainsString('old', $result['entries'][2]['content']);
+    }
+
+    public function test_latest_time_order_is_applied_after_filters_and_before_pagination(): void
+    {
+        $file = $this->fakeLogFile([
+            '[2026-07-06 10:00:00] local.ERROR: target older error',
+            '[2026-07-06 10:01:00] local.INFO: target ignored info',
+            '[2026-07-06 10:02:00] local.ERROR: target newer error',
+            '[2026-07-06 10:03:00] local.ERROR: other newest error',
+        ]);
+
+        $result = app(LogFileReaderService::class)->read(
+            $file,
+            new LogQueryDTO(
+                keyword: 'target',
+                level: 'ERROR',
+                from: '2026-07-06 10:00:00',
+                to: '2026-07-06 10:03:00',
+                mode: 'full',
+                page: 1,
+                perPage: 5,
+            ),
+            'laravel',
+        );
+
+        $this->assertSame(2, $result['entry_count']);
+        $this->assertSame(1, $result['pagination']['last_page']);
+        $this->assertStringContainsString('target newer error', $result['entries'][0]['content']);
+        $this->assertStringContainsString('target older error', $result['entries'][1]['content']);
+    }
+
+    public function test_same_time_entries_keep_file_order_and_timeless_entries_go_last(): void
+    {
+        $file = $this->fakeLogFile([
+            'timeless boot line',
+            '[2026-07-06 10:00:00] local.INFO: first same time',
+            '[2026-07-06 10:00:00] local.INFO: second same time',
+            '[2026-07-06 10:01:00] local.INFO: newest timed',
+        ]);
+
+        $result = app(LogFileReaderService::class)->read(
+            $file,
+            new LogQueryDTO(mode: 'full', page: 1, perPage: 20),
+            'system',
+        );
+
+        $this->assertStringContainsString('newest timed', $result['entries'][0]['content']);
+        $this->assertStringContainsString('first same time', $result['entries'][1]['content']);
+        $this->assertStringContainsString('second same time', $result['entries'][2]['content']);
+        $this->assertStringContainsString('timeless boot line', $result['entries'][3]['content']);
+    }
+
+    public function test_full_export_returns_all_matched_entries_without_pagination(): void
+    {
+        $file = $this->fakeLogFile([
+            '[2026-07-06 10:00:00] local.INFO: export entry 1',
+            '[2026-07-06 10:01:00] local.INFO: export entry 2',
+            '[2026-07-06 10:02:00] local.INFO: export entry 3',
+        ]);
+
+        $result = app(LogFileReaderService::class)->read(
+            $file,
+            new LogQueryDTO(mode: 'full', page: 1, perPage: 1, forExport: true),
+            'laravel',
+        );
+
+        $this->assertSame(3, $result['entry_count']);
+        $this->assertSame(3, $result['pagination']['total']);
+        $this->assertSame(1, $result['pagination']['last_page']);
+        $this->assertCount(3, $result['entries']);
+        $this->assertStringContainsString('export entry 3', $result['entries'][0]['content']);
+        $this->assertStringContainsString('export entry 1', $result['entries'][2]['content']);
     }
 
     public function test_level_filter_is_applied_before_pagination(): void
@@ -116,8 +265,8 @@ class LogFileReaderServiceTest extends TestCase
         );
 
         $this->assertSame(2, $result['entry_count']);
-        $this->assertStringContainsString('inside range', $result['entries'][0]['content']);
-        $this->assertStringContainsString('also inside', $result['entries'][1]['content']);
+        $this->assertStringContainsString('also inside', $result['entries'][0]['content']);
+        $this->assertStringContainsString('inside range', $result['entries'][1]['content']);
         $this->assertStringNotContainsString('too early', implode("\n", $result['lines']));
         $this->assertStringNotContainsString('too late', implode("\n", $result['lines']));
     }

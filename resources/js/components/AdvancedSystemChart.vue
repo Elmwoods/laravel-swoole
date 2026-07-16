@@ -1,10 +1,23 @@
 <template>
-    <el-card>
+    <el-card v-loading="loading" shadow="never" class="advanced-system-chart">
         <template #header>
-            Advanced System Monitor
+            <div class="card-header">
+                <span>系统趋势</span>
+                <el-button size="small" text @click="initData">重试</el-button>
+            </div>
         </template>
 
-        <div ref="chartRef" style="height: 420px;"></div>
+        <el-alert
+            v-if="errorMessage"
+            :title="errorMessage"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="state-alert"
+        />
+
+        <el-empty v-if="!loading && !errorMessage && timeAxis.length === 0" description="暂无系统趋势数据" />
+        <div ref="chartRef" class="chart"></div>
     </el-card>
 </template>
 
@@ -20,6 +33,8 @@ import echo from "../utils/echo"
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let channel: any = null
+const loading = ref(false)
+const errorMessage = ref('')
 
 /**
  * config
@@ -271,6 +286,9 @@ const updateChart = () => {
  * init http data
  */
 const initData = async () => {
+    loading.value = true
+    errorMessage.value = ''
+
     try {
         const res = await axios.get('/api/ops/system/advanced')
 
@@ -281,7 +299,9 @@ const initData = async () => {
         updateChart()
 
     } catch (err) {
-        console.error('init system monitor failed', err)
+        errorMessage.value = '系统趋势加载失败，请稍后重试。'
+    } finally {
+        loading.value = false
     }
 }
 
@@ -331,3 +351,24 @@ onBeforeUnmount(() => {
     }
 })
 </script>
+
+<style scoped>
+.advanced-system-chart {
+    border-radius: 8px;
+}
+
+.card-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+}
+
+.state-alert {
+    margin-bottom: 14px;
+}
+
+.chart {
+    height: 420px;
+    min-height: 320px;
+}
+</style>

@@ -53,6 +53,21 @@ return [
             'syslog' => '/var/log/syslog',
             'messages' => '/var/log/messages',
         ],
+
+        'error_watcher' => [
+            'enabled' => filter_var(env('OPS_LOG_ERROR_WATCHER_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'sources' => [
+                'laravel' => storage_path('logs/laravel.log'),
+                'octane' => storage_path('logs/octane.log'),
+                'worker' => storage_path('logs/worker.log'),
+                'scheduler' => storage_path('logs/scheduler.log'),
+                'build' => base_path('build.log'),
+            ],
+            'levels' => array_values(array_filter(explode(',', env('OPS_LOG_ERROR_WATCHER_LEVELS', 'ERROR,CRITICAL,EMERGENCY')))),
+            'context_lines' => (int) env('OPS_LOG_ERROR_WATCHER_CONTEXT_LINES', 3),
+            'max_events_per_run' => (int) env('OPS_LOG_ERROR_WATCHER_MAX_EVENTS_PER_RUN', 50),
+            'state_file' => storage_path('app/ops-log-watcher-state.json'),
+        ],
     ],
 
     /*

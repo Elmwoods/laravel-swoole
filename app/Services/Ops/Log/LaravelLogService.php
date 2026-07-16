@@ -16,7 +16,7 @@ class LaravelLogService
      */
     public function latest(LogQueryDTO $dto): array
     {
-        return $this->reader->tail(
+        return $this->reader->read(
             storage_path('logs/laravel.log'),
             $dto,
             'laravel',

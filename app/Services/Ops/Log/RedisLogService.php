@@ -19,7 +19,8 @@ class RedisLogService
         $dto = $query instanceof LogQueryDTO ? $query : new LogQueryDTO(lines: $query, perPage: min($query, 100));
 
         try {
-            $rows = Redis::command('SLOWLOG', ['GET', max(10, min($dto->lines, 1000))]);
+            $limit = $this->slowLogLimit($dto);
+            $rows = Redis::command('SLOWLOG', ['GET', $limit]);
         } catch (Throwable $e) {
             return [
                 'source' => 'redis',
@@ -61,21 +62,41 @@ class RedisLogService
             $entries = $this->filterByTimeRange($entries, $dto);
         }
 
-        $pagination = $this->pagination($entries, $dto);
-        $pagedEntries = array_slice(
-            $entries,
-            ($pagination['current_page'] - 1) * $pagination['per_page'],
-            $pagination['per_page'],
-        );
+        $pagination = $dto->forExport
+            ? $this->exportPagination($entries)
+            : $this->pagination($entries, $dto);
+        $pagedEntries = $dto->forExport
+            ? $entries
+            : array_slice(
+                $entries,
+                ($pagination['current_page'] - 1) * $pagination['per_page'],
+                $pagination['per_page'],
+            );
 
         return [
             'source' => 'redis',
             'available' => true,
+            'mode' => $dto->mode,
             'entries' => array_values($pagedEntries),
             'count' => count($entries),
             'pagination' => $pagination,
             'checked_at' => now()->toDateTimeString(),
         ];
+    }
+
+    private function slowLogLimit(LogQueryDTO $dto): int
+    {
+        if ($dto->mode !== 'full') {
+            return max(10, min($dto->lines, 1000));
+        }
+
+        try {
+            $length = (int) Redis::command('SLOWLOG', ['LEN']);
+        } catch (Throwable) {
+            $length = 1000;
+        }
+
+        return max(10, min($length, 10000));
     }
 
     private function filterByTimeRange(array $entries, LogQueryDTO $dto): array
@@ -115,6 +136,19 @@ class RedisLogService
             'total' => $total,
             'last_page' => $lastPage,
             'has_more' => $currentPage < $lastPage,
+        ];
+    }
+
+    private function exportPagination(array $entries): array
+    {
+        $total = count($entries);
+
+        return [
+            'current_page' => 1,
+            'per_page' => max($total, 1),
+            'total' => $total,
+            'last_page' => 1,
+            'has_more' => false,
         ];
     }
 }

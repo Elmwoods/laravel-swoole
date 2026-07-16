@@ -121,6 +121,42 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertSame('safe payload', $service->escapeCell('safe payload'));
     }
 
+    public function test_csv_export_stream_does_not_trigger_fputcsv_deprecation(): void
+    {
+        $service = app(AdminCsvExportService::class);
+        $warnings = [];
+        set_error_handler(function (int $severity, string $message) use (&$warnings): bool {
+            if (str_contains($message, 'fputcsv()')) {
+                $warnings[] = $message;
+            }
+
+            return true;
+        });
+
+        try {
+            $response = $service->stream('audit.csv', ['name', 'formula'], [
+                ['ops', '=SUM(A1:A2)'],
+            ]);
+
+            ob_start();
+            $response->sendContent();
+            $content = (string) ob_get_clean();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame([], $warnings);
+        $this->assertStringContainsString("'=SUM(A1:A2)", $content);
+    }
+
+    public function test_deprecations_log_channel_is_defined(): void
+    {
+        $channel = config('logging.channels.deprecations');
+
+        $this->assertSame('single', $channel['driver']);
+        $this->assertStringEndsWith('logs/deprecations.log', $channel['path']);
+    }
+
     public function test_ops_confirm_service_accepts_only_fixed_phrase(): void
     {
         $service = app(OpsConfirmService::class);

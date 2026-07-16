@@ -17,5 +17,7 @@ class LogQueryDTO
         public ?string $level = null,
         public ?string $from = null,
         public ?string $to = null,
+        public string $mode = 'tail',
+        public bool $forExport = false,
     ) {}
 }

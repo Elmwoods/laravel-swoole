@@ -1,12 +1,31 @@
 <template>
     <div class="redis-chart">
 
-        <el-card>
+        <el-card v-loading="loading" shadow="never">
             <template #header>
-                Redis 实时性能图表
+                <div class="card-header">
+                    <span>Redis 实时性能图表</span>
+                    <el-button size="small" :loading="loading" @click="refreshNow">
+                        刷新
+                    </el-button>
+                </div>
             </template>
 
-            <div ref="chartRef" style="height: 400px;"></div>
+            <el-alert
+                v-if="errorMessage"
+                :title="errorMessage"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="state-alert"
+            />
+
+            <el-empty
+                v-if="!loading && !errorMessage && isEmpty"
+                description="暂无 Redis 性能采样数据"
+            />
+
+            <div ref="chartRef" class="chart"></div>
 
         </el-card>
 
@@ -14,18 +33,26 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import axios from 'axios'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
+import request from '@/utils/request'
 
 const chartRef = ref<HTMLDivElement>()
-let chart: echarts.ECharts
+const loading = ref(false)
+const errorMessage = ref('')
+const sampleCount = ref(0)
+let chart: echarts.ECharts | null = null
+let refreshTimer: number | null = null
+
+const isEmpty = computed(() => sampleCount.value === 0)
 
 /**
  * 初始化图表
  */
 const initChart = () => {
-    chart = echarts.init(chartRef.value!)
+    if (!chartRef.value) return
+
+    chart = echarts.init(chartRef.value)
 
     chart.setOption({
         title: { text: 'Redis OPS / Clients / Memory' },
@@ -52,15 +79,18 @@ const initChart = () => {
  * 更新数据
  */
 const fetchData = async () => {
-    const res = await axios.get('/api/ops/redis-metrics/chart')
+    const res = await request.get('/api/ops/redis-metrics/chart')
     const data = res.data.data
+    const rows = Array.isArray(data) ? data : []
 
-    const time = data.map((i: any) => i.time)
-    const ops = data.map((i: any) => i.ops)
-    const clients = data.map((i: any) => i.clients)
-    const memory = data.map((i: any) => i.memory)
+    sampleCount.value = rows.length
 
-    chart.setOption({
+    const time = rows.map((i: any) => i.time)
+    const ops = rows.map((i: any) => i.ops)
+    const clients = rows.map((i: any) => i.clients)
+    const memory = rows.map((i: any) => i.memory)
+
+    chart?.setOption({
         xAxis: { data: time },
         series: [
             { name: 'OPS', data: ops },
@@ -70,17 +100,61 @@ const fetchData = async () => {
     })
 }
 
+const refreshNow = async () => {
+    if (loading.value) return
+
+    loading.value = true
+    errorMessage.value = ''
+
+    try {
+        await request.get('/api/ops/redis-metrics/push')
+        await fetchData()
+    } catch {
+        errorMessage.value = 'Redis 性能图表加载失败，请稍后重试。'
+        sampleCount.value = 0
+    } finally {
+        loading.value = false
+    }
+}
+
 /**
  * 启动实时刷新
  */
 onMounted(() => {
     initChart()
+    refreshNow()
 
-    fetchData()
+    refreshTimer = window.setInterval(refreshNow, 5000)
+})
 
-    setInterval(async () => {
-        await axios.get('/api/ops/redis-metrics/push')
-        fetchData()
-    }, 5000)
+onBeforeUnmount(() => {
+    if (refreshTimer) {
+        window.clearInterval(refreshTimer)
+        refreshTimer = null
+    }
+
+    chart?.dispose()
+    chart = null
 })
 </script>
+
+<style scoped>
+.redis-chart {
+    min-width: 0;
+}
+
+.card-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+}
+
+.state-alert {
+    margin-bottom: 14px;
+}
+
+.chart {
+    height: 400px;
+    min-height: 320px;
+}
+</style>

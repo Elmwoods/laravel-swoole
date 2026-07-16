@@ -47,7 +47,14 @@ instance.interceptors.response.use(
             ElMessage.error(error?.response?.data?.message || '没有权限执行该操作')
         }
 
-        console.error('API Error:', error)
+        if (import.meta.env.DEV) {
+            console.error('API request failed', {
+                message: error?.message,
+                status,
+                url: error?.config?.url,
+                method: error?.config?.method,
+            })
+        }
 
         return Promise.reject(error)
     }

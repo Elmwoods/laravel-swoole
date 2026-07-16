@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\Ops\Log;
 
+use App\DTO\Ops\Log\LogQueryDTO;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\LogQueryRequest;
 use App\Services\Ops\Log\DockerLogService;
@@ -34,7 +35,7 @@ class LogController extends Controller
         LogDownloadService $download,
     ): StreamedResponse
     {
-        return $download->download($service->latest($request->dto()), 'laravel');
+        return $download->download($service->latest($this->downloadDto($request)), 'laravel');
     }
 
     /**
@@ -56,7 +57,7 @@ class LogController extends Controller
         LogDownloadService $download,
     ): StreamedResponse
     {
-        return $download->download($service->latest($request->dto()), 'octane');
+        return $download->download($service->latest($this->downloadDto($request)), 'octane');
     }
 
     /**
@@ -78,7 +79,7 @@ class LogController extends Controller
         LogDownloadService $download,
     ): StreamedResponse
     {
-        return $download->download($service->slowLogs($request->dto()), 'redis');
+        return $download->download($service->slowLogs($this->downloadDto($request)), 'redis');
     }
 
     /**
@@ -105,7 +106,7 @@ class LogController extends Controller
         LogDownloadService $download,
     ): StreamedResponse
     {
-        $dto = $request->dto();
+        $dto = $this->downloadDto($request);
 
         return $download->download(
             $service->latest(container: $dto->container ?? '', query: $dto),
@@ -132,7 +133,7 @@ class LogController extends Controller
         LogDownloadService $download,
     ): StreamedResponse
     {
-        return $download->download($service->latest($request->dto()), 'system');
+        return $download->download($service->latest($this->downloadDto($request)), 'system');
     }
 
     /**
@@ -143,5 +144,13 @@ class LogController extends Controller
         return $this->success([
             'sources' => $service->sources(),
         ]);
+    }
+
+    private function downloadDto(LogQueryRequest $request): LogQueryDTO
+    {
+        $dto = $request->dto();
+        $dto->forExport = $dto->mode === 'full';
+
+        return $dto;
     }
 }

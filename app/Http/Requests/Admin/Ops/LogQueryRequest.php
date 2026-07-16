@@ -9,13 +9,12 @@ use Illuminate\Foundation\Http\FormRequest;
  * Ops Center 日志查询请求验证。
  *
  * 第三阶段所有日志接口统一走这个 Request，避免 Controller 里散落参数校验。
- * lines 做上限控制，防止一次读取过多日志拖慢 Octane Worker。
+ * tail 模式继续做行数上限控制，full 模式通过分页展示完整日志来源。
  */
 class LogQueryRequest extends FormRequest
 {
     /**
-     * 当前 Ops Center 暂未接入 RBAC，先允许访问。
-     * 后续接入管理员权限后，可在这里校验“日志查看”权限。
+     * RBAC 已由 admin.auth 与 admin.permission 中间件统一处理。
      */
     public function authorize(): bool
     {
@@ -30,6 +29,7 @@ class LogQueryRequest extends FormRequest
         return [
             'lines' => ['nullable', 'integer', 'min:10', 'max:1000'],
             'tail' => ['nullable', 'integer', 'min:10', 'max:1000'],
+            'mode' => ['nullable', 'string', 'in:tail,full'],
             'page' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
             'keyword' => ['nullable', 'string', 'max:120'],
@@ -53,6 +53,7 @@ class LogQueryRequest extends FormRequest
             'tail.integer' => 'tail 行数必须是整数。',
             'tail.min' => 'tail 行数不能小于 10。',
             'tail.max' => 'tail 行数不能超过 1000。',
+            'mode.in' => '日志查看模式不合法。',
             'page.integer' => '分页页码必须是整数。',
             'page.min' => '分页页码不能小于 1。',
             'per_page.integer' => '每页条数必须是整数。',
@@ -87,6 +88,7 @@ class LogQueryRequest extends FormRequest
             level: $this->filled('level') ? strtoupper((string) $this->string('level')) : null,
             from: $this->filled('from') ? (string) $this->string('from') : null,
             to: $this->filled('to') ? (string) $this->string('to') : null,
+            mode: $this->filled('mode') ? (string) $this->string('mode') : 'tail',
         );
     }
 }

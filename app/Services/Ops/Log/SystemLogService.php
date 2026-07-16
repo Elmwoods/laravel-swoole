@@ -54,6 +54,6 @@ class SystemLogService
             ];
         }
 
-        return $this->reader->tail($file, $dto, 'system:'.$source);
+        return $this->reader->read($file, $dto, 'system:'.$source);
     }
 }
