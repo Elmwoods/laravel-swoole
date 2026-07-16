@@ -11,9 +11,12 @@
   - `ops.alerts / rule_update`
   - `ops.alerts / rule_toggle`
 - `AlertRuleEngineService` 优先读取启用的数据库规则。
+- `AlertRuleEngineService` 每次评估前同步默认规则，定时任务或 CLI 首次运行也能初始化 `ops_alert_rules`。
+- 默认规则同步只更新名称、来源、指标、运算符、单位、说明和排序等系统元数据，不覆盖用户已修改的阈值和启停状态。
 - 数据库规则不存在时回退既有 `config('ops.alerts.thresholds.*')` 默认值。
 - 数据库规则存在但被禁用时，不触发该规则对应的新告警。
 - 已有 `ops_alerts` 历史告警不自动删除，仍按确认、恢复和审计流程保留。
+- 发布验收步骤见 [第七阶段发布验收](ops-center-phase-7-release.md)。
 
 ## 默认规则白名单
 
@@ -58,7 +61,8 @@ POST /api/ops/alerts/rules/{adminRule}/toggle
 
 - 告警中心页面新增“规则配置”区域。
 - 支持查看规则名称、来源、指标、单位、说明、启用状态和阈值。
-- 支持保存阈值、启停规则、保存中禁用和错误提示。
+- 支持保存阈值、启停规则、保存中禁用、防重复提交、空态和错误提示。
+- 保存或启停成功后刷新规则列表和告警摘要，避免旧阈值或旧启停状态停留。
 - 不展示 Telegram token、邮件收件人或其他敏感通知配置。
 
 ## 验收命令
@@ -84,7 +88,10 @@ rg -n "console\\.error\\(error\\)" resources/js
 ## 发布与回滚
 
 - 发布前执行 migration 创建 `ops_alert_rules`。
-- 首次访问规则列表会同步系统默认规则。
+- 首次访问规则列表或执行 `ops:alerts:evaluate` 会同步系统默认规则。
+- 推荐发布后先执行一次 `./vendor/bin/sail artisan ops:alerts:evaluate`，再进入 `/admin/ops/alerts` 核对规则配置。
+- 若已通过页面修改阈值或禁用规则，后续重复同步只更新系统元数据，不覆盖这些用户配置。
+- 规则修改和启停审计需要核对成功与失败状态码，尤其是 `200`、`403`、`422`、`404`。
 - 回滚代码前如已执行 migration，数据库表不会自动删除，除非执行 Laravel migration rollback。
 - 回滚后告警引擎恢复使用配置文件阈值。
 - 禁用规则不会清理历史告警；如需关闭历史告警，仍使用现有确认/恢复流程。

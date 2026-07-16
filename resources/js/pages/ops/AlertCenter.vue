@@ -56,6 +56,15 @@
                 </div>
             </template>
 
+            <el-alert
+                v-if="rulesNotice"
+                class="rule-notice"
+                :title="rulesNotice"
+                type="warning"
+                show-icon
+                :closable="false"
+            />
+
             <el-table :data="alertRules" border stripe v-loading="rulesLoading" empty-text="暂无告警规则">
                 <el-table-column label="规则" min-width="220">
                     <template #default="{ row }">
@@ -274,6 +283,7 @@ const testingNotification = ref(false)
 const demoLoading = ref(false)
 const notificationLoading = ref(false)
 const rulesLoading = ref(false)
+const rulesNotice = ref('')
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
 const resolvingId = ref<number | null>(null)
@@ -371,6 +381,7 @@ const notificationChannels = computed(() => [
  */
 const loadAlertRules = async () => {
     rulesLoading.value = true
+    rulesNotice.value = ''
 
     try {
         const res = await getAlertRules()
@@ -385,7 +396,12 @@ const loadAlertRules = async () => {
             ]),
         )
         alertRules.value = res.data.data.items
+
+        if (alertRules.value.length === 0) {
+            rulesNotice.value = '暂无告警规则；执行迁移后刷新规则或触发一次告警评估会同步默认规则。'
+        }
     } catch {
+        rulesNotice.value = '告警规则加载失败，请检查登录状态、权限或接口状态后重试。'
         ElMessage.error('告警规则加载失败')
     } finally {
         rulesLoading.value = false
@@ -538,6 +554,7 @@ const handleSaveRule = async (rule: AlertRule) => {
             is_active: rule.is_active,
         })
         replaceRule(res.data.data)
+        await Promise.all([loadAlertRules(), loadSummary()])
         ElMessage.success('告警规则已保存')
     } catch {
         ElMessage.error('告警规则保存失败，请检查阈值范围')
@@ -555,6 +572,7 @@ const handleToggleRule = async (rule: AlertRule, isActive: boolean) => {
     try {
         const res = await toggleAlertRule(rule.key, isActive)
         replaceRule(res.data.data)
+        await Promise.all([loadAlertRules(), loadSummary()])
         ElMessage.success(isActive ? '告警规则已启用' : '告警规则已禁用')
     } catch {
         rule.is_active = !isActive
@@ -775,6 +793,10 @@ onBeforeUnmount(stopRealtime)
     font-size: 12px;
     line-height: 1.6;
     margin-top: 8px;
+}
+
+.rule-notice {
+    margin-bottom: 12px;
 }
 
 .summary-card {

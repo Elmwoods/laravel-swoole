@@ -12,11 +12,15 @@ use App\Models\OpsAlertRule;
  */
 class AlertRuleEngineService
 {
+    public function __construct(private readonly AlertRuleRegistryService $registry) {}
+
     /**
      * 根据系统快照生成告警 DTO。
      */
     public function detect(array $snapshot): array
     {
+        $this->registry->syncDefaults();
+
         return array_values(array_filter([
             ...$this->diskAlerts((array) ($snapshot['disk'] ?? [])),
             ...$this->queueAlerts((array) ($snapshot['queue'] ?? [])),

@@ -111,8 +111,9 @@ class AlertRuleRegistryService
                 ]);
 
                 if (! $rule->exists) {
-                    $rule->warning_threshold = $definition['warning_threshold'];
-                    $rule->critical_threshold = $definition['critical_threshold'];
+                    $thresholds = $this->initialThresholds($key, $definition);
+                    $rule->warning_threshold = $thresholds['warning_threshold'];
+                    $rule->critical_threshold = $thresholds['critical_threshold'];
                     $rule->is_active = true;
                 }
 
@@ -153,5 +154,31 @@ class AlertRuleRegistryService
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
+    }
+
+    private function initialThresholds(string $key, array $definition): array
+    {
+        return match ($key) {
+            'disk_usage' => [
+                'warning_threshold' => (float) config('ops.alerts.thresholds.disk_usage_warning', $definition['warning_threshold']),
+                'critical_threshold' => (float) config('ops.alerts.thresholds.disk_usage_critical', $definition['critical_threshold']),
+            ],
+            'queue_pending' => [
+                'warning_threshold' => (float) config('ops.alerts.thresholds.queue_pending_warning', $definition['warning_threshold']),
+                'critical_threshold' => null,
+            ],
+            'failed_jobs' => [
+                'warning_threshold' => (float) config('ops.alerts.thresholds.failed_jobs_warning', $definition['warning_threshold']),
+                'critical_threshold' => null,
+            ],
+            'network_mbps' => [
+                'warning_threshold' => (float) config('ops.alerts.thresholds.network_mbps_warning', $definition['warning_threshold']),
+                'critical_threshold' => null,
+            ],
+            default => [
+                'warning_threshold' => $definition['warning_threshold'],
+                'critical_threshold' => $definition['critical_threshold'],
+            ],
+        };
     }
 }

@@ -156,9 +156,9 @@ Route::prefix('/ops')
                 Route::get('/notification-status', [AlertController::class, 'notificationStatus']);
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
-                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,rule_update']);
+                    ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
                 Route::post('/rules/{adminRule}/toggle', [AlertRuleController::class, 'toggle'])
-                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,rule_toggle']);
+                    ->middleware(['admin.audit:ops.alerts,rule_toggle', 'admin.permission:ops.alerts.manage']);
                 Route::post('/evaluate', [AlertController::class, 'evaluate'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,evaluate']);
                 Route::post('/test-notification', [AlertController::class, 'testNotification'])

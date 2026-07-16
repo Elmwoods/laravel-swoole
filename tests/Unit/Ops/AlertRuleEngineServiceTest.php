@@ -96,6 +96,50 @@ class AlertRuleEngineServiceTest extends TestCase
         ]);
     }
 
+    public function test_default_sync_preserves_user_thresholds_and_disabled_state(): void
+    {
+        $registry = app(AlertRuleRegistryService::class);
+
+        $registry->syncDefaults();
+
+        OpsAlertRule::query()
+            ->where('key', 'disk_usage')
+            ->firstOrFail()
+            ->forceFill([
+                'warning_threshold' => 70,
+                'critical_threshold' => 90,
+                'is_active' => false,
+            ])
+            ->save();
+
+        $registry->syncDefaults();
+
+        $this->assertDatabaseHas('ops_alert_rules', [
+            'key' => 'disk_usage',
+            'warning_threshold' => 70,
+            'critical_threshold' => 90,
+            'is_active' => false,
+        ]);
+    }
+
+    public function test_detect_syncs_default_rules_before_evaluation(): void
+    {
+        $this->assertSame(0, OpsAlertRule::query()->count());
+
+        app(AlertRuleEngineService::class)->detect([
+            'disk' => ['disks' => []],
+            'queue' => ['queues' => [], 'failed_jobs' => ['count' => 0]],
+            'docker' => ['unhealthy' => 0, 'exited' => 0],
+            'network' => ['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]],
+        ]);
+
+        $this->assertSame(6, OpsAlertRule::query()->count());
+        $this->assertDatabaseHas('ops_alert_rules', [
+            'key' => 'disk_usage',
+            'is_active' => true,
+        ]);
+    }
+
     public function test_database_rules_override_config_defaults(): void
     {
         config()->set('ops.alerts.thresholds.disk_usage_warning', 90);

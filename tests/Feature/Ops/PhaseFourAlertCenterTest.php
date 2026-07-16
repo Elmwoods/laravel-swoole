@@ -388,6 +388,44 @@ class PhaseFourAlertCenterTest extends TestCase
         ])->assertStatus(403);
     }
 
+    public function test_evaluate_syncs_default_alert_rules_before_running_engine(): void
+    {
+        $this->assertSame(0, OpsAlertRule::query()->count());
+
+        $this->mock(DiskService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['disks' => []]);
+        });
+        $this->mock(QueueMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['queues' => [], 'failed_jobs' => ['count' => 0]]);
+        });
+        $this->mock(DockerService::class, function ($mock): void {
+            $mock->shouldReceive('summary')
+                ->once()
+                ->andReturn(['unhealthy' => 0, 'exited' => 0]);
+        });
+        $this->mock(NetworkTrafficService::class, function ($mock): void {
+            $mock->shouldReceive('getSpeed')
+                ->once()
+                ->andReturn(['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]]);
+        });
+
+        $this->postJson('/api/ops/alerts/evaluate')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.detected', 0);
+
+        $this->assertSame(6, OpsAlertRule::query()->count());
+        $this->assertDatabaseHas('ops_alert_rules', [
+            'key' => 'disk_usage',
+            'source' => 'disk',
+            'is_active' => true,
+        ]);
+    }
+
     public function test_alert_rules_can_be_listed_and_updated(): void
     {
         $this->getJson('/api/ops/alerts/rules')
@@ -493,6 +531,35 @@ class PhaseFourAlertCenterTest extends TestCase
         $this->assertSame('disk_usage', $payload['adminRule']);
         $this->assertArrayNotHasKey('password', $payload);
         $this->assertStringNotContainsString('secret', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_alert_rule_toggle_success_and_failures_are_audited_with_real_status_codes(): void
+    {
+        $this->postJson('/api/ops/alerts/rules/disk_usage/toggle', [
+            'is_active' => false,
+        ])->assertOk();
+
+        $this->postJson('/api/ops/alerts/rules/disk_usage/toggle', [])
+            ->assertStatus(422);
+
+        $this->postJson('/api/ops/alerts/rules/not_allowed/toggle', [
+            'is_active' => false,
+        ])->assertStatus(404);
+
+        $this->actingAsAdminWithPermissions(['ops.alerts.view']);
+
+        $this->postJson('/api/ops/alerts/rules/disk_usage/toggle', [
+            'is_active' => true,
+        ])->assertStatus(403);
+
+        foreach ([200 => 'success', 422 => 'failure', 404 => 'failure', 403 => 'failure'] as $statusCode => $result) {
+            $this->assertDatabaseHas('admin_audit_logs', [
+                'module' => 'ops.alerts',
+                'action' => 'rule_toggle',
+                'result' => $result,
+                'status_code' => $statusCode,
+            ]);
+        }
     }
 
     public function test_database_alert_rules_are_used_by_evaluation_and_can_be_disabled(): void
