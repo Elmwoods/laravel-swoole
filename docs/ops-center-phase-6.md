@@ -40,6 +40,10 @@
 
 ## 验收命令
 
+发布验收步骤和接口验证清单见：
+
+- `/Users/ggbond/PHPProjects/swoole/docs/ops-center-phase-6-release.md`
+
 命令需要顺序执行，避免多个 PHPUnit 进程同时刷新同一个 `testing` 数据库。
 
 ```bash
