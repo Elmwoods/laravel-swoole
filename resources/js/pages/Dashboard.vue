@@ -103,7 +103,7 @@ import {
     Switch,
     Warning,
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import SystemCard from '@/components/SystemCard.vue'
 import SystemChart from '@/components/SystemChart.vue'
 import AdvancedSystemChart from '@/components/AdvancedSystemChart.vue'
@@ -275,13 +275,39 @@ const fetch = async () => {
 }
 
 /**
+ * 高风险控制确认。
+ */
+const askConfirm = async (action: string) => {
+    try {
+        const { value } = await ElMessageBox.prompt(
+            `请输入 CONFIRM 确认${action}`,
+            '高风险操作确认',
+            {
+                confirmButtonText: '确认执行',
+                cancelButtonText: '取消',
+                inputPattern: /^CONFIRM$/,
+                inputErrorMessage: '确认短语必须为 CONFIRM',
+                type: 'warning',
+            },
+        )
+
+        return value
+    } catch {
+        return null
+    }
+}
+
+/**
  * 平滑重载 Octane Worker。
  */
 const reload = async () => {
+    const confirmText = await askConfirm('Reload Octane')
+    if (!confirmText) return
+
     actionLoading.value = true
 
     try {
-        await reloadOctane()
+        await reloadOctane(confirmText)
         ElMessage.success('Octane Reload 已发送')
         await fetch()
     } finally {

@@ -17,6 +17,9 @@
                         <el-button :icon="Refresh" :loading="loading" @click="loadLogs">
                             刷新
                         </el-button>
+                        <el-button :loading="downloading" :disabled="loading" @click="downloadLogs">
+                            导出
+                        </el-button>
                     </el-space>
                 </div>
             </template>
@@ -274,6 +277,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import {
+    downloadDockerLogs,
+    downloadLaravelLogs,
+    downloadOctaneLogs,
+    downloadRedisSlowLogs,
+    downloadSystemLogs,
     getLaravelLogs,
     getOctaneLogs,
     getRedisSlowLogs,
@@ -290,6 +298,7 @@ type LogTab = 'laravel' | 'octane' | 'redis' | 'system' | 'docker'
 
 const active = ref<LogTab>('laravel')
 const loading = ref(false)
+const downloading = ref(false)
 const autoRefresh = ref(true)
 const keyword = ref('')
 const lines = ref(200)
@@ -512,6 +521,33 @@ const handlePageSizeChange = async () => {
  */
 const timelineWidth = (total: number) => `${Math.max(8, (total / maxTimelineTotal.value) * 100)}%`
 
+const currentQuery = () => {
+    const [from, to] = timeRange.value
+
+    return {
+        lines: lines.value,
+        tail: lines.value,
+        page: page.value,
+        per_page: perPage.value,
+        keyword: keyword.value,
+        level: selectedLevel.value,
+        from,
+        to,
+        source: systemSource.value,
+        container: dockerContainer.value,
+    }
+}
+
+const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+}
+
 /**
  * 加载系统日志来源白名单。
  */
@@ -532,19 +568,7 @@ const loadLogs = async () => {
     notice.value = ''
 
     try {
-        const [from, to] = timeRange.value
-        const query = {
-            lines: lines.value,
-            tail: lines.value,
-            page: page.value,
-            per_page: perPage.value,
-            keyword: keyword.value,
-            level: selectedLevel.value,
-            from,
-            to,
-            source: systemSource.value,
-            container: dockerContainer.value,
-        }
+        const query = currentQuery()
 
         if (active.value === 'laravel') {
             const res = await getLaravelLogs(query)
@@ -595,6 +619,37 @@ const loadLogs = async () => {
         ElMessage.error('日志加载失败')
     } finally {
         loading.value = false
+    }
+}
+
+const downloadLogs = async () => {
+    if (active.value === 'docker' && !dockerContainer.value.trim()) {
+        ElMessage.warning('请输入 Docker 容器名称或 ID')
+        return
+    }
+
+    downloading.value = true
+
+    try {
+        const query = currentQuery()
+        let response
+
+        if (active.value === 'laravel') {
+            response = await downloadLaravelLogs(query)
+        } else if (active.value === 'octane') {
+            response = await downloadOctaneLogs(query)
+        } else if (active.value === 'system') {
+            response = await downloadSystemLogs(query)
+        } else if (active.value === 'docker') {
+            response = await downloadDockerLogs(query)
+        } else {
+            response = await downloadRedisSlowLogs(query)
+        }
+
+        saveBlob(response.data, `ops-logs-${active.value}.csv`)
+        ElMessage.success('日志导出已开始')
+    } finally {
+        downloading.value = false
     }
 }
 

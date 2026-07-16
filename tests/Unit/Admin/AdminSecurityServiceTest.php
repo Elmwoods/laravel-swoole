@@ -6,10 +6,12 @@ use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminCsvExportService;
 use App\Services\Admin\AdminAuditPruneService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminSessionSecurityService;
+use App\Services\Ops\OpsConfirmService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
@@ -106,6 +108,27 @@ class AdminSecurityServiceTest extends TestCase
         $this->assertStringEndsWith('...', $payload['message']);
         $this->assertLessThanOrEqual(503, mb_strlen($payload['nested']['description']));
         $this->assertSame('[FILTERED]', $payload['nested']['api_key_preview']);
+    }
+
+    public function test_csv_export_escapes_formula_injection_prefixes(): void
+    {
+        $service = app(AdminCsvExportService::class);
+
+        $this->assertSame("'=SUM(A1:A2)", $service->escapeCell('=SUM(A1:A2)'));
+        $this->assertSame("'+payload", $service->escapeCell('+payload'));
+        $this->assertSame("'-payload", $service->escapeCell('-payload'));
+        $this->assertSame("'@payload", $service->escapeCell('@payload'));
+        $this->assertSame('safe payload', $service->escapeCell('safe payload'));
+    }
+
+    public function test_ops_confirm_service_accepts_only_fixed_phrase(): void
+    {
+        $service = app(OpsConfirmService::class);
+
+        $this->assertTrue($service->isConfirmed('CONFIRM'));
+        $this->assertFalse($service->isConfirmed('confirm'));
+        $this->assertFalse($service->isConfirmed(' CONFIRM '));
+        $this->assertFalse($service->isConfirmed(null));
     }
 
     public function test_password_crypto_decrypts_ciphertext_and_rejects_wrong_key(): void

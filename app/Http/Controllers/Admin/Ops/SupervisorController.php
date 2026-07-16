@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Ops\SupervisorControlRequest;
 use App\Http\Requests\Admin\Ops\SupervisorProcessRequest;
 use App\Services\Ops\SupervisorService;
 use App\Traits\ApiResponse;
@@ -32,7 +33,7 @@ class SupervisorController extends Controller
     }
 
     public function stop(
-        SupervisorProcessRequest $request,
+        SupervisorControlRequest $request,
         SupervisorService $service,
     ): JsonResponse
     {
@@ -42,7 +43,7 @@ class SupervisorController extends Controller
     }
 
     public function restart(
-        SupervisorProcessRequest $request,
+        SupervisorControlRequest $request,
         SupervisorService $service,
     ): JsonResponse
     {

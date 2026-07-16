@@ -123,7 +123,7 @@
 <script setup lang="ts">
 
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Refresh, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import {
     getSupervisorLogs,
@@ -167,9 +167,32 @@ const start = async (row: SupervisorService) => {
     load()
 }
 
+const askConfirm = async (action: string) => {
+    try {
+        const { value } = await ElMessageBox.prompt(
+            `请输入 CONFIRM 确认${action}`,
+            '高风险操作确认',
+            {
+                confirmButtonText: '确认执行',
+                cancelButtonText: '取消',
+                inputPattern: /^CONFIRM$/,
+                inputErrorMessage: '确认短语必须为 CONFIRM',
+                type: 'warning',
+            },
+        )
+
+        return value
+    } catch {
+        return null
+    }
+}
+
 const stop = async (row: SupervisorService) => {
 
-    await stopSupervisor(row.name)
+    const confirmText = await askConfirm(`停止 ${row.name}`)
+    if (!confirmText) return
+
+    await stopSupervisor(row.name, confirmText)
 
     ElMessage.success('Stopped')
 
@@ -178,7 +201,10 @@ const stop = async (row: SupervisorService) => {
 
 const restart = async (row: SupervisorService) => {
 
-    await restartSupervisor(row.name)
+    const confirmText = await askConfirm(`重启 ${row.name}`)
+    if (!confirmText) return
+
+    await restartSupervisor(row.name, confirmText)
 
     ElMessage.success('Restarted')
 

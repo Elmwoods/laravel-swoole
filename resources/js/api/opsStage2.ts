@@ -94,14 +94,18 @@ export const getDockerStats = (id: string) =>
 export const getDockerLogs = (id: string) =>
     request.get<ApiResponse<string>>(`/api/ops/docker/logs/${encodeURIComponent(id)}`)
 
-export const restartDockerContainer = (id: string) =>
-    request.post<ApiResponse<unknown>>(`/api/ops/docker/restart/${encodeURIComponent(id)}`)
+export const restartDockerContainer = (id: string, confirmText: string) =>
+    request.post<ApiResponse<unknown>>(`/api/ops/docker/restart/${encodeURIComponent(id)}`, {
+        confirm_text: confirmText,
+    })
 
 export const startDockerContainer = (id: string) =>
     request.post<ApiResponse<unknown>>(`/api/ops/docker/start/${encodeURIComponent(id)}`)
 
-export const stopDockerContainer = (id: string) =>
-    request.post<ApiResponse<unknown>>(`/api/ops/docker/stop/${encodeURIComponent(id)}`)
+export const stopDockerContainer = (id: string, confirmText: string) =>
+    request.post<ApiResponse<unknown>>(`/api/ops/docker/stop/${encodeURIComponent(id)}`, {
+        confirm_text: confirmText,
+    })
 
 export const getNetworkSummary = () =>
     request.get<ApiResponse<NetworkSummary>>('/api/ops/network')

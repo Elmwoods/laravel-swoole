@@ -4,6 +4,7 @@
             <el-form-item label="操作者ID"><el-input-number v-model="filters.admin_user_id" :min="1" controls-position="right" /></el-form-item>
             <el-form-item label="模块"><el-input v-model="filters.module" clearable /></el-form-item>
             <el-form-item label="动作"><el-input v-model="filters.action" clearable /></el-form-item>
+            <el-form-item label="状态码"><el-input-number v-model="filters.status_code" :min="100" :max="599" controls-position="right" /></el-form-item>
             <el-form-item label="结果">
                 <el-select v-model="filters.result" clearable>
                     <el-option label="成功" value="success" />
@@ -23,6 +24,7 @@
             <el-form-item>
                 <el-button :loading="loading" type="primary" @click="search">查询</el-button>
                 <el-button :disabled="loading" @click="reset">重置</el-button>
+                <el-button :loading="exporting" :disabled="loading" @click="exportLogs">导出 CSV</el-button>
             </el-form-item>
         </el-form>
 
@@ -66,14 +68,17 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { getAdminAuditLogs, type AdminAuditLog } from '@/api/adminSecurity'
+import { ElMessage } from 'element-plus'
+import { exportAdminAuditLogs, getAdminAuditLogs, type AdminAuditLog } from '@/api/adminSecurity'
 
 const logs = ref<AdminAuditLog[]>([])
 const loading = ref(false)
+const exporting = ref(false)
 const filters = reactive({
     admin_user_id: undefined as number | undefined,
     module: '',
     action: '',
+    status_code: undefined as number | undefined,
     result: '',
     range: [] as string[],
 })
@@ -106,6 +111,7 @@ const auditLogParams = () => {
     if (filters.admin_user_id) params.admin_user_id = filters.admin_user_id
     if (filters.module) params.module = filters.module
     if (filters.action) params.action = filters.action
+    if (filters.status_code) params.status_code = filters.status_code
     if (filters.result) params.result = filters.result
     if (filters.range?.[0]) params.from = filters.range[0]
     if (filters.range?.[1]) params.to = filters.range[1]
@@ -123,6 +129,7 @@ const reset = async () => {
         admin_user_id: undefined,
         module: '',
         action: '',
+        status_code: undefined,
         result: '',
         range: [],
     })
@@ -134,6 +141,32 @@ const changePageSize = async (size: number) => {
     pagination.per_page = size
     pagination.current_page = 1
     await load()
+}
+
+const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+}
+
+const exportLogs = async () => {
+    exporting.value = true
+
+    try {
+        const params = auditLogParams()
+        delete params.page
+        delete params.per_page
+
+        const res = await exportAdminAuditLogs(params)
+        saveBlob(res.data, 'admin-audit-logs.csv')
+        ElMessage.success('审计日志导出已开始')
+    } finally {
+        exporting.value = false
+    }
 }
 
 onMounted(load)

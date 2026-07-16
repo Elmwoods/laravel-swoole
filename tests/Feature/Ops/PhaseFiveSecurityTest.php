@@ -9,6 +9,8 @@ use App\Models\AdminUser;
 use App\Models\OpsAlert;
 use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminPasswordCryptoService;
+use App\Services\Ops\Docker\DockerService;
+use App\Services\Ops\OctaneControlService;
 use App\Services\Ops\SupervisorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -33,7 +35,8 @@ class PhaseFiveSecurityTest extends TestCase
     {
         $admin = $this->createAdmin(['ops.dashboard.view']);
 
-        $this->postJson('/api/admin/auth/login', array_merge([
+        $this->withHeader('User-Agent', 'Ops Browser/1.0 token=should-not-appear')
+            ->postJson('/api/admin/auth/login', array_merge([
             'email' => $admin->email,
         ], $this->encryptedPasswordPayload('secret-password')))
             ->assertOk()
@@ -43,7 +46,18 @@ class PhaseFiveSecurityTest extends TestCase
 
         $this->getJson('/api/admin/auth/me')
             ->assertOk()
-            ->assertJsonPath('data.admin.email', $admin->email);
+            ->assertJsonPath('data.admin.email', $admin->email)
+            ->assertJsonPath('data.security.last_login_ip', '127.0.0.1')
+            ->assertJsonPath('data.security.session_version', 1)
+            ->assertJsonMissingPath('data.security.cookie')
+            ->assertJsonMissingPath('data.security.token')
+            ->assertJsonMissingPath('data.security.password_encrypted');
+
+        $this->assertSame('127.0.0.1', $admin->refresh()->last_login_ip);
+        $this->assertStringContainsString('Ops Browser/1.0', (string) $admin->last_login_user_agent);
+        $securityJson = json_encode($this->getJson('/api/admin/auth/me')->json('data.security'), JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('password', $securityJson);
+        $this->assertStringNotContainsString('token=should-not-appear', $securityJson);
 
         $this->postJson('/api/admin/auth/logout')
             ->assertOk();
@@ -631,6 +645,76 @@ class PhaseFiveSecurityTest extends TestCase
             ->assertJsonPath('data.pagination.total', 1);
     }
 
+    public function test_audit_log_export_requires_login_and_permission(): void
+    {
+        $this->getJson('/api/admin/audit-logs/export')
+            ->assertStatus(401);
+
+        $admin = $this->createAdmin([]);
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/api/admin/audit-logs/export')
+            ->assertStatus(403);
+    }
+
+    public function test_audit_log_export_filters_and_sanitizes_csv_fields(): void
+    {
+        $viewer = $this->createAdmin(['admin.audit.view']);
+        $matched = $this->createAuditLog([
+            'admin_user_id' => $viewer->id,
+            'admin_email' => '=admin@example.com',
+            'module' => 'admin.users',
+            'action' => 'reset_password',
+            'result' => 'success',
+            'status_code' => 200,
+            'target_type' => 'admin_user',
+            'target_id' => '+42',
+            'payload' => [
+                'email' => 'target@example.com',
+                'password' => 'plain-secret',
+                'token' => 'unsafe-token',
+                'nested' => ['cookie' => 'unsafe-cookie'],
+            ],
+            'ip_address' => '127.0.0.1',
+        ], now()->subMinutes(10));
+        $this->createAuditLog([
+            'module' => 'ops.logs',
+            'action' => 'download',
+            'result' => 'failure',
+            'status_code' => 422,
+        ], now()->subMinutes(5));
+
+        $response = $this->actingAs($viewer, 'admin')
+            ->get('/api/admin/audit-logs/export?'.http_build_query([
+                'module' => 'admin.users',
+                'action' => 'reset_password',
+                'result' => 'success',
+                'status_code' => 200,
+            ]));
+
+        $response->assertOk()
+            ->assertHeader('content-disposition');
+
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString('id,admin_user_id,admin_email,module,action,result,status_code,target,ip_address,created_at,payload_summary', $content);
+        $this->assertStringContainsString((string) $matched->id, $content);
+        $this->assertStringContainsString("'=admin@example.com", $content);
+        $this->assertStringContainsString("admin_user:'+42", $content);
+        $this->assertStringContainsString('[FILTERED]', $content);
+        $this->assertStringNotContainsString('plain-secret', $content);
+        $this->assertStringNotContainsString('unsafe-token', $content);
+        $this->assertStringNotContainsString('unsafe-cookie', $content);
+
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'admin_user_id' => $viewer->id,
+            'module' => 'admin.audit',
+            'action' => 'export',
+            'result' => 'success',
+            'status_code' => 200,
+        ]);
+    }
+
     public function test_audit_prune_dry_run_reports_count_without_deleting_logs(): void
     {
         $oldLog = $this->createAuditLog(['module' => 'admin.users'], now()->subDays(200));
@@ -689,6 +773,67 @@ class PhaseFiveSecurityTest extends TestCase
             ])
             ->assertStatus(403)
             ->assertJsonPath('message', '只有超级管理员可以重置密码。');
+    }
+
+    public function test_docker_stop_requires_confirm_text_and_does_not_call_service_when_missing(): void
+    {
+        $admin = $this->createAdmin(['ops.docker.control']);
+
+        $this->mock(DockerService::class, function ($mock): void {
+            $mock->shouldNotReceive('stop');
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/ops/docker/stop/container-id')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('confirm_text');
+
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'admin_user_id' => $admin->id,
+            'module' => 'ops.docker',
+            'action' => 'stop',
+            'result' => 'failure',
+            'status_code' => 422,
+        ]);
+    }
+
+    public function test_docker_restart_accepts_confirm_text_and_calls_service(): void
+    {
+        $admin = $this->createAdmin(['ops.docker.control']);
+
+        $this->mock(DockerService::class, function ($mock): void {
+            $mock->shouldReceive('restart')
+                ->once()
+                ->with('container-id')
+                ->andReturn(['status' => 'restarted']);
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/ops/docker/restart/container-id', ['confirm_text' => 'CONFIRM'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'restarted');
+    }
+
+    public function test_supervisor_and_octane_high_risk_actions_require_confirm_text(): void
+    {
+        $admin = $this->createAdmin(['ops.supervisor.control', 'ops.system.view']);
+
+        $this->mock(SupervisorService::class, function ($mock): void {
+            $mock->shouldNotReceive('stop');
+        });
+        $this->mock(OctaneControlService::class, function ($mock): void {
+            $mock->shouldNotReceive('reload');
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/ops/supervisor/stop/octane')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('confirm_text');
+
+        $this->actingAs($admin, 'admin')
+            ->postJson('/api/ops/octane/reload', ['confirm_text' => 'WRONG'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('confirm_text');
     }
 
     private function createAdmin(array $permissions, array $overrides = []): AdminUser

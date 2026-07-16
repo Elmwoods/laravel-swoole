@@ -117,7 +117,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
     DataLine,
     Document,
@@ -317,8 +317,31 @@ const showLogs = (row: DockerContainer) => {
     logDialog.value.open(row.full_id)
 }
 
+const askConfirm = async (action: string) => {
+    try {
+        const { value } = await ElMessageBox.prompt(
+            `请输入 CONFIRM 确认${action}`,
+            '高风险操作确认',
+            {
+                confirmButtonText: '确认执行',
+                cancelButtonText: '取消',
+                inputPattern: /^CONFIRM$/,
+                inputErrorMessage: '确认短语必须为 CONFIRM',
+                type: 'warning',
+            },
+        )
+
+        return value
+    } catch {
+        return null
+    }
+}
+
 const restart = async (row: DockerContainer) => {
-    await restartDockerContainer(row.full_id)
+    const confirmText = await askConfirm(`重启容器 ${row.name}`)
+    if (!confirmText) return
+
+    await restartDockerContainer(row.full_id, confirmText)
     ElMessage.success('容器重启指令已发送')
     await loadContainers()
 }
@@ -330,7 +353,10 @@ const start = async (row: DockerContainer) => {
 }
 
 const stop = async (row: DockerContainer) => {
-    await stopDockerContainer(row.full_id)
+    const confirmText = await askConfirm(`停止容器 ${row.name}`)
+    if (!confirmText) return
+
+    await stopDockerContainer(row.full_id, confirmText)
     ElMessage.success('容器停止指令已发送')
     await loadContainers()
 }

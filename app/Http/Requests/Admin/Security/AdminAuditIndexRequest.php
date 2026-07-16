@@ -19,6 +19,7 @@ class AdminAuditIndexRequest extends FormRequest
             'module' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9_.-]+$/'],
             'action' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9_.-]+$/'],
             'result' => ['nullable', Rule::in(['success', 'failure'])],
+            'status_code' => ['nullable', 'integer', 'min:100', 'max:599'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
             'page' => ['nullable', 'integer', 'min:1'],

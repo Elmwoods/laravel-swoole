@@ -23,6 +23,7 @@ class AdminUser extends Authenticatable
         'is_active',
         'last_login_at',
         'last_login_ip',
+        'last_login_user_agent',
     ];
 
     protected function casts(): array

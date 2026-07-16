@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\LogQueryRequest;
 use App\Services\Ops\Log\DockerLogService;
 use App\Services\Ops\Log\LaravelLogService;
+use App\Services\Ops\Log\LogDownloadService;
 use App\Services\Ops\Log\OctaneLogService;
 use App\Services\Ops\Log\RedisLogService;
 use App\Services\Ops\Log\SystemLogService;
 use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
@@ -26,6 +28,15 @@ class LogController extends Controller
         );
     }
 
+    public function downloadLaravel(
+        LogQueryRequest $request,
+        LaravelLogService $service,
+        LogDownloadService $download,
+    ): StreamedResponse
+    {
+        return $download->download($service->latest($request->dto()), 'laravel');
+    }
+
     /**
      * Octane / Swoole 日志。
      */
@@ -39,6 +50,15 @@ class LogController extends Controller
         );
     }
 
+    public function downloadOctane(
+        LogQueryRequest $request,
+        OctaneLogService $service,
+        LogDownloadService $download,
+    ): StreamedResponse
+    {
+        return $download->download($service->latest($request->dto()), 'octane');
+    }
+
     /**
      * Redis 慢日志。
      */
@@ -50,6 +70,15 @@ class LogController extends Controller
         return $this->success(
             $service->slowLogs($request->dto())
         );
+    }
+
+    public function downloadRedis(
+        LogQueryRequest $request,
+        RedisLogService $service,
+        LogDownloadService $download,
+    ): StreamedResponse
+    {
+        return $download->download($service->slowLogs($request->dto()), 'redis');
     }
 
     /**
@@ -70,6 +99,20 @@ class LogController extends Controller
         );
     }
 
+    public function downloadDocker(
+        LogQueryRequest $request,
+        DockerLogService $service,
+        LogDownloadService $download,
+    ): StreamedResponse
+    {
+        $dto = $request->dto();
+
+        return $download->download(
+            $service->latest(container: $dto->container ?? '', query: $dto),
+            'docker',
+        );
+    }
+
     /**
      * 系统日志。
      */
@@ -81,6 +124,15 @@ class LogController extends Controller
         return $this->success(
             $service->latest($request->dto())
         );
+    }
+
+    public function downloadSystem(
+        LogQueryRequest $request,
+        SystemLogService $service,
+        LogDownloadService $download,
+    ): StreamedResponse
+    {
+        return $download->download($service->latest($request->dto()), 'system');
     }
 
     /**

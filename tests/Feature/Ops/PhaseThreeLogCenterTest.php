@@ -258,4 +258,95 @@ class PhaseThreeLogCenterTest extends TestCase
         $this->assertArrayNotHasKey('lines', $payload);
         $this->assertStringNotContainsString('sensitive log body', json_encode($payload, JSON_THROW_ON_ERROR));
     }
+
+    public function test_unauthenticated_log_download_is_rejected(): void
+    {
+        auth('admin')->logout();
+
+        $this->getJson('/api/ops/logs/laravel/download?tail=50')
+            ->assertStatus(401);
+    }
+
+    public function test_log_download_requires_log_view_permission(): void
+    {
+        $this->actingAsAdminWithPermissions([]);
+
+        $this->getJson('/api/ops/logs/laravel/download?tail=50')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 403);
+    }
+
+    public function test_laravel_log_download_returns_attachment_and_audits_without_body(): void
+    {
+        $this->mock(LaravelLogService::class, function ($mock): void {
+            $mock->shouldReceive('latest')
+                ->once()
+                ->andReturn([
+                    'source' => 'laravel',
+                    'path' => storage_path('logs/laravel.log'),
+                    'exists' => true,
+                    'readable' => true,
+                    'lines' => ['2026-07-16 local.ERROR sensitive download body'],
+                    'entries' => [
+                        [
+                            'time' => '2026-07-16 10:00:00',
+                            'level' => 'ERROR',
+                            'summary' => '=formula payload',
+                            'content' => '2026-07-16 local.ERROR sensitive download body',
+                            'lines' => ['2026-07-16 local.ERROR sensitive download body'],
+                        ],
+                    ],
+                    'count' => 1,
+                    'entry_count' => 1,
+                    'checked_at' => now()->toDateTimeString(),
+                ]);
+        });
+
+        $response = $this->get('/api/ops/logs/laravel/download?keyword=error&tail=50');
+
+        $response->assertOk()
+            ->assertHeader('content-disposition');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('source,time,level,summary,content', $content);
+        $this->assertStringContainsString("'=formula payload", $content);
+        $this->assertStringContainsString('sensitive download body', $content);
+
+        $log = AdminAuditLog::query()
+            ->where('module', 'ops.logs')
+            ->where('action', 'download')
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame('success', $log->result);
+        $this->assertSame(200, $log->status_code);
+        $this->assertSame('error', $log->payload['keyword']);
+        $this->assertArrayNotHasKey('lines', $log->payload);
+        $this->assertStringNotContainsString('sensitive download body', json_encode($log->payload, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_system_log_download_rejects_invalid_source_and_audits_real_status(): void
+    {
+        $this->getJson('/api/ops/logs/system/download?source=../../.env')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('source');
+
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'module' => 'ops.logs',
+            'action' => 'download',
+            'result' => 'failure',
+            'status_code' => 422,
+        ]);
+    }
+
+    public function test_docker_log_download_validates_container_and_tail_boundaries(): void
+    {
+        $this->getJson('/api/ops/logs/docker/download?container=../../docker.sock&tail=50')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('container');
+
+        $this->getJson('/api/ops/logs/docker/download?container=web&tail=1001')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('tail');
+    }
 }

@@ -80,6 +80,7 @@ class AdminAuthController extends Controller
         $admin->forceFill([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
+            'last_login_user_agent' => $this->userAgentSummary($request->userAgent()),
         ])->save();
 
         $this->audit->record($request, 'admin.auth', 'login', 'success', 200, admin: $admin);
@@ -127,6 +128,23 @@ class AdminAuthController extends Controller
                 ->values()
                 ->all(),
             'permissions' => $admin->permissionSlugs(),
+            'security' => [
+                'last_login_at' => optional($admin->last_login_at)->toDateTimeString(),
+                'last_login_ip' => $admin->last_login_ip,
+                'last_login_user_agent' => $admin->last_login_user_agent,
+                'current_ip' => request()->ip(),
+                'current_user_agent' => $this->userAgentSummary(request()->userAgent()),
+                'session_version' => (int) $admin->session_version,
+            ],
         ];
+    }
+
+    private function userAgentSummary(?string $userAgent): string
+    {
+        $summary = (string) $userAgent;
+        $summary = preg_replace('/(token|password|authorization|cookie)=([^;\s]+)/i', '$1=[FILTERED]', $summary) ?? $summary;
+        $summary = preg_replace('/[\r\n\t]+/', ' ', $summary) ?? $summary;
+
+        return Str::limit($summary, 180, '');
     }
 }

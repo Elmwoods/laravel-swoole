@@ -107,11 +107,15 @@ export interface SupervisorStatus {
 export const getOctaneStatus = () =>
     request.get<ApiResponse<OctaneStatus>>('/api/ops/octane/status')
 
-export const reloadOctane = () =>
-    request.post<ApiResponse<{ reloaded: boolean }>>('/api/ops/octane/reload')
+export const reloadOctane = (confirmText: string) =>
+    request.post<ApiResponse<{ reloaded: boolean }>>('/api/ops/octane/reload', {
+        confirm_text: confirmText,
+    })
 
-export const restartOctane = () =>
-    request.post<ApiResponse<{ restarted: boolean }>>('/api/ops/octane/restart')
+export const restartOctane = (confirmText: string) =>
+    request.post<ApiResponse<{ restarted: boolean }>>('/api/ops/octane/restart', {
+        confirm_text: confirmText,
+    })
 
 export const getRedisSummary = () =>
     request.get<ApiResponse<RedisSummary>>('/api/ops/redis/summary')
@@ -125,11 +129,15 @@ export const getSupervisorStatus = () =>
 export const startSupervisor = (name: string) =>
     request.post<ApiResponse<unknown>>(`/api/ops/supervisor/start/${encodeURIComponent(name)}`)
 
-export const stopSupervisor = (name: string) =>
-    request.post<ApiResponse<unknown>>(`/api/ops/supervisor/stop/${encodeURIComponent(name)}`)
+export const stopSupervisor = (name: string, confirmText: string) =>
+    request.post<ApiResponse<unknown>>(`/api/ops/supervisor/stop/${encodeURIComponent(name)}`, {
+        confirm_text: confirmText,
+    })
 
-export const restartSupervisor = (name: string) =>
-    request.post<ApiResponse<unknown>>(`/api/ops/supervisor/restart/${encodeURIComponent(name)}`)
+export const restartSupervisor = (name: string, confirmText: string) =>
+    request.post<ApiResponse<unknown>>(`/api/ops/supervisor/restart/${encodeURIComponent(name)}`, {
+        confirm_text: confirmText,
+    })
 
 export const getSupervisorLogs = (name: string) =>
     request.get<ApiResponse<{ service: string; logs: string }>>(

@@ -31,6 +31,16 @@ export interface AdminProfile {
     admin: AdminUser
     roles: AdminRole[]
     permissions: string[]
+    security: AdminSecuritySummary
+}
+
+export interface AdminSecuritySummary {
+    last_login_at: string | null
+    last_login_ip: string | null
+    last_login_user_agent: string | null
+    current_ip: string | null
+    current_user_agent: string
+    session_version: number
 }
 
 export interface AdminAuditLog {
@@ -220,3 +230,9 @@ export const updateAdminRole = (id: number, payload: any) =>
 
 export const getAdminAuditLogs = (params = {}) =>
     request.get<ApiResponse<{ items: AdminAuditLog[]; pagination: any }>>('/api/admin/audit-logs', { params })
+
+export const exportAdminAuditLogs = (params = {}) =>
+    request.get<Blob>('/api/admin/audit-logs/export', {
+        params,
+        responseType: 'blob',
+    })

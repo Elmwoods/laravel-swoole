@@ -54,6 +54,8 @@ Route::prefix('/admin')
                     ->middleware('admin.audit:admin.roles,update');
             });
 
+            Route::get('/audit-logs/export', [AdminAuditLogController::class, 'export'])
+                ->middleware(['admin.permission:admin.audit.view', 'admin.audit:admin.audit,export']);
             Route::get('/audit-logs', [AdminAuditLogController::class, 'index'])
                 ->middleware('admin.permission:admin.audit.view');
         });
@@ -182,16 +184,26 @@ Route::prefix('/ops')
             ->group(function (): void {
                 Route::get('/laravel', [LogController::class, 'laravel'])
                     ->middleware('admin.audit:ops.logs,laravel');
+                Route::get('/laravel/download', [LogController::class, 'downloadLaravel'])
+                    ->middleware('admin.audit:ops.logs,download');
                 Route::get('/octane', [LogController::class, 'octane'])
                     ->middleware('admin.audit:ops.logs,octane');
+                Route::get('/octane/download', [LogController::class, 'downloadOctane'])
+                    ->middleware('admin.audit:ops.logs,download');
                 Route::get('/redis', [LogController::class, 'redis'])
                     ->middleware('admin.audit:ops.logs,redis');
+                Route::get('/redis/download', [LogController::class, 'downloadRedis'])
+                    ->middleware('admin.audit:ops.logs,download');
                 Route::get('/system', [LogController::class, 'system'])
                     ->middleware('admin.audit:ops.logs,system');
+                Route::get('/system/download', [LogController::class, 'downloadSystem'])
+                    ->middleware('admin.audit:ops.logs,download');
                 Route::get('/system/sources', [LogController::class, 'systemSources'])
                     ->middleware('admin.audit:ops.logs,system_sources');
                 Route::get('/docker', [LogController::class, 'docker'])
                     ->middleware('admin.audit:ops.logs,docker');
+                Route::get('/docker/download', [LogController::class, 'downloadDocker'])
+                    ->middleware('admin.audit:ops.logs,download');
             });
 
         Route::get('/test-broadcast', function () {

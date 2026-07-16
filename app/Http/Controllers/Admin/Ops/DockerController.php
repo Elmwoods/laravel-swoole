@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\DockerContainerRequest;
+use App\Http\Requests\Admin\Ops\DockerControlRequest;
 use App\Services\Ops\Docker\DockerService;
 
 class DockerController extends Controller
@@ -49,14 +50,14 @@ class DockerController extends Controller
         );
     }
 
-    public function restart(DockerContainerRequest $request)
+    public function restart(DockerControlRequest $request)
     {
         return $this->success(
             $this->docker->restart($request->containerId())
         );
     }
 
-    public function stop(DockerContainerRequest $request)
+    public function stop(DockerControlRequest $request)
     {
         return $this->success(
             $this->docker->stop($request->containerId())

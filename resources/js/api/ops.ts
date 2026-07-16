@@ -13,17 +13,21 @@ export const getDashboard = () => {
 /**
  * Reload Octane Worker
  */
-export const reloadOctane = () => {
+export const reloadOctane = (confirmText: string) => {
 
-    return request.post('/api/ops/octane/reload')
+    return request.post('/api/ops/octane/reload', {
+        confirm_text: confirmText,
+    })
 
 }
 
 /**
  * Stop Octane
  */
-export const stopOctane = () => {
+export const stopOctane = (confirmText: string) => {
 
-    return request.post('/api/ops/octane/stop')
+    return request.post('/api/ops/octane/stop', {
+        confirm_text: confirmText,
+    })
 
 }

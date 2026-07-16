@@ -114,17 +114,47 @@ const params = (query: LogQuery) => ({
 export const getLaravelLogs = (query: LogQuery) =>
     request.get<ApiResponse<LogFileResult>>('/api/ops/logs/laravel', { params: params(query) })
 
+export const downloadLaravelLogs = (query: LogQuery) =>
+    request.get<Blob>('/api/ops/logs/laravel/download', {
+        params: params(query),
+        responseType: 'blob',
+    })
+
 export const getOctaneLogs = (query: LogQuery) =>
     request.get<ApiResponse<LogFileResult>>('/api/ops/logs/octane', { params: params(query) })
+
+export const downloadOctaneLogs = (query: LogQuery) =>
+    request.get<Blob>('/api/ops/logs/octane/download', {
+        params: params(query),
+        responseType: 'blob',
+    })
 
 export const getSystemLogs = (query: LogQuery) =>
     request.get<ApiResponse<LogFileResult>>('/api/ops/logs/system', { params: params(query) })
 
+export const downloadSystemLogs = (query: LogQuery) =>
+    request.get<Blob>('/api/ops/logs/system/download', {
+        params: params(query),
+        responseType: 'blob',
+    })
+
 export const getRedisSlowLogs = (query: LogQuery) =>
     request.get<ApiResponse<RedisSlowLogResult>>('/api/ops/logs/redis', { params: params(query) })
 
+export const downloadRedisSlowLogs = (query: LogQuery) =>
+    request.get<Blob>('/api/ops/logs/redis/download', {
+        params: params(query),
+        responseType: 'blob',
+    })
+
 export const getDockerLogs = (query: LogQuery) =>
     request.get<ApiResponse<LogFileResult>>('/api/ops/logs/docker', { params: params(query) })
+
+export const downloadDockerLogs = (query: LogQuery) =>
+    request.get<Blob>('/api/ops/logs/docker/download', {
+        params: params(query),
+        responseType: 'blob',
+    })
 
 export const getSystemLogSources = () =>
     request.get<ApiResponse<SystemLogSourcesResult>>('/api/ops/logs/system/sources')
