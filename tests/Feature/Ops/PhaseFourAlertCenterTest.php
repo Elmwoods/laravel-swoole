@@ -3,7 +3,9 @@
 namespace Tests\Feature\Ops;
 
 use App\DTO\Ops\AlertDTO;
+use App\Models\AdminAuditLog;
 use App\Models\OpsAlert;
+use App\Models\OpsAlertRule;
 use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\AlertNotificationService;
 use App\Services\Ops\AlertRuleEngineService;
@@ -359,5 +361,180 @@ class PhaseFourAlertCenterTest extends TestCase
             ->assertJsonPath('data.detected', 1);
 
         $this->assertSame(2, OpsAlert::query()->where('fingerprint', $dto->fingerprint())->value('hit_count'));
+    }
+
+    public function test_alert_rules_require_authentication_and_permissions(): void
+    {
+        auth('admin')->logout();
+
+        $this->getJson('/api/ops/alerts/rules')
+            ->assertStatus(401);
+
+        $this->actingAsAdminWithPermissions([]);
+
+        $this->getJson('/api/ops/alerts/rules')
+            ->assertStatus(403);
+
+        $this->actingAsAdminWithPermissions(['ops.alerts.view']);
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => 80,
+            'critical_threshold' => 95,
+            'is_active' => true,
+        ])->assertStatus(403);
+
+        $this->postJson('/api/ops/alerts/rules/disk_usage/toggle', [
+            'is_active' => false,
+        ])->assertStatus(403);
+    }
+
+    public function test_alert_rules_can_be_listed_and_updated(): void
+    {
+        $this->getJson('/api/ops/alerts/rules')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.items.0.key', 'disk_usage')
+            ->assertJsonPath('data.items.0.source', 'disk');
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => 70,
+            'critical_threshold' => 90,
+            'is_active' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.key', 'disk_usage')
+            ->assertJsonPath('data.warning_threshold', 70)
+            ->assertJsonPath('data.critical_threshold', 90);
+
+        $this->assertDatabaseHas('ops_alert_rules', [
+            'key' => 'disk_usage',
+            'warning_threshold' => 70,
+            'critical_threshold' => 90,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_alert_rule_validation_rejects_invalid_thresholds_and_unknown_rules(): void
+    {
+        $this->putJson('/api/ops/alerts/rules/not_allowed', [
+            'warning_threshold' => 70,
+            'critical_threshold' => 90,
+            'is_active' => true,
+        ])->assertStatus(404);
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => -1,
+            'critical_threshold' => 90,
+            'is_active' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('warning_threshold');
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => 80,
+            'critical_threshold' => 70,
+            'is_active' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('critical_threshold');
+
+        $this->putJson('/api/ops/alerts/rules/network_mbps', [
+            'warning_threshold' => 100001,
+            'critical_threshold' => null,
+            'is_active' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('warning_threshold');
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'operator' => '>',
+            'warning_threshold' => 80,
+            'critical_threshold' => 90,
+            'is_active' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('operator');
+    }
+
+    public function test_alert_rule_updates_and_failures_are_audited_without_sensitive_payload(): void
+    {
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => 75,
+            'critical_threshold' => 95,
+            'is_active' => true,
+        ])->assertOk();
+
+        $this->putJson('/api/ops/alerts/rules/disk_usage', [
+            'warning_threshold' => 110,
+            'critical_threshold' => 120,
+            'is_active' => true,
+        ])->assertStatus(422);
+
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'module' => 'ops.alerts',
+            'action' => 'rule_update',
+            'result' => 'success',
+            'status_code' => 200,
+        ]);
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'module' => 'ops.alerts',
+            'action' => 'rule_update',
+            'result' => 'failure',
+            'status_code' => 422,
+        ]);
+
+        $payload = AdminAuditLog::query()
+            ->where('module', 'ops.alerts')
+            ->where('action', 'rule_update')
+            ->latest('id')
+            ->firstOrFail()
+            ->payload;
+
+        $this->assertSame('disk_usage', $payload['adminRule']);
+        $this->assertArrayNotHasKey('password', $payload);
+        $this->assertStringNotContainsString('secret', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_database_alert_rules_are_used_by_evaluation_and_can_be_disabled(): void
+    {
+        OpsAlertRule::query()->create([
+            'key' => 'disk_usage',
+            'name' => '磁盘使用率',
+            'source' => 'disk',
+            'metric' => 'usage_percent',
+            'operator' => '>=',
+            'warning_threshold' => 70,
+            'critical_threshold' => 90,
+            'unit' => '%',
+            'is_active' => true,
+            'description' => 'Disk rule',
+            'sort_order' => 10,
+        ]);
+
+        $alerts = app(AlertRuleEngineService::class)->detect([
+            'disk' => [
+                'disks' => [
+                    ['mount' => '/', 'usage' => 75, 'filesystem' => 'overlay'],
+                ],
+            ],
+        ]);
+
+        $this->assertCount(1, $alerts);
+        $this->assertSame('warning', $alerts[0]->severity);
+
+        $this->postJson('/api/ops/alerts/rules/disk_usage/toggle', [
+            'is_active' => false,
+        ])->assertOk()
+            ->assertJsonPath('data.is_active', false);
+
+        $alerts = app(AlertRuleEngineService::class)->detect([
+            'disk' => [
+                'disks' => [
+                    ['mount' => '/', 'usage' => 95, 'filesystem' => 'overlay'],
+                ],
+            ],
+        ]);
+
+        $this->assertSame([], $alerts);
     }
 }

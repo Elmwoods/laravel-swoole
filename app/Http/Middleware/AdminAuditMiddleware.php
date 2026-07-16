@@ -17,6 +17,8 @@ class AdminAuditMiddleware
 
     public function handle(Request $request, Closure $next, string $module, string $action)
     {
+        $this->mergeScalarRouteParameters($request);
+
         try {
             $response = $next($request);
             $statusCode = $response->getStatusCode();
@@ -42,6 +44,27 @@ class AdminAuditMiddleware
             );
 
             throw $e;
+        }
+    }
+
+    private function mergeScalarRouteParameters(Request $request): void
+    {
+        $route = $request->route();
+
+        if ($route === null) {
+            return;
+        }
+
+        $parameters = [];
+
+        foreach ($route->parameters() as $key => $value) {
+            if (is_scalar($value) || $value === null) {
+                $parameters[$key] = $value;
+            }
+        }
+
+        if ($parameters !== []) {
+            $request->merge($parameters);
         }
     }
 

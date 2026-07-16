@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\AlertRuleController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
@@ -153,6 +154,11 @@ Route::prefix('/ops')
                 Route::get('/', [AlertController::class, 'index']);
                 Route::get('/summary', [AlertController::class, 'summary']);
                 Route::get('/notification-status', [AlertController::class, 'notificationStatus']);
+                Route::get('/rules', [AlertRuleController::class, 'index']);
+                Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,rule_update']);
+                Route::post('/rules/{adminRule}/toggle', [AlertRuleController::class, 'toggle'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,rule_toggle']);
                 Route::post('/evaluate', [AlertController::class, 'evaluate'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,evaluate']);
                 Route::post('/test-notification', [AlertController::class, 'testNotification'])

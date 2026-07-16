@@ -42,6 +42,92 @@
             </div>
         </el-card>
 
+        <el-card shadow="never" class="rule-card">
+            <template #header>
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">规则配置</div>
+                        <div class="panel-subtitle">系统白名单规则的阈值与启停状态</div>
+                    </div>
+
+                    <el-button text :loading="rulesLoading" @click="loadAlertRules">
+                        刷新规则
+                    </el-button>
+                </div>
+            </template>
+
+            <el-table :data="alertRules" border stripe v-loading="rulesLoading" empty-text="暂无告警规则">
+                <el-table-column label="规则" min-width="220">
+                    <template #default="{ row }">
+                        <div class="alert-title">{{ row.name }}</div>
+                        <div class="alert-message">{{ row.description }}</div>
+                    </template>
+                </el-table-column>
+
+                <el-table-column prop="source" label="来源" width="110" />
+                <el-table-column prop="metric" label="指标" width="150" />
+
+                <el-table-column label="预警阈值" width="180">
+                    <template #default="{ row }">
+                        <el-input-number
+                            v-model="ruleDrafts[row.key].warning_threshold"
+                            :min="row.min"
+                            :max="row.max"
+                            :precision="thresholdPrecision(row.unit)"
+                            controls-position="right"
+                            :disabled="savingRuleKey === row.key"
+                        />
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="严重阈值" width="180">
+                    <template #default="{ row }">
+                        <el-input-number
+                            v-if="row.critical_threshold !== null || row.requires_critical"
+                            v-model="ruleDrafts[row.key].critical_threshold"
+                            :min="row.min"
+                            :max="row.max"
+                            :precision="thresholdPrecision(row.unit)"
+                            controls-position="right"
+                            :disabled="savingRuleKey === row.key"
+                        />
+                        <span v-else class="muted">-</span>
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="单位" width="90">
+                    <template #default="{ row }">
+                        {{ row.unit || '-' }}
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="启用" width="100">
+                    <template #default="{ row }">
+                        <el-switch
+                            v-model="row.is_active"
+                            :loading="togglingRuleKey === row.key"
+                            :disabled="savingRuleKey === row.key"
+                            @change="(value) => handleToggleRule(row, Boolean(value))"
+                        />
+                    </template>
+                </el-table-column>
+
+                <el-table-column label="操作" width="110" fixed="right">
+                    <template #default="{ row }">
+                        <el-button
+                            text
+                            type="primary"
+                            :loading="savingRuleKey === row.key"
+                            :disabled="togglingRuleKey === row.key"
+                            @click="handleSaveRule(row)"
+                        >
+                            保存
+                        </el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </el-card>
+
         <el-card shadow="never" class="alert-panel">
             <template #header>
                 <div class="panel-header">
@@ -167,10 +253,14 @@ import {
     createAlertDemoScenarios,
     evaluateAlerts,
     getAlertNotificationStatus,
+    getAlertRules,
     getAlerts,
     getAlertSummary,
     resolveAlert,
     testAlertNotification,
+    toggleAlertRule,
+    updateAlertRule,
+    type AlertRule,
     type AlertRealtimePayload,
     type AlertNotificationStatus,
     type AlertSummary,
@@ -183,10 +273,19 @@ const evaluating = ref(false)
 const testingNotification = ref(false)
 const demoLoading = ref(false)
 const notificationLoading = ref(false)
+const rulesLoading = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
 const resolvingId = ref<number | null>(null)
+const savingRuleKey = ref<string | null>(null)
+const togglingRuleKey = ref<string | null>(null)
 const alerts = ref<OpsAlert[]>([])
+const alertRules = ref<AlertRule[]>([])
+const ruleDrafts = ref<Record<string, {
+    warning_threshold: number
+    critical_threshold: number | null
+    is_active: boolean
+}>>({})
 const status = ref<AlertStatus | 'all'>('open')
 const severity = ref('')
 const source = ref('')
@@ -266,6 +365,32 @@ const notificationChannels = computed(() => [
         ...notificationStatus.value.mail,
     },
 ])
+
+/**
+ * 加载告警规则配置。
+ */
+const loadAlertRules = async () => {
+    rulesLoading.value = true
+
+    try {
+        const res = await getAlertRules()
+        ruleDrafts.value = Object.fromEntries(
+            res.data.data.items.map(rule => [
+                rule.key,
+                {
+                    warning_threshold: rule.warning_threshold,
+                    critical_threshold: rule.critical_threshold,
+                    is_active: rule.is_active,
+                },
+            ]),
+        )
+        alertRules.value = res.data.data.items
+    } catch {
+        ElMessage.error('告警规则加载失败')
+    } finally {
+        rulesLoading.value = false
+    }
+}
 
 /**
  * 加载告警汇总。
@@ -390,6 +515,64 @@ const handleDemoScenarios = async () => {
         ElMessage.error('模拟告警生成失败')
     } finally {
         demoLoading.value = false
+    }
+}
+
+/**
+ * 保存单条规则阈值。
+ */
+const handleSaveRule = async (rule: AlertRule) => {
+    const draft = ruleDrafts.value[rule.key]
+
+    if (!draft) {
+        ElMessage.error('规则草稿不存在，请刷新后重试')
+        return
+    }
+
+    savingRuleKey.value = rule.key
+
+    try {
+        const res = await updateAlertRule(rule.key, {
+            warning_threshold: draft.warning_threshold,
+            critical_threshold: draft.critical_threshold,
+            is_active: rule.is_active,
+        })
+        replaceRule(res.data.data)
+        ElMessage.success('告警规则已保存')
+    } catch {
+        ElMessage.error('告警规则保存失败，请检查阈值范围')
+    } finally {
+        savingRuleKey.value = null
+    }
+}
+
+/**
+ * 启用或禁用单条规则。
+ */
+const handleToggleRule = async (rule: AlertRule, isActive: boolean) => {
+    togglingRuleKey.value = rule.key
+
+    try {
+        const res = await toggleAlertRule(rule.key, isActive)
+        replaceRule(res.data.data)
+        ElMessage.success(isActive ? '告警规则已启用' : '告警规则已禁用')
+    } catch {
+        rule.is_active = !isActive
+        ElMessage.error('告警规则状态更新失败')
+    } finally {
+        togglingRuleKey.value = null
+    }
+}
+
+/**
+ * 用接口返回值替换页面中的规则。
+ */
+const replaceRule = (rule: AlertRule) => {
+    alertRules.value = alertRules.value.map(item => item.key === rule.key ? rule : item)
+    ruleDrafts.value[rule.key] = {
+        warning_threshold: rule.warning_threshold,
+        critical_threshold: rule.critical_threshold,
+        is_active: rule.is_active,
     }
 }
 
@@ -531,8 +714,10 @@ const statusLabel = (value: string) => {
     return '已恢复'
 }
 
+const thresholdPrecision = (unit: string | null) => unit === 'MB/s' ? 2 : 0
+
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules()])
     startRealtime()
 })
 
@@ -552,7 +737,8 @@ onBeforeUnmount(stopRealtime)
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.notification-card {
+.notification-card,
+.rule-card {
     border-radius: 8px;
 }
 

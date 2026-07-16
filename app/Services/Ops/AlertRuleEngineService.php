@@ -3,6 +3,7 @@
 namespace App\Services\Ops;
 
 use App\DTO\Ops\AlertDTO;
+use App\Models\OpsAlertRule;
 
 /**
  * Ops Center 告警规则引擎。
@@ -29,12 +30,21 @@ class AlertRuleEngineService
      */
     private function diskAlerts(array $disk): array
     {
-        $threshold = (int) config('ops.alerts.thresholds.disk_usage_warning', 85);
-        $criticalThreshold = (int) config('ops.alerts.thresholds.disk_usage_critical', 95);
+        $rule = $this->rule('disk_usage', [
+            'warning_threshold' => (float) config('ops.alerts.thresholds.disk_usage_warning', 85),
+            'critical_threshold' => (float) config('ops.alerts.thresholds.disk_usage_critical', 95),
+        ]);
+
+        if ($rule === null) {
+            return [];
+        }
+
+        $threshold = (float) $rule['warning_threshold'];
+        $criticalThreshold = (float) ($rule['critical_threshold'] ?? $threshold);
         $alerts = [];
 
         foreach ((array) ($disk['disks'] ?? []) as $item) {
-            $usage = (int) ($item['usage'] ?? 0);
+            $usage = (float) ($item['usage'] ?? 0);
 
             if ($usage < $threshold) {
                 continue;
@@ -65,32 +75,40 @@ class AlertRuleEngineService
      */
     private function queueAlerts(array $queue): array
     {
-        $pendingThreshold = (int) config('ops.alerts.thresholds.queue_pending_warning', 100);
-        $failedThreshold = (int) config('ops.alerts.thresholds.failed_jobs_warning', 1);
+        $pendingRule = $this->rule('queue_pending', [
+            'warning_threshold' => (float) config('ops.alerts.thresholds.queue_pending_warning', 100),
+        ]);
+        $failedRule = $this->rule('failed_jobs', [
+            'warning_threshold' => (float) config('ops.alerts.thresholds.failed_jobs_warning', 1),
+        ]);
         $alerts = [];
 
-        foreach ((array) ($queue['queues'] ?? []) as $item) {
-            $pending = (int) ($item['pending'] ?? 0);
+        if ($pendingRule !== null) {
+            $pendingThreshold = (float) $pendingRule['warning_threshold'];
 
-            if ($pending >= $pendingThreshold) {
-                $queueName = (string) ($item['name'] ?? 'default');
-                $alerts[] = new AlertDTO(
-                    source: 'queue',
-                    severity: 'warning',
-                    title: "队列堆积：{$queueName}",
-                    message: "队列 {$queueName} 当前 pending {$pending}，已超过 {$pendingThreshold} 阈值。",
-                    context: [
-                        'target' => $queueName,
-                        'queue' => $queueName,
-                        'pending' => $pending,
-                    ],
-                );
+            foreach ((array) ($queue['queues'] ?? []) as $item) {
+                $pending = (float) ($item['pending'] ?? 0);
+
+                if ($pending >= $pendingThreshold) {
+                    $queueName = (string) ($item['name'] ?? 'default');
+                    $alerts[] = new AlertDTO(
+                        source: 'queue',
+                        severity: 'warning',
+                        title: "队列堆积：{$queueName}",
+                        message: "队列 {$queueName} 当前 pending {$pending}，已超过 {$pendingThreshold} 阈值。",
+                        context: [
+                            'target' => $queueName,
+                            'queue' => $queueName,
+                            'pending' => $pending,
+                        ],
+                    );
+                }
             }
         }
 
-        $failed = (int) data_get($queue, 'failed_jobs.count', 0);
+        $failed = (float) data_get($queue, 'failed_jobs.count', 0);
 
-        if ($failed >= $failedThreshold) {
+        if ($failedRule !== null && $failed >= (float) $failedRule['warning_threshold']) {
             $alerts[] = new AlertDTO(
                 source: 'queue',
                 severity: 'warning',
@@ -111,11 +129,18 @@ class AlertRuleEngineService
      */
     private function dockerAlerts(array $docker): array
     {
-        $unhealthy = (int) ($docker['unhealthy'] ?? 0);
-        $exited = (int) ($docker['exited'] ?? 0);
+        $unhealthyRule = $this->rule('docker_unhealthy', [
+            'warning_threshold' => 1,
+            'critical_threshold' => 1,
+        ]);
+        $exitedRule = (bool) config('ops.alerts.thresholds.docker_exited_enabled', true)
+            ? $this->rule('docker_exited', ['warning_threshold' => 1])
+            : null;
+        $unhealthy = (float) ($docker['unhealthy'] ?? 0);
+        $exited = (float) ($docker['exited'] ?? 0);
         $alerts = [];
 
-        if ($unhealthy > 0) {
+        if ($unhealthyRule !== null && $unhealthy >= (float) $unhealthyRule['warning_threshold']) {
             $alerts[] = new AlertDTO(
                 source: 'docker',
                 severity: 'critical',
@@ -128,7 +153,7 @@ class AlertRuleEngineService
             );
         }
 
-        if ($exited > 0 && (bool) config('ops.alerts.thresholds.docker_exited_enabled', true)) {
+        if ($exitedRule !== null && $exited >= (float) $exitedRule['warning_threshold']) {
             $alerts[] = new AlertDTO(
                 source: 'docker',
                 severity: 'warning',
@@ -149,7 +174,15 @@ class AlertRuleEngineService
      */
     private function networkAlerts(array $network): array
     {
-        $threshold = (float) config('ops.alerts.thresholds.network_mbps_warning', 50);
+        $rule = $this->rule('network_mbps', [
+            'warning_threshold' => (float) config('ops.alerts.thresholds.network_mbps_warning', 50),
+        ]);
+
+        if ($rule === null) {
+            return [];
+        }
+
+        $threshold = (float) $rule['warning_threshold'];
         $rx = (float) data_get($network, 'summary.rx_mb_s', 0);
         $tx = (float) data_get($network, 'summary.tx_mb_s', 0);
         $peak = max($rx, $tx);
@@ -170,6 +203,29 @@ class AlertRuleEngineService
                     'tx_mb_s' => $tx,
                 ],
             ),
+        ];
+    }
+
+    /**
+     * 获取规则阈值。
+     *
+     * 规则不存在时使用历史 config 默认值；规则存在但被禁用时返回 null。
+     */
+    private function rule(string $key, array $fallback): ?array
+    {
+        $rule = OpsAlertRule::query()->where('key', $key)->first();
+
+        if ($rule === null) {
+            return $fallback;
+        }
+
+        if (! $rule->is_active) {
+            return null;
+        }
+
+        return [
+            'warning_threshold' => $rule->warning_threshold,
+            'critical_threshold' => $rule->critical_threshold,
         ];
     }
 }

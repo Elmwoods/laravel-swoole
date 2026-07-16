@@ -112,11 +112,49 @@ export interface AlertRealtimePayload {
     last_seen_at: string | null
 }
 
+export interface AlertRule {
+    id: number
+    key: string
+    name: string
+    source: string
+    metric: string
+    operator: string
+    warning_threshold: number
+    critical_threshold: number | null
+    unit: string | null
+    is_active: boolean
+    description: string | null
+    sort_order: number
+    min: number
+    max: number
+    requires_critical: boolean
+    updated_at: string | null
+}
+
+export interface AlertRuleListResult {
+    items: AlertRule[]
+}
+
+export interface AlertRuleUpdatePayload {
+    warning_threshold: number
+    critical_threshold: number | null
+    is_active: boolean
+}
+
 export const getAlertSummary = () =>
     request.get<ApiResponse<AlertSummary>>('/api/ops/alerts/summary')
 
 export const getAlertNotificationStatus = () =>
     request.get<ApiResponse<AlertNotificationStatus>>('/api/ops/alerts/notification-status')
+
+export const getAlertRules = () =>
+    request.get<ApiResponse<AlertRuleListResult>>('/api/ops/alerts/rules')
+
+export const updateAlertRule = (key: string, payload: AlertRuleUpdatePayload) =>
+    request.put<ApiResponse<AlertRule>>(`/api/ops/alerts/rules/${encodeURIComponent(key)}`, payload)
+
+export const toggleAlertRule = (key: string, is_active: boolean) =>
+    request.post<ApiResponse<AlertRule>>(`/api/ops/alerts/rules/${encodeURIComponent(key)}/toggle`, { is_active })
 
 export const getAlerts = (query: AlertQuery) =>
     request.get<ApiResponse<AlertListResult>>('/api/ops/alerts', { params: query })
