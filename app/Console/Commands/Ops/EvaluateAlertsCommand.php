@@ -19,7 +19,7 @@ class EvaluateAlertsCommand extends Command
      */
     public function handle(AlertCenterService $service): int
     {
-        $result = $service->evaluate();
+        $result = $service->evaluate('cli');
 
         $this->info("Ops alerts evaluated, detected: {$result['detected']}");
 

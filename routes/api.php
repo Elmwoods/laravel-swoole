@@ -154,6 +154,10 @@ Route::prefix('/ops')
                 Route::get('/', [AlertController::class, 'index']);
                 Route::get('/summary', [AlertController::class, 'summary']);
                 Route::get('/notification-status', [AlertController::class, 'notificationStatus']);
+                Route::get('/settings', [AlertController::class, 'settings']);
+                Route::put('/settings', [AlertController::class, 'updateSettings'])
+                    ->middleware(['admin.audit:ops.alerts,settings_update', 'admin.permission:ops.alerts.manage']);
+                Route::get('/evaluations/latest', [AlertController::class, 'latestEvaluation']);
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
@@ -167,6 +171,8 @@ Route::prefix('/ops')
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,demo_scenarios']);
                 Route::post('/{alert}/acknowledge', [AlertController::class, 'acknowledge'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,acknowledge']);
+                Route::post('/{alert}/assign', [AlertController::class, 'assign'])
+                    ->middleware(['admin.audit:ops.alerts,assign', 'admin.permission:ops.alerts.manage']);
                 Route::post('/{alert}/resolve', [AlertController::class, 'resolve'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,resolve']);
             });

@@ -25,8 +25,22 @@ export interface OpsAlert {
     acknowledged_at: string | null
     acknowledged_by: string | null
     acknowledge_note: string | null
+    assigned_to: string | null
+    assigned_at: string | null
+    timeline: AlertTimelineItem[]
     created_at: string | null
     updated_at: string | null
+}
+
+export interface AlertTimelineItem {
+    id: number
+    action: string
+    actor: string | null
+    from_status: string | null
+    to_status: string | null
+    note: string | null
+    metadata: Record<string, unknown>
+    created_at: string | null
 }
 
 export interface AlertSummary {
@@ -91,6 +105,31 @@ export interface AlertNotificationStatus {
         missing: string[]
     }
     checked_at: string
+    settings?: AlertSettings
+}
+
+export interface AlertSettings {
+    notification_repeat_minutes: number
+    auto_resolve_enabled: boolean
+    auto_resolve_grace_minutes: number
+    telegram_enabled: boolean
+    mail_enabled: boolean
+    severity_channels: Record<AlertSeverity, {
+        telegram: boolean
+        mail: boolean
+    }>
+}
+
+export interface AlertEvaluationStatus {
+    id: number
+    trigger: string
+    status: 'success' | 'failure'
+    detected_count: number
+    auto_resolved_count: number
+    started_at: string | null
+    finished_at: string | null
+    duration_ms: number
+    message: string | null
 }
 
 export interface AlertDemoScenarioResult {
@@ -147,6 +186,15 @@ export const getAlertSummary = () =>
 export const getAlertNotificationStatus = () =>
     request.get<ApiResponse<AlertNotificationStatus>>('/api/ops/alerts/notification-status')
 
+export const getAlertSettings = () =>
+    request.get<ApiResponse<AlertSettings>>('/api/ops/alerts/settings')
+
+export const updateAlertSettings = (payload: AlertSettings) =>
+    request.put<ApiResponse<AlertSettings>>('/api/ops/alerts/settings', payload)
+
+export const getLatestAlertEvaluation = () =>
+    request.get<ApiResponse<AlertEvaluationStatus | null>>('/api/ops/alerts/evaluations/latest')
+
 export const getAlertRules = () =>
     request.get<ApiResponse<AlertRuleListResult>>('/api/ops/alerts/rules')
 
@@ -170,6 +218,9 @@ export const createAlertDemoScenarios = () =>
 
 export const acknowledgeAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/acknowledge`, payload)
+
+export const assignAlert = (id: number, payload: { assigned_to: string; note?: string }) =>
+    request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/assign`, payload)
 
 export const resolveAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/resolve`, payload)

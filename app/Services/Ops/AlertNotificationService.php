@@ -3,6 +3,7 @@
 namespace App\Services\Ops;
 
 use App\Models\OpsAlert;
+use App\Models\OpsAlertSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -29,7 +30,7 @@ class AlertNotificationService
 
         return [
             'telegram' => [
-                'enabled' => $telegramEnabled,
+                'enabled' => $telegramEnabled && (bool) OpsAlertSetting::value('telegram_enabled'),
                 'configured' => $telegramEnabled && $telegramToken !== '' && $telegramChatId !== '',
                 'missing' => array_values(array_filter([
                     $telegramEnabled ? null : 'enabled',
@@ -38,7 +39,7 @@ class AlertNotificationService
                 ])),
             ],
             'mail' => [
-                'enabled' => $mailEnabled,
+                'enabled' => $mailEnabled && (bool) OpsAlertSetting::value('mail_enabled'),
                 'configured' => $mailEnabled && $mailTo !== [],
                 'missing' => array_values(array_filter([
                     $mailEnabled ? null : 'enabled',
@@ -96,6 +97,10 @@ class AlertNotificationService
      */
     private function sendTelegram(OpsAlert $alert): array
     {
+        if (! $this->channelAllowed($alert, 'telegram')) {
+            return ['enabled' => true, 'sent' => false, 'reason' => 'channel_disabled_by_policy'];
+        }
+
         if (! (bool) config('ops.alerts.telegram.enabled', false)) {
             return ['enabled' => false, 'sent' => false];
         }
@@ -134,6 +139,10 @@ class AlertNotificationService
      */
     private function sendMail(OpsAlert $alert): array
     {
+        if (! $this->channelAllowed($alert, 'mail')) {
+            return ['enabled' => true, 'sent' => false, 'reason' => 'channel_disabled_by_policy'];
+        }
+
         if (! (bool) config('ops.alerts.mail.enabled', false)) {
             return ['enabled' => false, 'sent' => false];
         }
@@ -174,5 +183,21 @@ class AlertNotificationService
             "时间：".optional($alert->last_seen_at)->toDateTimeString(),
             "说明：{$alert->message}",
         ]);
+    }
+
+    private function channelAllowed(OpsAlert $alert, string $channel): bool
+    {
+        if ($channel === 'telegram' && ! (bool) OpsAlertSetting::value('telegram_enabled')) {
+            return false;
+        }
+
+        if ($channel === 'mail' && ! (bool) OpsAlertSetting::value('mail_enabled')) {
+            return false;
+        }
+
+        $matrix = (array) OpsAlertSetting::value('severity_channels');
+        $severity = $alert->severity ?: 'warning';
+
+        return (bool) data_get($matrix, "{$severity}.{$channel}", true);
     }
 }

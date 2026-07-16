@@ -5,11 +5,16 @@ namespace App\Services\Ops;
 use App\DTO\Ops\AlertDTO;
 use App\Events\Ops\AlertTriggered;
 use App\Models\OpsAlert;
+use App\Models\OpsAlertEvaluation;
+use App\Models\OpsAlertEvent;
+use App\Models\OpsAlertSetting;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\System\DiskService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Throwable;
 
 /**
  * Ops Center 告警中心服务。
@@ -25,6 +30,11 @@ class AlertCenterService
         private readonly QueueMonitorService $queueService,
         private readonly DockerService $dockerService,
         private readonly NetworkTrafficService $networkService,
+        private readonly SystemMonitorService $systemService,
+        private readonly RedisService $redisService,
+        private readonly MysqlService $mysqlService,
+        private readonly OctaneControlService $octaneService,
+        private readonly SupervisorService $supervisorService,
     ) {}
 
     /**
@@ -75,45 +85,102 @@ class AlertCenterService
      */
     public function notificationStatus(): array
     {
-        return $this->notification->status();
+        return [
+            ...$this->notification->status(),
+            'settings' => $this->settings(),
+        ];
     }
 
     /**
      * 执行一次告警评估。
      */
-    public function evaluate(): array
+    public function evaluate(string $trigger = 'manual'): array
     {
-        $snapshot = $this->snapshot();
-        $detected = $this->ruleEngine->detect($snapshot);
-        $alerts = [];
-        $detectedFingerprints = collect($detected)
-            ->map(fn (AlertDTO $dto): string => $dto->fingerprint())
-            ->all();
+        $startedAt = now();
+        $started = microtime(true);
 
-        foreach ($detected as $dto) {
-            [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
-            $alerts[] = $alert;
+        try {
+            $snapshot = $this->snapshot();
+            $detected = $this->ruleEngine->detect($snapshot);
+            $alerts = [];
+            $detectedFingerprints = collect($detected)
+                ->map(fn (AlertDTO $dto): string => $dto->fingerprint())
+                ->all();
 
-            if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
-                $this->notification->send($alert);
+            foreach ($detected as $dto) {
+                [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+                $alerts[] = $alert;
+
+                if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+                    $this->notification->send($alert);
+                }
+
+                broadcast(new AlertTriggered($alert));
             }
 
-            broadcast(new AlertTriggered($alert));
+            $resolvedAlerts = $this->autoResolveRecoveredAlerts($detectedFingerprints);
+
+            foreach ($resolvedAlerts as $alert) {
+                broadcast(new AlertTriggered($alert));
+            }
+
+            $result = [
+                'detected' => count($detected),
+                'alerts' => collect($alerts)->map(fn (OpsAlert $alert): array => $this->serialize($alert))->all(),
+                'auto_resolved' => $resolvedAlerts->count(),
+                'summary' => $this->summary(),
+                'checked_at' => now()->toDateTimeString(),
+            ];
+
+            $this->recordEvaluation(
+                trigger: $trigger,
+                status: 'success',
+                startedAt: $startedAt,
+                started: $started,
+                detected: $result['detected'],
+                autoResolved: $result['auto_resolved'],
+            );
+
+            return $result;
+        } catch (Throwable $e) {
+            $this->recordEvaluation(
+                trigger: $trigger,
+                status: 'failure',
+                startedAt: $startedAt,
+                started: $started,
+                message: $this->safeExceptionMessage($e),
+            );
+
+            throw new HttpException(500, '告警评估失败，请检查采集服务状态。');
+        }
+    }
+
+    public function latestEvaluation(): ?array
+    {
+        $evaluation = OpsAlertEvaluation::query()->latest('id')->first();
+
+        return $evaluation === null ? null : $this->serializeEvaluation($evaluation);
+    }
+
+    public function settings(): array
+    {
+        return OpsAlertSetting::allValues();
+    }
+
+    public function updateSettings(array $payload): array
+    {
+        foreach ([
+            'notification_repeat_minutes',
+            'auto_resolve_enabled',
+            'auto_resolve_grace_minutes',
+            'severity_channels',
+            'telegram_enabled',
+            'mail_enabled',
+        ] as $key) {
+            OpsAlertSetting::setValue($key, $payload[$key]);
         }
 
-        $resolvedAlerts = $this->autoResolveRecoveredAlerts($detectedFingerprints);
-
-        foreach ($resolvedAlerts as $alert) {
-            broadcast(new AlertTriggered($alert));
-        }
-
-        return [
-            'detected' => count($detected),
-            'alerts' => collect($alerts)->map(fn (OpsAlert $alert): array => $this->serialize($alert))->all(),
-            'auto_resolved' => $resolvedAlerts->count(),
-            'summary' => $this->summary(),
-            'checked_at' => now()->toDateTimeString(),
-        ];
+        return $this->settings();
     }
 
     /**
@@ -256,6 +323,8 @@ class AlertCenterService
      */
     public function acknowledge(OpsAlert $alert, array $payload): OpsAlert
     {
+        $fromStatus = $alert->status;
+
         $alert->forceFill([
             'status' => 'acknowledged',
             'acknowledged_at' => now(),
@@ -263,7 +332,23 @@ class AlertCenterService
             'acknowledge_note' => $payload['note'] ?? null,
         ])->save();
 
-        return $alert->refresh();
+        $alert = $alert->refresh();
+        $this->recordAlertEvent($alert, 'acknowledged', $payload['acknowledged_by'] ?? 'ops-user', $payload['note'] ?? null, $fromStatus, $alert->status);
+
+        return $alert;
+    }
+
+    public function assign(OpsAlert $alert, array $payload): OpsAlert
+    {
+        $alert->forceFill([
+            'assigned_to' => $payload['assigned_to'],
+            'assigned_at' => now(),
+        ])->save();
+
+        $alert = $alert->refresh();
+        $this->recordAlertEvent($alert, 'assigned', $payload['assigned_to'], $payload['note'] ?? null, $alert->status, $alert->status);
+
+        return $alert;
     }
 
     /**
@@ -273,6 +358,8 @@ class AlertCenterService
      */
     public function resolve(OpsAlert $alert, array $payload): OpsAlert
     {
+        $fromStatus = $alert->status;
+
         $alert->forceFill([
             'status' => 'resolved',
             'acknowledged_at' => $alert->acknowledged_at ?: now(),
@@ -280,7 +367,10 @@ class AlertCenterService
             'acknowledge_note' => $payload['note'] ?? $alert->acknowledge_note,
         ])->save();
 
-        return $alert->refresh();
+        $alert = $alert->refresh();
+        $this->recordAlertEvent($alert, 'resolved', $payload['acknowledged_by'] ?? $alert->acknowledged_by ?? 'ops-user', $payload['note'] ?? null, $fromStatus, $alert->status);
+
+        return $alert;
     }
 
     /**
@@ -301,6 +391,9 @@ class AlertCenterService
             'acknowledged_at' => optional($alert->acknowledged_at)->toDateTimeString(),
             'acknowledged_by' => $alert->acknowledged_by,
             'acknowledge_note' => $alert->acknowledge_note,
+            'assigned_to' => $alert->assigned_to,
+            'assigned_at' => optional($alert->assigned_at)->toDateTimeString(),
+            'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
         ];
@@ -316,6 +409,11 @@ class AlertCenterService
             'queue' => $this->queueService->summary(),
             'docker' => $this->dockerService->summary(),
             'network' => $this->networkService->getSpeed(),
+            'system' => $this->systemService->info(),
+            'redis' => $this->redisService->info(),
+            'mysql' => $this->mysqlService->info(),
+            'octane' => $this->octaneService->status(),
+            'supervisor' => $this->supervisorService->status(),
         ];
     }
 
@@ -346,7 +444,7 @@ class AlertCenterService
      */
     private function shouldRepeatNotification(OpsAlert $alert): bool
     {
-        $minutes = max(0, (int) config('ops.alerts.thresholds.notification_repeat_minutes', 30));
+        $minutes = max(0, (int) OpsAlertSetting::value('notification_repeat_minutes'));
 
         if ($minutes === 0 || $alert->wasRecentlyCreated) {
             return false;
@@ -365,12 +463,12 @@ class AlertCenterService
      */
     private function autoResolveRecoveredAlerts(array $detectedFingerprints): Collection
     {
-        if (! (bool) config('ops.alerts.thresholds.auto_resolve_enabled', true)) {
+        if (! (bool) OpsAlertSetting::value('auto_resolve_enabled')) {
             return collect();
         }
 
-        $graceMinutes = max(1, (int) config('ops.alerts.thresholds.auto_resolve_grace_minutes', 5));
-        $managedSources = ['disk', 'queue', 'docker', 'network'];
+        $graceMinutes = max(1, (int) OpsAlertSetting::value('auto_resolve_grace_minutes'));
+        $managedSources = ['disk', 'queue', 'docker', 'network', 'system', 'redis', 'mysql', 'octane', 'supervisor'];
 
         return OpsAlert::query()
             ->whereIn('source', $managedSources)
@@ -382,6 +480,7 @@ class AlertCenterService
             )
             ->get()
             ->map(function (OpsAlert $alert): OpsAlert {
+                $fromStatus = $alert->status;
                 $alert->forceFill([
                     'status' => 'resolved',
                     'acknowledged_at' => $alert->acknowledged_at ?: now(),
@@ -389,7 +488,95 @@ class AlertCenterService
                     'acknowledge_note' => '规则恢复后自动关闭',
                 ])->save();
 
-                return $alert->refresh();
+                $alert = $alert->refresh();
+                $this->recordAlertEvent($alert, 'auto_resolved', 'ops-auto-resolver', '规则恢复后自动关闭', $fromStatus, $alert->status);
+
+                return $alert;
             });
+    }
+
+    private function recordEvaluation(
+        string $trigger,
+        string $status,
+        mixed $startedAt,
+        float $started,
+        int $detected = 0,
+        int $autoResolved = 0,
+        ?string $message = null,
+    ): void {
+        OpsAlertEvaluation::query()->create([
+            'trigger' => in_array($trigger, ['manual', 'cli', 'schedule'], true) ? $trigger : 'manual',
+            'status' => $status,
+            'detected_count' => $detected,
+            'auto_resolved_count' => $autoResolved,
+            'started_at' => $startedAt,
+            'finished_at' => now(),
+            'duration_ms' => max(0, (int) round((microtime(true) - $started) * 1000)),
+            'message' => $message,
+        ]);
+    }
+
+    private function serializeEvaluation(OpsAlertEvaluation $evaluation): array
+    {
+        return [
+            'id' => $evaluation->id,
+            'trigger' => $evaluation->trigger,
+            'status' => $evaluation->status,
+            'detected_count' => $evaluation->detected_count,
+            'auto_resolved_count' => $evaluation->auto_resolved_count,
+            'started_at' => optional($evaluation->started_at)->toDateTimeString(),
+            'finished_at' => optional($evaluation->finished_at)->toDateTimeString(),
+            'duration_ms' => $evaluation->duration_ms,
+            'message' => $evaluation->message,
+        ];
+    }
+
+    private function recordAlertEvent(
+        OpsAlert $alert,
+        string $action,
+        ?string $actor,
+        ?string $note,
+        ?string $fromStatus,
+        ?string $toStatus,
+        array $metadata = [],
+    ): void {
+        OpsAlertEvent::query()->create([
+            'alert_id' => $alert->id,
+            'action' => $action,
+            'actor' => $actor,
+            'from_status' => $fromStatus,
+            'to_status' => $toStatus,
+            'note' => $note,
+            'metadata' => $metadata,
+            'created_at' => now(),
+        ]);
+    }
+
+    private function timeline(OpsAlert $alert): array
+    {
+        return OpsAlertEvent::query()
+            ->where('alert_id', $alert->id)
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (OpsAlertEvent $event): array => [
+                'id' => $event->id,
+                'action' => $event->action,
+                'actor' => $event->actor,
+                'from_status' => $event->from_status,
+                'to_status' => $event->to_status,
+                'note' => $event->note,
+                'metadata' => $event->metadata ?? [],
+                'created_at' => optional($event->created_at)->toDateTimeString(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function safeExceptionMessage(Throwable $e): string
+    {
+        $message = preg_replace('#(/[A-Za-z0-9._\\-]+){2,}#', '[path]', $e->getMessage()) ?: 'alert_evaluation_failed';
+
+        return mb_substr($message, 0, 500);
     }
 }

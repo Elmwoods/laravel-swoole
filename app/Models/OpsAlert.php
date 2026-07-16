@@ -25,6 +25,8 @@ class OpsAlert extends Model
         'acknowledged_at',
         'acknowledged_by',
         'acknowledge_note',
+        'assigned_to',
+        'assigned_at',
     ];
 
     protected function casts(): array
@@ -33,6 +35,7 @@ class OpsAlert extends Model
             'context' => 'array',
             'last_seen_at' => 'datetime',
             'acknowledged_at' => 'datetime',
+            'assigned_at' => 'datetime',
         ];
     }
 }

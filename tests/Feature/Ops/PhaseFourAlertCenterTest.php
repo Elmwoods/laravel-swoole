@@ -15,6 +15,7 @@ use App\Services\Ops\NetworkTrafficService;
 use App\Services\Ops\OctaneControlService;
 use App\Services\Ops\QueueMonitorService;
 use App\Services\Ops\RedisService;
+use App\Services\Ops\SupervisorService;
 use App\Services\Ops\System\DiskService;
 use App\Services\Ops\SystemMonitorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -412,13 +413,38 @@ class PhaseFourAlertCenterTest extends TestCase
                 ->once()
                 ->andReturn(['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]]);
         });
+        $this->mock(SystemMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn(['cpu_percent' => 10, 'memory' => ['percent' => 30]]);
+        });
+        $this->mock(RedisService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn(['connected' => true]);
+        });
+        $this->mock(MysqlService::class, function ($mock): void {
+            $mock->shouldReceive('info')
+                ->once()
+                ->andReturn(['connected' => true]);
+        });
+        $this->mock(OctaneControlService::class, function ($mock): void {
+            $mock->shouldReceive('status')
+                ->once()
+                ->andReturn(['running' => true, 'process_count' => 2]);
+        });
+        $this->mock(SupervisorService::class, function ($mock): void {
+            $mock->shouldReceive('status')
+                ->once()
+                ->andReturn([['name' => 'octane', 'state' => 'RUNNING']]);
+        });
 
         $this->postJson('/api/ops/alerts/evaluate')
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.detected', 0);
 
-        $this->assertSame(6, OpsAlertRule::query()->count());
+        $this->assertSame(12, OpsAlertRule::query()->count());
         $this->assertDatabaseHas('ops_alert_rules', [
             'key' => 'disk_usage',
             'source' => 'disk',

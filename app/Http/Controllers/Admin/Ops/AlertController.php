@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\AlertAcknowledgeRequest;
+use App\Http\Requests\Admin\Ops\AlertAssignRequest;
 use App\Http\Requests\Admin\Ops\AlertIndexRequest;
 use App\Http\Requests\Admin\Ops\AlertNotificationTestRequest;
+use App\Http\Requests\Admin\Ops\AlertSettingsUpdateRequest;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
 use App\Traits\ApiResponse;
@@ -61,6 +63,21 @@ class AlertController extends Controller
         return $this->success($this->service->notificationStatus());
     }
 
+    public function settings(): JsonResponse
+    {
+        return $this->success($this->service->settings());
+    }
+
+    public function updateSettings(AlertSettingsUpdateRequest $request): JsonResponse
+    {
+        return $this->success($this->service->updateSettings($request->validated()));
+    }
+
+    public function latestEvaluation(): JsonResponse
+    {
+        return $this->success($this->service->latestEvaluation());
+    }
+
     /**
      * 手动触发一次告警评估。
      */
@@ -93,6 +110,15 @@ class AlertController extends Controller
         return $this->success(
             $this->service->serialize(
                 $this->service->acknowledge($alert, $request->validated()),
+            ),
+        );
+    }
+
+    public function assign(AlertAssignRequest $request, OpsAlert $alert): JsonResponse
+    {
+        return $this->success(
+            $this->service->serialize(
+                $this->service->assign($alert, $request->validated()),
             ),
         );
     }

@@ -85,9 +85,9 @@ class AlertRuleEngineServiceTest extends TestCase
         $first = $registry->syncDefaults();
         $second = $registry->syncDefaults();
 
-        $this->assertCount(6, $first);
-        $this->assertCount(6, $second);
-        $this->assertSame(6, OpsAlertRule::query()->count());
+        $this->assertCount(12, $first);
+        $this->assertCount(12, $second);
+        $this->assertSame(12, OpsAlertRule::query()->count());
         $this->assertDatabaseHas('ops_alert_rules', [
             'key' => 'disk_usage',
             'source' => 'disk',
@@ -133,7 +133,7 @@ class AlertRuleEngineServiceTest extends TestCase
             'network' => ['summary' => ['rx_mb_s' => 0, 'tx_mb_s' => 0]],
         ]);
 
-        $this->assertSame(6, OpsAlertRule::query()->count());
+        $this->assertSame(12, OpsAlertRule::query()->count());
         $this->assertDatabaseHas('ops_alert_rules', [
             'key' => 'disk_usage',
             'is_active' => true,
@@ -199,5 +199,41 @@ class AlertRuleEngineServiceTest extends TestCase
         ]);
 
         $this->assertSame([], $alerts);
+    }
+
+    public function test_extended_system_rules_detect_resource_and_service_failures(): void
+    {
+        app(AlertRuleRegistryService::class)->syncDefaults();
+
+        $alerts = app(AlertRuleEngineService::class)->detect([
+            'system' => [
+                'cpu_percent' => 95,
+                'memory' => ['percent' => 92],
+            ],
+            'redis' => ['connected' => false],
+            'mysql' => ['connected' => false],
+            'octane' => ['running' => false, 'process_count' => 0],
+            'supervisor' => [
+                ['name' => 'octane', 'state' => 'STOPPED'],
+            ],
+        ]);
+
+        $this->assertSame(
+            ['system', 'system', 'redis', 'mysql', 'octane', 'supervisor'],
+            collect($alerts)->pluck('source')->all(),
+        );
+    }
+
+    public function test_default_rule_registry_includes_extended_alert_rules(): void
+    {
+        $registry = app(AlertRuleRegistryService::class);
+
+        $registry->syncDefaults();
+
+        foreach (['system_cpu', 'system_memory', 'redis_connected', 'mysql_connected', 'octane_running', 'supervisor_process_down'] as $key) {
+            $this->assertDatabaseHas('ops_alert_rules', [
+                'key' => $key,
+            ]);
+        }
     }
 }

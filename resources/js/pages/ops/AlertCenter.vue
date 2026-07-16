@@ -40,6 +40,79 @@
                     </div>
                 </div>
             </div>
+
+            <div class="settings-panel">
+                <div class="panel-subtitle">通知策略</div>
+                <el-form v-if="settingsDraft" class="settings-form" label-width="120px">
+                    <el-form-item label="重复通知">
+                        <el-input-number
+                            v-model="settingsDraft.notification_repeat_minutes"
+                            :min="0"
+                            :max="1440"
+                            controls-position="right"
+                            :disabled="settingsSaving"
+                        />
+                        <span class="muted inline-help">分钟</span>
+                    </el-form-item>
+                    <el-form-item label="自动恢复">
+                        <el-switch v-model="settingsDraft.auto_resolve_enabled" :disabled="settingsSaving" />
+                        <el-input-number
+                            v-model="settingsDraft.auto_resolve_grace_minutes"
+                            :min="1"
+                            :max="1440"
+                            controls-position="right"
+                            :disabled="settingsSaving"
+                        />
+                        <span class="muted inline-help">分钟宽限</span>
+                    </el-form-item>
+                    <el-form-item label="通道策略">
+                        <div class="severity-grid">
+                            <div v-for="level in severityLevels" :key="level" class="severity-row">
+                                <span class="severity-label">{{ level }}</span>
+                                <el-checkbox v-model="settingsDraft.severity_channels[level].telegram" :disabled="settingsSaving">
+                                    Telegram
+                                </el-checkbox>
+                                <el-checkbox v-model="settingsDraft.severity_channels[level].mail" :disabled="settingsSaving">
+                                    邮件
+                                </el-checkbox>
+                            </div>
+                        </div>
+                    </el-form-item>
+                    <el-form-item label="总开关">
+                        <el-checkbox v-model="settingsDraft.telegram_enabled" :disabled="settingsSaving">Telegram</el-checkbox>
+                        <el-checkbox v-model="settingsDraft.mail_enabled" :disabled="settingsSaving">邮件</el-checkbox>
+                    </el-form-item>
+                    <el-button type="primary" :loading="settingsSaving" @click="handleSaveSettings">
+                        保存策略
+                    </el-button>
+                </el-form>
+            </div>
+        </el-card>
+
+        <el-card shadow="never" class="evaluation-card">
+            <div class="notification-header">
+                <div>
+                    <div class="panel-title">巡检状态</div>
+                    <div class="panel-subtitle">最近一次告警评估执行结果</div>
+                </div>
+
+                <el-button text :loading="evaluationLoading" @click="loadEvaluationStatus">
+                    刷新状态
+                </el-button>
+            </div>
+
+            <el-empty v-if="!latestEvaluation && !evaluationLoading" description="暂无评估记录" />
+            <div v-else-if="latestEvaluation" class="evaluation-grid">
+                <el-tag :type="latestEvaluation.status === 'success' ? 'success' : 'danger'" effect="plain">
+                    {{ latestEvaluation.status }}
+                </el-tag>
+                <span>触发：{{ latestEvaluation.trigger }}</span>
+                <span>命中：{{ latestEvaluation.detected_count }}</span>
+                <span>自动恢复：{{ latestEvaluation.auto_resolved_count }}</span>
+                <span>耗时：{{ latestEvaluation.duration_ms }}ms</span>
+                <span>完成：{{ latestEvaluation.finished_at || '-' }}</span>
+                <span v-if="latestEvaluation.message" class="muted">{{ latestEvaluation.message }}</span>
+            </div>
         </el-card>
 
         <el-card shadow="never" class="rule-card">
@@ -210,9 +283,17 @@
                 <el-table-column prop="hit_count" label="次数" width="90" />
                 <el-table-column prop="last_seen_at" label="最后出现" width="180" />
 
-                <el-table-column label="操作" width="190" fixed="right">
+                <el-table-column label="操作" width="250" fixed="right">
                     <template #default="{ row }">
                         <div v-if="row.status !== 'resolved'" class="action-buttons">
+                            <el-button
+                                text
+                                type="info"
+                                :loading="assigningId === row.id"
+                                @click="handleAssign(row)"
+                            >
+                                指派
+                            </el-button>
                             <el-button
                                 v-if="row.status === 'open'"
                                 text
@@ -259,8 +340,11 @@ import { DataLine, Refresh } from '@element-plus/icons-vue'
 import echo from '@/utils/echo'
 import {
     acknowledgeAlert,
+    assignAlert,
     createAlertDemoScenarios,
     evaluateAlerts,
+    getAlertSettings,
+    getLatestAlertEvaluation,
     getAlertNotificationStatus,
     getAlertRules,
     getAlerts,
@@ -268,10 +352,14 @@ import {
     resolveAlert,
     testAlertNotification,
     toggleAlertRule,
+    updateAlertSettings,
     updateAlertRule,
+    type AlertEvaluationStatus,
     type AlertRule,
     type AlertRealtimePayload,
     type AlertNotificationStatus,
+    type AlertSettings,
+    type AlertSeverity,
     type AlertSummary,
     type AlertStatus,
     type OpsAlert,
@@ -284,13 +372,18 @@ const demoLoading = ref(false)
 const notificationLoading = ref(false)
 const rulesLoading = ref(false)
 const rulesNotice = ref('')
+const evaluationLoading = ref(false)
+const settingsSaving = ref(false)
 const realtimeConnected = ref(false)
 const acknowledgingId = ref<number | null>(null)
 const resolvingId = ref<number | null>(null)
+const assigningId = ref<number | null>(null)
 const savingRuleKey = ref<string | null>(null)
 const togglingRuleKey = ref<string | null>(null)
 const alerts = ref<OpsAlert[]>([])
 const alertRules = ref<AlertRule[]>([])
+const latestEvaluation = ref<AlertEvaluationStatus | null>(null)
+const settingsDraft = ref<AlertSettings | null>(null)
 const ruleDrafts = ref<Record<string, {
     warning_threshold: number
     critical_threshold: number | null
@@ -335,6 +428,7 @@ const statusOptions = [
     { label: '已确认', value: 'acknowledged' },
     { label: '全部', value: 'all' },
 ]
+const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info']
 
 const summaryCards = computed(() => [
     {
@@ -425,10 +519,29 @@ const loadNotificationStatus = async () => {
     try {
         const res = await getAlertNotificationStatus()
         notificationStatus.value = res.data.data
+        settingsDraft.value = res.data.data.settings ? structuredClone(res.data.data.settings) : settingsDraft.value
     } catch {
         ElMessage.error('通知通道状态加载失败')
     } finally {
         notificationLoading.value = false
+    }
+}
+
+const loadAlertSettings = async () => {
+    const res = await getAlertSettings()
+    settingsDraft.value = structuredClone(res.data.data)
+}
+
+const loadEvaluationStatus = async () => {
+    evaluationLoading.value = true
+
+    try {
+        const res = await getLatestAlertEvaluation()
+        latestEvaluation.value = res.data.data
+    } catch {
+        ElMessage.error('巡检状态加载失败')
+    } finally {
+        evaluationLoading.value = false
     }
 }
 
@@ -467,13 +580,32 @@ const handleEvaluate = async () => {
     try {
         const res = await evaluateAlerts()
         summary.value = res.data.data.summary
-        await loadAlerts()
+        await Promise.all([loadAlerts(), loadEvaluationStatus()])
         emitAlertStateChanged()
         ElMessage.success(`评估完成，命中 ${res.data.data.detected} 条规则，自动恢复 ${res.data.data.auto_resolved ?? 0} 条`)
     } catch {
         ElMessage.error('告警评估失败')
     } finally {
         evaluating.value = false
+    }
+}
+
+const handleSaveSettings = async () => {
+    if (!settingsDraft.value) {
+        return
+    }
+
+    settingsSaving.value = true
+
+    try {
+        const res = await updateAlertSettings(settingsDraft.value)
+        settingsDraft.value = structuredClone(res.data.data)
+        await loadNotificationStatus()
+        ElMessage.success('通知策略已保存')
+    } catch {
+        ElMessage.error('通知策略保存失败，请检查参数范围')
+    } finally {
+        settingsSaving.value = false
     }
 }
 
@@ -639,6 +771,33 @@ const handleAcknowledge = async (alert: OpsAlert) => {
     }
 }
 
+const handleAssign = async (alert: OpsAlert) => {
+    try {
+        const { value } = await ElMessageBox.prompt('填写负责人', '指派告警', {
+            confirmButtonText: '指派',
+            cancelButtonText: '取消',
+            inputPlaceholder: '例如：on-call-a',
+            inputPattern: /^[\p{L}\p{N}@._\-\s]+$/u,
+            inputErrorMessage: '负责人只能包含文字、数字、空格、@ . _ -',
+        })
+
+        assigningId.value = alert.id
+        await assignAlert(alert.id, {
+            assigned_to: value,
+            note: `指派给 ${value}`,
+        })
+
+        ElMessage.success('告警已指派')
+        await loadAlerts()
+    } catch (error) {
+        if (error !== 'cancel') {
+            ElMessage.error('告警指派失败')
+        }
+    } finally {
+        assigningId.value = null
+    }
+}
+
 /**
  * 标记告警已恢复。
  */
@@ -735,7 +894,7 @@ const statusLabel = (value: string) => {
 const thresholdPrecision = (unit: string | null) => unit === 'MB/s' ? 2 : 0
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus()])
     startRealtime()
 })
 
@@ -756,6 +915,7 @@ onBeforeUnmount(stopRealtime)
 }
 
 .notification-card,
+.evaluation-card,
 .rule-card {
     border-radius: 8px;
 }
@@ -771,6 +931,49 @@ onBeforeUnmount(stopRealtime)
     gap: 12px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 14px;
+}
+
+.settings-panel {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 14px;
+    padding-top: 14px;
+}
+
+.settings-form {
+    margin-top: 10px;
+}
+
+.severity-grid,
+.evaluation-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.severity-row,
+.evaluation-grid {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.severity-row {
+    gap: 10px;
+}
+
+.severity-label {
+    color: #111827;
+    font-weight: 700;
+    min-width: 70px;
+}
+
+.evaluation-grid {
+    color: #475569;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.inline-help {
+    margin-left: 8px;
 }
 
 .notification-item {

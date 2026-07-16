@@ -26,6 +26,11 @@ class AlertRuleEngineService
             ...$this->queueAlerts((array) ($snapshot['queue'] ?? [])),
             ...$this->dockerAlerts((array) ($snapshot['docker'] ?? [])),
             ...$this->networkAlerts((array) ($snapshot['network'] ?? [])),
+            ...$this->systemAlerts((array) ($snapshot['system'] ?? [])),
+            ...$this->redisAlerts((array) ($snapshot['redis'] ?? [])),
+            ...$this->mysqlAlerts((array) ($snapshot['mysql'] ?? [])),
+            ...$this->octaneAlerts((array) ($snapshot['octane'] ?? [])),
+            ...$this->supervisorAlerts((array) ($snapshot['supervisor'] ?? [])),
         ]));
     }
 
@@ -205,6 +210,131 @@ class AlertRuleEngineService
                     'target' => 'network',
                     'rx_mb_s' => $rx,
                     'tx_mb_s' => $tx,
+                ],
+            ),
+        ];
+    }
+
+    private function systemAlerts(array $system): array
+    {
+        return [
+            ...$this->percentageAlert('system_cpu', 'system', 'CPU 使用率过高', (float) ($system['cpu_percent'] ?? 0), 'cpu'),
+            ...$this->percentageAlert('system_memory', 'system', '内存使用率过高', (float) data_get($system, 'memory.percent', 0), 'memory'),
+        ];
+    }
+
+    private function redisAlerts(array $redis): array
+    {
+        $rule = $this->rule('redis_connected', ['warning_threshold' => 1]);
+
+        if ($rule === null || ! array_key_exists('connected', $redis) || (bool) $redis['connected']) {
+            return [];
+        }
+
+        return [
+            new AlertDTO(
+                source: 'redis',
+                severity: 'critical',
+                title: 'Redis 连接异常',
+                message: 'Redis 当前不可连接，请检查 Redis 服务或网络。',
+                context: ['target' => 'redis'],
+            ),
+        ];
+    }
+
+    private function mysqlAlerts(array $mysql): array
+    {
+        $rule = $this->rule('mysql_connected', ['warning_threshold' => 1]);
+
+        if ($rule === null || ! array_key_exists('connected', $mysql) || (bool) $mysql['connected']) {
+            return [];
+        }
+
+        return [
+            new AlertDTO(
+                source: 'mysql',
+                severity: 'critical',
+                title: 'MySQL 连接异常',
+                message: 'MySQL 当前不可连接，请检查数据库服务或网络。',
+                context: ['target' => 'mysql'],
+            ),
+        ];
+    }
+
+    private function octaneAlerts(array $octane): array
+    {
+        $rule = $this->rule('octane_running', ['warning_threshold' => 1]);
+
+        if ($rule === null || $octane === []) {
+            return [];
+        }
+
+        $running = (bool) ($octane['running'] ?? false);
+        $processCount = (float) ($octane['process_count'] ?? 0);
+
+        if ($running && $processCount >= (float) $rule['warning_threshold']) {
+            return [];
+        }
+
+        return [
+            new AlertDTO(
+                source: 'octane',
+                severity: 'critical',
+                title: 'Octane 运行异常',
+                message: "Octane 当前运行状态异常，worker 数量 {$processCount}。",
+                context: [
+                    'target' => 'octane',
+                    'running' => $running,
+                    'process_count' => $processCount,
+                ],
+            ),
+        ];
+    }
+
+    private function supervisorAlerts(array $processes): array
+    {
+        $rule = $this->rule('supervisor_process_down', ['warning_threshold' => 1]);
+
+        if ($rule === null) {
+            return [];
+        }
+
+        return collect($processes)
+            ->filter(fn (array $process): bool => strtoupper((string) ($process['state'] ?? '')) !== 'RUNNING')
+            ->map(fn (array $process): AlertDTO => new AlertDTO(
+                source: 'supervisor',
+                severity: 'warning',
+                title: 'Supervisor 进程异常：'.(string) ($process['name'] ?? 'unknown'),
+                message: 'Supervisor 进程 '.(string) ($process['name'] ?? 'unknown').' 当前状态为 '.(string) ($process['state'] ?? 'unknown').'。',
+                context: [
+                    'target' => (string) ($process['name'] ?? 'unknown'),
+                    'state' => (string) ($process['state'] ?? 'unknown'),
+                ],
+            ))
+            ->values()
+            ->all();
+    }
+
+    private function percentageAlert(string $ruleKey, string $source, string $title, float $value, string $target): array
+    {
+        $rule = $this->rule($ruleKey, ['warning_threshold' => 85, 'critical_threshold' => 95]);
+
+        if ($rule === null || $value < (float) $rule['warning_threshold']) {
+            return [];
+        }
+
+        $criticalThreshold = (float) ($rule['critical_threshold'] ?? $rule['warning_threshold']);
+        $severity = $value >= $criticalThreshold ? 'critical' : 'warning';
+
+        return [
+            new AlertDTO(
+                source: $source,
+                severity: $severity,
+                title: $title,
+                message: "{$title}，当前值 {$value}%，已超过 ".(float) $rule['warning_threshold'].'% 阈值。',
+                context: [
+                    'target' => $target,
+                    'value' => $value,
                 ],
             ),
         ];
