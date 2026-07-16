@@ -15,5 +15,7 @@ class LogQueryDTO
         public int $page = 1,
         public int $perPage = 20,
         public ?string $level = null,
+        public ?string $from = null,
+        public ?string $to = null,
     ) {}
 }

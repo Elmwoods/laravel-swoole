@@ -70,6 +70,7 @@ export interface RedisSlowLogResult {
     message?: string
     entries: RedisSlowLogEntry[]
     count: number
+    pagination?: LogPagination
     checked_at: string
 }
 
@@ -86,20 +87,26 @@ export interface SystemLogSourcesResult {
 
 export interface LogQuery {
     lines: number
+    tail?: number
     page?: number
     per_page?: number
     keyword?: string
     level?: string
+    from?: string
+    to?: string
     source?: string
     container?: string
 }
 
 const params = (query: LogQuery) => ({
     lines: query.lines,
+    tail: query.tail || undefined,
     page: query.page || undefined,
     per_page: query.per_page || undefined,
     keyword: query.keyword || undefined,
     level: query.level || undefined,
+    from: query.from || undefined,
+    to: query.to || undefined,
     source: query.source || undefined,
     container: query.container || undefined,
 })
@@ -115,6 +122,9 @@ export const getSystemLogs = (query: LogQuery) =>
 
 export const getRedisSlowLogs = (query: LogQuery) =>
     request.get<ApiResponse<RedisSlowLogResult>>('/api/ops/logs/redis', { params: params(query) })
+
+export const getDockerLogs = (query: LogQuery) =>
+    request.get<ApiResponse<LogFileResult>>('/api/ops/logs/docker', { params: params(query) })
 
 export const getSystemLogSources = () =>
     request.get<ApiResponse<SystemLogSourcesResult>>('/api/ops/logs/system/sources')

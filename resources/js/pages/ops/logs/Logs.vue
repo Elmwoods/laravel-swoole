@@ -27,6 +27,7 @@
                     <el-tab-pane label="Octane" name="octane" />
                     <el-tab-pane label="Redis SlowLog" name="redis" />
                     <el-tab-pane label="System" name="system" />
+                    <el-tab-pane label="Docker" name="docker" />
                 </el-tabs>
 
                 <div class="filters">
@@ -55,7 +56,6 @@
                     </el-select>
 
                     <el-input
-                        v-if="active !== 'redis'"
                         v-model="keyword"
                         class="keyword-input"
                         clearable
@@ -64,11 +64,34 @@
                         @clear="handleQueryChange"
                     />
 
+                    <el-input
+                        v-if="active === 'docker'"
+                        v-model="dockerContainer"
+                        class="source-select"
+                        clearable
+                        placeholder="容器名称或 ID"
+                        @keyup.enter="handleQueryChange"
+                        @clear="handleQueryChange"
+                    />
+
+                    <el-date-picker
+                        v-model="timeRange"
+                        class="time-range"
+                        type="datetimerange"
+                        unlink-panels
+                        range-separator="至"
+                        start-placeholder="开始时间"
+                        end-placeholder="结束时间"
+                        value-format="YYYY-MM-DD HH:mm:ss"
+                        @change="handleQueryChange"
+                    />
+
                     <el-input-number
                         v-model="lines"
                         :min="10"
                         :max="1000"
                         :step="50"
+                        aria-label="Tail 行数"
                         controls-position="right"
                         @change="handleQueryChange"
                     />
@@ -150,6 +173,18 @@
                             <el-table-column prop="command" label="命令" min-width="360" show-overflow-tooltip />
                             <el-table-column prop="client" label="客户端" min-width="180" show-overflow-tooltip />
                         </el-table>
+                        <div class="pagination-bar">
+                            <el-pagination
+                                v-model:current-page="page"
+                                v-model:page-size="perPage"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :total="redisPagination.total"
+                                background
+                                layout="total, sizes, prev, pager, next, jumper"
+                                @current-change="loadLogs"
+                                @size-change="handlePageSizeChange"
+                            />
+                        </div>
                     </div>
 
                     <div v-else class="log-panel" v-loading="loading">
@@ -244,13 +279,14 @@ import {
     getRedisSlowLogs,
     getSystemLogs,
     getSystemLogSources,
+    getDockerLogs,
     type LogFileResult,
     type LogEntry,
     type RedisSlowLogEntry,
     type SystemLogSource,
 } from '@/api/opsStage3'
 
-type LogTab = 'laravel' | 'octane' | 'redis' | 'system'
+type LogTab = 'laravel' | 'octane' | 'redis' | 'system' | 'docker'
 
 const active = ref<LogTab>('laravel')
 const loading = ref(false)
@@ -261,9 +297,18 @@ const page = ref(1)
 const perPage = ref(20)
 const notice = ref('')
 const systemSource = ref('')
+const dockerContainer = ref('')
+const timeRange = ref<[string, string] | []>([])
 const systemSources = ref<SystemLogSource[]>([])
 const logResult = ref<LogFileResult | null>(null)
 const redisEntries = ref<RedisSlowLogEntry[]>([])
+const redisPagination = ref({
+    current_page: 1,
+    per_page: 20,
+    total: 0,
+    last_page: 1,
+    has_more: false,
+})
 const viewMode = ref<'entries' | 'raw'>('entries')
 const selectedLevel = ref('')
 const expandedEntries = ref(new Set<string>())
@@ -274,6 +319,7 @@ const descriptions: Record<LogTab, string> = {
     octane: 'Octane / Swoole 运行日志，用于排查 Worker 与请求异常',
     redis: 'Redis SLOWLOG 慢查询记录，用于定位慢命令',
     system: '容器内系统与 Supervisor 相关日志，来源受后端白名单保护',
+    docker: 'Docker 容器日志，容器标识与读取行数均受后端边界控制',
 }
 
 const currentDescription = computed(() => descriptions[active.value])
@@ -294,8 +340,9 @@ const maxTimelineTotal = computed(() => Math.max(...timelineFacets.value.map(ite
 const sourceCards = computed(() => [
     { name: 'laravel' as const, label: 'Laravel', total: active.value === 'laravel' ? pagination.value.total : '-' },
     { name: 'octane' as const, label: 'Octane', total: active.value === 'octane' ? pagination.value.total : '-' },
-    { name: 'redis' as const, label: 'Redis SlowLog', total: active.value === 'redis' ? redisEntries.value.length : '-' },
+    { name: 'redis' as const, label: 'Redis SlowLog', total: active.value === 'redis' ? redisPagination.value.total : '-' },
     { name: 'system' as const, label: 'System', total: active.value === 'system' ? pagination.value.total : '-' },
+    { name: 'docker' as const, label: 'Docker', total: active.value === 'docker' ? pagination.value.total : '-' },
 ])
 const viewOptions = [
     { label: '事件', value: 'entries' },
@@ -485,13 +532,18 @@ const loadLogs = async () => {
     notice.value = ''
 
     try {
+        const [from, to] = timeRange.value
         const query = {
             lines: lines.value,
+            tail: lines.value,
             page: page.value,
             per_page: perPage.value,
             keyword: keyword.value,
             level: selectedLevel.value,
+            from,
+            to,
             source: systemSource.value,
+            container: dockerContainer.value,
         }
 
         if (active.value === 'laravel') {
@@ -512,8 +564,30 @@ const loadLogs = async () => {
             return
         }
 
+        if (active.value === 'docker') {
+            if (!dockerContainer.value.trim()) {
+                logResult.value = null
+                redisEntries.value = []
+                notice.value = '请输入 Docker 容器名称或 ID'
+                return
+            }
+
+            const res = await getDockerLogs(query)
+            applyFileResult(res.data.data)
+            return
+        }
+
         const res = await getRedisSlowLogs(query)
         redisEntries.value = res.data.data.entries
+        redisPagination.value = res.data.data.pagination ?? {
+            current_page: page.value,
+            per_page: perPage.value,
+            total: res.data.data.count,
+            last_page: Math.max(1, Math.ceil(res.data.data.count / perPage.value)),
+            has_more: false,
+        }
+        page.value = redisPagination.value.current_page
+        perPage.value = redisPagination.value.per_page
         logResult.value = null
         notice.value = res.data.data.available ? '' : (res.data.data.message || 'Redis 慢日志不可用')
     } catch {
@@ -532,6 +606,13 @@ const applyFileResult = (result: LogFileResult) => {
 
     logResult.value = normalized
     redisEntries.value = []
+    redisPagination.value = {
+        current_page: 1,
+        per_page: perPage.value,
+        total: 0,
+        last_page: 1,
+        has_more: false,
+    }
     page.value = normalized.pagination.current_page
     perPage.value = normalized.pagination.per_page
     notice.value = normalized.message || (!normalized.exists || !normalized.readable ? '日志文件不存在或不可读' : '')
@@ -666,7 +747,9 @@ onBeforeUnmount(() => {
 .filters {
     align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+    justify-content: flex-end;
 }
 
 .keyword-input {
@@ -675,6 +758,10 @@ onBeforeUnmount(() => {
 
 .source-select {
     width: 220px;
+}
+
+.time-range {
+    width: 360px;
 }
 
 .source-state {

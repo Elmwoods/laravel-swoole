@@ -48,7 +48,7 @@ class LogController extends Controller
     ): JsonResponse
     {
         return $this->success(
-            $service->slowLogs($request->integer('lines', 100))
+            $service->slowLogs($request->dto())
         );
     }
 
@@ -65,7 +65,7 @@ class LogController extends Controller
         return $this->success(
             $service->latest(
                 container: $dto->container ?? '',
-                lines: $dto->lines,
+                query: $dto,
             )
         );
     }

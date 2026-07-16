@@ -168,12 +168,18 @@ Route::prefix('/ops')
         Route::prefix('logs')
             ->middleware('admin.permission:ops.logs.view')
             ->group(function (): void {
-                Route::get('/laravel', [LogController::class, 'laravel']);
-                Route::get('/octane', [LogController::class, 'octane']);
-                Route::get('/redis', [LogController::class, 'redis']);
-                Route::get('/system', [LogController::class, 'system']);
-                Route::get('/system/sources', [LogController::class, 'systemSources']);
-                Route::get('/docker', [LogController::class, 'docker']);
+                Route::get('/laravel', [LogController::class, 'laravel'])
+                    ->middleware('admin.audit:ops.logs,laravel');
+                Route::get('/octane', [LogController::class, 'octane'])
+                    ->middleware('admin.audit:ops.logs,octane');
+                Route::get('/redis', [LogController::class, 'redis'])
+                    ->middleware('admin.audit:ops.logs,redis');
+                Route::get('/system', [LogController::class, 'system'])
+                    ->middleware('admin.audit:ops.logs,system');
+                Route::get('/system/sources', [LogController::class, 'systemSources'])
+                    ->middleware('admin.audit:ops.logs,system_sources');
+                Route::get('/docker', [LogController::class, 'docker'])
+                    ->middleware('admin.audit:ops.logs,docker');
             });
 
         Route::get('/test-broadcast', function () {

@@ -18,10 +18,25 @@ class LogFileReaderService
     public function tail(string $file, LogQueryDTO $dto, string $source): array
     {
         if (! is_file($file) || ! is_readable($file)) {
-            return $this->emptyResult($source, $file, '日志文件不存在或不可读');
+            return $this->emptyResult($source, '日志文件不存在或不可读', is_file($file), is_readable($file));
         }
 
         $lines = $this->readLastLines($file, $this->normalizeLines($dto->lines));
+        $result = $this->fromLines($lines, $dto, $source);
+
+        return [
+            ...$result,
+            'path' => $file,
+            'exists' => true,
+            'readable' => true,
+        ];
+    }
+
+    /**
+     * 从已读取的日志行生成统一查询结果。
+     */
+    public function fromLines(array $lines, LogQueryDTO $dto, string $source): array
+    {
         $entries = $this->toEntries($lines, $source);
 
         if ($dto->keyword) {
@@ -29,6 +44,10 @@ class LogFileReaderService
             $entries = array_values(array_filter($entries, function (array $entry) use ($keyword): bool {
                 return str_contains(mb_strtolower($entry['content']), $keyword);
             }));
+        }
+
+        if ($dto->from || $dto->to) {
+            $entries = $this->filterByTimeRange($entries, $dto);
         }
 
         $facets = $this->facets($entries, $source);
@@ -40,7 +59,7 @@ class LogFileReaderService
             }));
         }
 
-        if ($dto->keyword || $dto->level) {
+        if ($dto->keyword || $dto->level || $dto->from || $dto->to) {
             $lines = collect($entries)
                 ->flatMap(fn (array $entry): array => $entry['lines'])
                 ->values()
@@ -64,7 +83,7 @@ class LogFileReaderService
 
         return [
             'source' => $source,
-            'path' => $file,
+            'path' => null,
             'exists' => true,
             'readable' => true,
             'lines' => $pagedLines,
@@ -75,6 +94,33 @@ class LogFileReaderService
             'pagination' => $pagination,
             'checked_at' => now()->toDateTimeString(),
         ];
+    }
+
+    /**
+     * 按日志时间筛选；没有可解析时间的日志在时间筛选时不展示。
+     */
+    private function filterByTimeRange(array $entries, LogQueryDTO $dto): array
+    {
+        $from = $dto->from ? strtotime($dto->from) : null;
+        $to = $dto->to ? strtotime($dto->to) : null;
+
+        return array_values(array_filter($entries, function (array $entry) use ($from, $to): bool {
+            $time = isset($entry['time']) ? strtotime((string) $entry['time']) : false;
+
+            if ($time === false) {
+                return false;
+            }
+
+            if ($from !== null && $time < $from) {
+                return false;
+            }
+
+            if ($to !== null && $time > $to) {
+                return false;
+            }
+
+            return true;
+        }));
     }
 
     /**
@@ -390,13 +436,13 @@ class LogFileReaderService
     /**
      * 返回统一空结果。
      */
-    private function emptyResult(string $source, string $file, string $message): array
+    public function emptyResult(string $source, string $message, bool $exists = false, bool $readable = false): array
     {
         return [
             'source' => $source,
-            'path' => $file,
-            'exists' => is_file($file),
-            'readable' => is_readable($file),
+            'path' => null,
+            'exists' => $exists,
+            'readable' => $readable,
             'message' => $message,
             'lines' => [],
             'entries' => [],
