@@ -413,8 +413,17 @@ class AlertCenterService
             'redis' => $this->redisService->info(),
             'mysql' => $this->mysqlService->info(),
             'octane' => $this->octaneService->status(),
-            'supervisor' => $this->supervisorService->status(),
+            'supervisor' => $this->supervisorProcesses($this->supervisorService->status()),
         ];
+    }
+
+    private function supervisorProcesses(array $status): array
+    {
+        if (array_key_exists('services', $status) && is_array($status['services'])) {
+            return $status['services'];
+        }
+
+        return $status;
     }
 
     /**

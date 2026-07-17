@@ -70,6 +70,48 @@ class LogErrorWatcherServiceTest extends TestCase
         $this->assertStringContainsString('Docker build context', $result['events'][0]['suggestion']);
     }
 
+    public function test_it_coalesces_laravel_database_exception_stack_into_one_event(): void
+    {
+        File::put($this->tempDir.'/laravel.log', implode(PHP_EOL, [
+            '[2026-07-16 12:00:00] local.ERROR: Illuminate\Database\QueryException',
+            'SQLSTATE[42S02]: Base table or view not found: 1146 Table \'laravel.cache\' doesn\'t exist (Connection: mysql, SQL: select * from `cache` where `key` = laravel_cache)',
+            '838▕                 ? UniqueConstraintViolationException::class',
+            '839▕                 : QueryException::class;',
+            '[previous exception] [object] (PDOException(code: 42S02): SQLSTATE[42S02]: Base table or view not found: 1146 Table \'laravel.cache\' doesn\'t exist at /var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)',
+            '#0 /var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare()',
+        ]));
+
+        $result = app(OpsLogErrorWatcherService::class)->scan(['laravel'], dryRun: true, resetOffsets: true);
+
+        $this->assertSame(1, $result['detected']);
+        $event = $result['events'][0];
+        $this->assertSame('laravel', $event['source']);
+        $this->assertStringContainsString('Illuminate\\Database\\QueryException', $event['summary']);
+        $this->assertStringContainsString('SQLSTATE[42S02]', $event['snippet']);
+        $this->assertStringContainsString('artisan migrate', $event['suggestion']);
+        $this->assertSame($event['fingerprint'], app(OpsLogErrorWatcherService::class)->fingerprint($event));
+    }
+
+    public function test_database_missing_table_fingerprint_is_stable_for_source(): void
+    {
+        $service = app(OpsLogErrorWatcherService::class);
+
+        $first = $service->fingerprint([
+            'source' => 'scheduler',
+            'level' => 'ERROR',
+            'summary' => 'PDOException::("SQLSTATE[42S02]: Base table or view not found: 1146 Table \'laravel.cache\' doesn\'t exist")',
+            'snippet' => 'line 838',
+        ]);
+        $second = $service->fingerprint([
+            'source' => 'scheduler',
+            'level' => 'ERROR',
+            'summary' => 'SQLSTATE[42S02]: Base table or view not found: 1146 Table \'laravel.cache\' doesn\'t exist (Connection: mysql, SQL: select * from `cache`)',
+            'snippet' => 'line 839',
+        ]);
+
+        $this->assertSame($first, $second);
+    }
+
     public function test_it_uses_offsets_and_detects_log_truncation(): void
     {
         File::put($this->tempDir.'/laravel.log', '[2026-07-16 12:00:00] local.ERROR: first'.PHP_EOL);

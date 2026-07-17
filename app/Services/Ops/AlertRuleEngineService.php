@@ -299,18 +299,33 @@ class AlertRuleEngineService
             return [];
         }
 
+        if (array_key_exists('services', $processes) && is_array($processes['services'])) {
+            $processes = $processes['services'];
+        }
+
         return collect($processes)
-            ->filter(fn (array $process): bool => strtoupper((string) ($process['state'] ?? '')) !== 'RUNNING')
-            ->map(fn (array $process): AlertDTO => new AlertDTO(
-                source: 'supervisor',
-                severity: 'warning',
-                title: 'Supervisor 进程异常：'.(string) ($process['name'] ?? 'unknown'),
-                message: 'Supervisor 进程 '.(string) ($process['name'] ?? 'unknown').' 当前状态为 '.(string) ($process['state'] ?? 'unknown').'。',
-                context: [
-                    'target' => (string) ($process['name'] ?? 'unknown'),
-                    'state' => (string) ($process['state'] ?? 'unknown'),
-                ],
-            ))
+            ->filter(function (array $process): bool {
+                $name = trim((string) ($process['name'] ?? ''));
+                $state = strtoupper(trim((string) ($process['status'] ?? $process['state'] ?? '')));
+
+                return $name !== '' && $state !== '' && $state !== 'RUNNING';
+            })
+            ->map(function (array $process): AlertDTO {
+                $name = trim((string) ($process['name'] ?? ''));
+                $state = strtoupper(trim((string) ($process['status'] ?? $process['state'] ?? 'unknown')));
+
+                return new AlertDTO(
+                    source: 'supervisor',
+                    severity: 'warning',
+                    title: 'Supervisor 进程异常：'.$name,
+                    message: 'Supervisor 进程 '.$name.' 当前状态为 '.$state.'。',
+                    context: [
+                        'target' => $name,
+                        'state' => $state,
+                        'description' => $process['description'] ?? null,
+                    ],
+                );
+            })
             ->values()
             ->all();
     }

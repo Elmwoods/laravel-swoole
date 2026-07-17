@@ -224,6 +224,45 @@ class AlertRuleEngineServiceTest extends TestCase
         );
     }
 
+    public function test_supervisor_services_payload_with_running_status_does_not_trigger_unknown_alert(): void
+    {
+        app(AlertRuleRegistryService::class)->syncDefaults();
+
+        $alerts = app(AlertRuleEngineService::class)->detect([
+            'supervisor' => [
+                'services' => [
+                    ['name' => 'octane', 'status' => 'RUNNING', 'running' => true],
+                    ['name' => 'laravel-worker', 'status' => 'RUNNING', 'running' => true],
+                ],
+            ],
+        ]);
+
+        $this->assertSame([], collect($alerts)->where('source', 'supervisor')->values()->all());
+    }
+
+    public function test_supervisor_alerts_support_status_and_legacy_state_fields(): void
+    {
+        app(AlertRuleRegistryService::class)->syncDefaults();
+
+        $alerts = app(AlertRuleEngineService::class)->detect([
+            'supervisor' => [
+                'services' => [
+                    ['name' => 'octane', 'status' => 'FATAL', 'description' => 'spawn error'],
+                    ['name' => 'legacy-worker', 'state' => 'STOPPED'],
+                    ['status' => 'STOPPED'],
+                ],
+            ],
+        ]);
+
+        $supervisorAlerts = collect($alerts)->where('source', 'supervisor')->values();
+
+        $this->assertCount(2, $supervisorAlerts);
+        $this->assertSame('Supervisor 进程异常：octane', $supervisorAlerts[0]->title);
+        $this->assertSame('FATAL', $supervisorAlerts[0]->context['state']);
+        $this->assertSame('Supervisor 进程异常：legacy-worker', $supervisorAlerts[1]->title);
+        $this->assertSame('STOPPED', $supervisorAlerts[1]->context['state']);
+    }
+
     public function test_default_rule_registry_includes_extended_alert_rules(): void
     {
         $registry = app(AlertRuleRegistryService::class);

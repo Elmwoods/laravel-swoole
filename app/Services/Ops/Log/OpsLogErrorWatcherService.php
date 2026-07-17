@@ -81,7 +81,7 @@ class OpsLogErrorWatcherService
             'logs',
             $event['source'] ?? '',
             $event['level'] ?? '',
-            $this->normalizeFingerprintText((string) ($event['summary'] ?? '')),
+            $this->fingerprintText($event),
         ]));
     }
 
@@ -146,6 +146,12 @@ class OpsLogErrorWatcherService
             $line = trim($line);
 
             if ($line === '') {
+                continue;
+            }
+
+            if ($current !== null && $this->isStackContinuation($source, $line)) {
+                $current['lines'][] = $line;
+
                 continue;
             }
 
@@ -382,6 +388,49 @@ class OpsLogErrorWatcherService
         $text = preg_replace('/\d+/', '#', $text) ?? $text;
 
         return mb_strtolower($text);
+    }
+
+    private function fingerprintText(array $event): string
+    {
+        $summary = (string) ($event['summary'] ?? '');
+        $snippet = (string) ($event['snippet'] ?? '');
+        $canonical = $this->databaseMissingTableFingerprintText($summary.PHP_EOL.$snippet);
+
+        if ($canonical !== null) {
+            return $canonical;
+        }
+
+        return $this->normalizeFingerprintText($summary);
+    }
+
+    private function databaseMissingTableFingerprintText(string $text): ?string
+    {
+        if (! str_contains($text, 'SQLSTATE[42S02]')) {
+            return null;
+        }
+
+        if (! preg_match("/Table ['\"](?<table>[^'\"]+)['\"] doesn't exist/i", $text, $matches)) {
+            return null;
+        }
+
+        return 'sqlstate-42s02-missing-table:'.mb_strtolower((string) $matches['table']);
+    }
+
+    private function isStackContinuation(string $source, string $line): bool
+    {
+        if (! in_array($source, ['laravel', 'worker', 'scheduler', 'octane'], true)) {
+            return false;
+        }
+
+        if (preg_match('/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s+[A-Za-z0-9_-]+\.[A-Za-z]+:/', $line)) {
+            return false;
+        }
+
+        return preg_match('/^(#\d+\s|Stack trace:|Next |Caused by:|\[stacktrace\]|\[previous exception\]|\d+▕|\{main\})/i', $line) === 1
+            || str_contains($line, 'Exception')
+            || str_contains($line, 'SQLSTATE[')
+            || str_contains($line, '/var/www/html/vendor/')
+            || str_contains($line, '/var/www/html/app/');
     }
 
     private function readState(): array
