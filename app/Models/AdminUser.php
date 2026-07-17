@@ -24,6 +24,9 @@ class AdminUser extends Authenticatable
         'last_login_at',
         'last_login_ip',
         'last_login_user_agent',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
+        'two_factor_recovery_codes',
     ];
 
     protected function casts(): array
@@ -34,6 +37,9 @@ class AdminUser extends Authenticatable
             'session_version' => 'integer',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_secret' => 'encrypted',
+            'two_factor_confirmed_at' => 'datetime',
+            'two_factor_recovery_codes' => 'array',
         ];
     }
 
@@ -90,5 +96,12 @@ class AdminUser extends Authenticatable
     public function sessionVersionMatches(?int $sessionVersion): bool
     {
         return $sessionVersion !== null && $sessionVersion === (int) $this->session_version;
+    }
+
+    public function twoFactorEnabled(): bool
+    {
+        return is_string($this->two_factor_secret)
+            && $this->two_factor_secret !== ''
+            && $this->two_factor_confirmed_at !== null;
     }
 }

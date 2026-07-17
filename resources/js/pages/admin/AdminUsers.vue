@@ -19,10 +19,25 @@
                     <el-tag :type="row.is_active ? 'success' : 'danger'">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
                 </template>
             </el-table-column>
-            <el-table-column label="操作" width="210">
+            <el-table-column label="2FA" width="110">
+                <template #default="{ row }">
+                    <el-tag :type="row.security?.two_factor_enabled ? 'success' : 'warning'">
+                        {{ row.security?.two_factor_enabled ? '已启用' : '待绑定' }}
+                    </el-tag>
+                </template>
+            </el-table-column>
+            <el-table-column label="操作" width="290">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                     <el-button v-if="auth.isSuperAdmin" link type="warning" @click="openPassword(row)">重置密码</el-button>
+                    <el-button
+                        v-if="auth.isSuperAdmin && row.id !== auth.profile?.admin?.id"
+                        link
+                        type="danger"
+                        @click="resetTwoFactor(row)"
+                    >
+                        重置 2FA
+                    </el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -73,6 +88,7 @@ import {
     getAdminRoles,
     getAdminUsers,
     resetAdminPassword,
+    resetAdminTwoFactor,
     updateAdminUser,
     type AdminRole,
     type AdminUser,
@@ -159,6 +175,20 @@ const savePassword = async () => {
     } finally {
         Object.assign(passwordForm, { password: '', password_confirmation: '' })
         passwordSaving.value = false
+    }
+}
+
+const resetTwoFactor = async (row: AdminUser) => {
+    if (loading.value) return
+
+    loading.value = true
+
+    try {
+        await resetAdminTwoFactor(row.id)
+        ElMessage.success('2FA 已重置，该管理员下次登录需要重新绑定')
+        await load()
+    } finally {
+        loading.value = false
     }
 }
 

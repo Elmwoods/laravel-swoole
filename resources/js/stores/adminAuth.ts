@@ -1,5 +1,13 @@
 import { defineStore } from 'pinia'
-import { adminLogin, adminLogout, getAdminProfile, type AdminProfile } from '@/api/adminSecurity'
+import {
+    adminLogin,
+    adminLogout,
+    challengeAdminTwoFactor,
+    confirmAdminTwoFactor,
+    getAdminProfile,
+    type AdminLoginResult,
+    type AdminProfile,
+} from '@/api/adminSecurity'
 
 export const useAdminAuthStore = defineStore('adminAuth', {
     state: () => ({
@@ -30,8 +38,28 @@ export const useAdminAuthStore = defineStore('adminAuth', {
         },
         async login(payload: { email: string; password: string }) {
             const res = await adminLogin(payload)
+            const data = res.data.data
+
+            if (data.admin) {
+                this.profile = data as AdminProfile
+                this.loaded = true
+            }
+
+            return data as AdminLoginResult
+        },
+        async confirmTwoFactor(payload: { code: string }) {
+            const res = await confirmAdminTwoFactor(payload)
+            this.profile = res.data.data.profile
+            this.loaded = true
+
+            return res.data.data
+        },
+        async challengeTwoFactor(payload: { code?: string; recovery_code?: string }) {
+            const res = await challengeAdminTwoFactor(payload)
             this.profile = res.data.data
             this.loaded = true
+
+            return res.data.data
         },
         async logout() {
             await adminLogout()

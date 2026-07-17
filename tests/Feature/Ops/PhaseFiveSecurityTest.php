@@ -9,6 +9,7 @@ use App\Models\AdminUser;
 use App\Models\OpsAlert;
 use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminPasswordCryptoService;
+use App\Services\Admin\AdminTwoFactorService;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\OctaneControlService;
 use App\Services\Ops\SupervisorService;
@@ -41,8 +42,9 @@ class PhaseFiveSecurityTest extends TestCase
         ], $this->encryptedPasswordPayload('secret-password')))
             ->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('data.admin.email', $admin->email)
-            ->assertJsonPath('data.permissions.0', 'ops.dashboard.view');
+            ->assertJsonPath('data.requires_two_factor_setup', true);
+
+        $this->confirmPendingTwoFactorSetup($admin);
 
         $this->getJson('/api/admin/auth/me')
             ->assertOk()
@@ -74,6 +76,9 @@ class PhaseFiveSecurityTest extends TestCase
             'email' => $admin->email,
         ], $this->encryptedPasswordPayload('secret-password')))
             ->assertOk()
+            ->assertJsonPath('data.requires_two_factor_setup', true);
+
+        $this->confirmPendingTwoFactorSetup($admin)
             ->assertSessionHas('admin_session_version', (int) $admin->session_version)
             ->assertSessionHas('admin_last_activity_at');
 
@@ -873,6 +878,19 @@ class PhaseFiveSecurityTest extends TestCase
             'password_encrypted' => $this->encryptPassword($password),
             'password_key_id' => app(AdminPasswordCryptoService::class)->publicKeyPayload()['key_id'],
         ];
+    }
+
+    private function confirmPendingTwoFactorSetup(AdminUser $admin)
+    {
+        $secret = (string) session('admin_two_factor_pending_secret');
+        $this->assertNotSame('', $secret);
+
+        return $this->postJson('/api/admin/auth/two-factor/confirm', [
+            'code' => app(AdminTwoFactorService::class)->totpCode($secret),
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.profile.admin.email', $admin->email)
+            ->assertJsonPath('data.profile.permissions.0', 'ops.dashboard.view');
     }
 
     private function encryptedPasswordResetPayload(string $password, ?string $confirmation = null): array

@@ -6,6 +6,10 @@ export interface AdminUser {
     email: string
     is_active: boolean
     roles: AdminRole[]
+    security?: {
+        two_factor_enabled: boolean
+        two_factor_confirmed_at: string | null
+    }
     last_login_at?: string | null
 }
 
@@ -41,6 +45,24 @@ export interface AdminSecuritySummary {
     current_ip: string | null
     current_user_agent: string
     session_version: number
+    two_factor_enabled: boolean
+    two_factor_confirmed_at: string | null
+}
+
+export interface AdminTwoFactorSetup {
+    secret: string
+    otpauth_uri: string
+}
+
+export interface AdminLoginResult extends Partial<AdminProfile> {
+    requires_two_factor_setup?: boolean
+    requires_two_factor?: boolean
+    setup?: AdminTwoFactorSetup
+}
+
+export interface AdminTwoFactorConfirmResult {
+    profile: AdminProfile
+    recovery_codes: string[]
 }
 
 export interface AdminAuditLog {
@@ -175,12 +197,18 @@ export const adminLogin = async (payload: { email: string; password: string }) =
     return withPasswordKeyRetry(async () => {
         const encryptedPassword = await encryptAdminPassword(payload.password)
 
-        return request.post<ApiResponse<AdminProfile>>('/api/admin/auth/login', {
+        return request.post<ApiResponse<AdminLoginResult>>('/api/admin/auth/login', {
             email: payload.email,
             ...encryptedPassword,
         })
     })
 }
+
+export const confirmAdminTwoFactor = (payload: { code: string }) =>
+    request.post<ApiResponse<AdminTwoFactorConfirmResult>>('/api/admin/auth/two-factor/confirm', payload)
+
+export const challengeAdminTwoFactor = (payload: { code?: string; recovery_code?: string }) =>
+    request.post<ApiResponse<AdminProfile>>('/api/admin/auth/two-factor/challenge', payload)
 
 export const adminLogout = () =>
     request.post<ApiResponse<{ logged_out: boolean }>>('/api/admin/auth/logout')
@@ -218,6 +246,9 @@ export const resetAdminPassword = async (id: number, payload: any) => {
         })
     })
 }
+
+export const resetAdminTwoFactor = (id: number) =>
+    request.post<ApiResponse<AdminUser>>(`/api/admin/users/${id}/two-factor/reset`)
 
 export const getAdminRoles = () =>
     request.get<ApiResponse<{ roles: AdminRole[]; permissions: AdminPermission[] }>>('/api/admin/roles')

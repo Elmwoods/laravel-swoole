@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
 use App\Http\Controllers\Admin\Ops\OctaneController;
+use App\Http\Controllers\Admin\Ops\OpsReleaseCheckController;
 use App\Http\Controllers\Admin\Ops\QueueController;
 use App\Http\Controllers\Admin\Ops\RedisMetricsController;
 use App\Http\Controllers\Admin\Ops\RedisMonitorController;
@@ -33,6 +34,9 @@ Route::prefix('/admin')
                 Route::get('/me', [AdminAuthController::class, 'me']);
                 Route::post('/logout', [AdminAuthController::class, 'logout']);
             });
+
+            Route::post('/two-factor/confirm', [AdminAuthController::class, 'confirmTwoFactor']);
+            Route::post('/two-factor/challenge', [AdminAuthController::class, 'challengeTwoFactor']);
         });
 
         Route::middleware('admin.auth')->group(function (): void {
@@ -44,6 +48,8 @@ Route::prefix('/admin')
                     ->middleware('admin.audit:admin.users,update');
                 Route::post('/users/{adminUser}/reset-password', [AdminUserController::class, 'resetPassword'])
                     ->middleware('admin.audit:admin.users,reset_password');
+                Route::post('/users/{adminUser}/two-factor/reset', [AdminUserController::class, 'resetTwoFactor'])
+                    ->middleware('admin.audit:admin.users,two_factor_reset');
             });
 
             Route::middleware('admin.permission:admin.roles.manage')->group(function (): void {
@@ -66,6 +72,16 @@ Route::prefix('/ops')
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->middleware('admin.permission:ops.dashboard.view');
+
+        Route::prefix('release-check')
+            ->middleware('admin.permission:ops.release.view')
+            ->group(function (): void {
+                Route::get('/overview', [OpsReleaseCheckController::class, 'overview']);
+                Route::post('/run', [OpsReleaseCheckController::class, 'run'])
+                    ->middleware('admin.audit:ops.release,run');
+                Route::get('/history', [OpsReleaseCheckController::class, 'history']);
+                Route::get('/history/{record}', [OpsReleaseCheckController::class, 'show']);
+            });
 
         Route::prefix('octane')
             ->middleware('admin.permission:ops.system.view')

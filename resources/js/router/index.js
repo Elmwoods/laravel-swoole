@@ -41,6 +41,16 @@ const routes = [
                 },
             },
             {
+                path: 'release-check',
+                name: 'ReleaseCheck',
+                component: () => import('../pages/ops/ReleaseCheck.vue'),
+                meta: {
+                    title: '发布自检',
+                    description: '发布前后环境、权限、日志和告警基线检查',
+                    permission: 'ops.release.view',
+                },
+            },
+            {
                 path: 'redis',
                 name: 'RedisMonitor',
                 component: () => import('../pages/ops/RedisMonitor.vue'),
@@ -216,6 +226,7 @@ router.beforeEach(async (to) => {
 const firstAllowedPath = (permissions) => {
     const candidates = [
         ['ops.dashboard.view', '/admin/ops'],
+        ['ops.release.view', '/admin/ops/release-check'],
         ['ops.system.view', '/admin/ops/octane'],
         ['ops.supervisor.view', '/admin/ops/supervisor'],
         ['ops.docker.view', '/admin/ops/docker'],

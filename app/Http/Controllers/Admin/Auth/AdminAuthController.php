@@ -10,7 +10,9 @@ use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminSessionSecurityService;
+use App\Services\Admin\AdminTwoFactorService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -23,6 +25,7 @@ class AdminAuthController extends Controller
         private readonly AdminPasswordCryptoService $passwordCrypto,
         private readonly AdminPermissionRegistry $permissions,
         private readonly AdminSessionSecurityService $sessions,
+        private readonly AdminTwoFactorService $twoFactor,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -71,21 +74,96 @@ class AdminAuthController extends Controller
             ], 422);
         }
 
-        auth('admin')->login($admin);
-        $request->session()->regenerate();
-        $request->session()->put('admin_session_version', (int) $admin->session_version);
-        $this->sessions->touch($request);
         $this->throttle->clear($email, $ip);
 
-        $admin->forceFill([
-            'last_login_at' => now(),
-            'last_login_ip' => $request->ip(),
-            'last_login_user_agent' => $this->userAgentSummary($request->userAgent()),
-        ])->save();
+        $this->putPendingTwoFactorSession($request, $admin);
 
-        $this->audit->record($request, 'admin.auth', 'login', 'success', 200, admin: $admin);
+        if (! $admin->twoFactorEnabled()) {
+            $secret = $this->twoFactor->generateSecret();
+            $request->session()->put('admin_two_factor_pending_secret', $secret);
+            $this->audit->record($request, 'admin.auth', 'login', 'success', 200, admin: $admin, payload: [
+                'requires_two_factor_setup' => true,
+            ]);
 
-        return $this->success($this->profile($admin));
+            return $this->success([
+                'requires_two_factor_setup' => true,
+                'setup' => [
+                    'secret' => $secret,
+                    'otpauth_uri' => $this->twoFactor->otpauthUri($admin->email, $secret),
+                ],
+            ]);
+        }
+
+        $this->audit->record($request, 'admin.auth', 'login', 'success', 200, admin: $admin, payload: [
+            'requires_two_factor' => true,
+        ]);
+
+        return $this->success([
+            'requires_two_factor' => true,
+        ]);
+    }
+
+    public function confirmTwoFactor(Request $request): JsonResponse
+    {
+        $admin = $this->pendingTwoFactorAdmin($request);
+        $secret = (string) $request->session()->get('admin_two_factor_pending_secret', '');
+
+        if (! $admin || $secret === '') {
+            return $this->twoFactorExpiredResponse();
+        }
+
+        $data = $request->validate([
+            'code' => ['required', 'string', 'regex:/^\d{6}$/'],
+        ]);
+
+        if (! $this->twoFactor->verifyTotp($secret, $data['code'])) {
+            $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'failure', 422, admin: $admin);
+
+            throw ValidationException::withMessages([
+                'code' => ['二次验证码不正确。'],
+            ]);
+        }
+
+        $recoveryCodes = $this->twoFactor->generateRecoveryCodes();
+        $this->twoFactor->enable($admin, $secret, $recoveryCodes);
+        $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'success', 200, admin: $admin);
+
+        return $this->success([
+            'profile' => $this->completeLogin($request, $admin->refresh()),
+            'recovery_codes' => $recoveryCodes,
+        ]);
+    }
+
+    public function challengeTwoFactor(Request $request): JsonResponse
+    {
+        $admin = $this->pendingTwoFactorAdmin($request);
+
+        if (! $admin || ! $admin->twoFactorEnabled()) {
+            return $this->twoFactorExpiredResponse();
+        }
+
+        $data = $request->validate([
+            'code' => ['nullable', 'string', 'regex:/^\d{6}$/', 'required_without:recovery_code'],
+            'recovery_code' => ['nullable', 'string', 'max:32', 'required_without:code'],
+        ]);
+
+        $verified = isset($data['code']) && $data['code'] !== ''
+            ? $this->twoFactor->verifyTotp((string) $admin->two_factor_secret, $data['code'])
+            : $this->twoFactor->consumeRecoveryCode($admin, (string) ($data['recovery_code'] ?? ''));
+
+        if (! $verified) {
+            $this->audit->record($request, 'admin.auth', 'two_factor_challenge', 'failure', 422, admin: $admin);
+
+            $field = isset($data['recovery_code']) ? 'recovery_code' : 'code';
+
+            throw ValidationException::withMessages([
+                $field => ['二次验证码或恢复码不正确。'],
+            ]);
+        }
+
+        $this->audit->record($request, 'admin.auth', 'two_factor_challenge', 'success', 200, admin: $admin);
+
+        return $this->success($this->completeLogin($request, $admin->refresh()));
     }
 
     public function me(): JsonResponse
@@ -135,8 +213,61 @@ class AdminAuthController extends Controller
                 'current_ip' => request()->ip(),
                 'current_user_agent' => $this->userAgentSummary(request()->userAgent()),
                 'session_version' => (int) $admin->session_version,
+                ...$this->twoFactor->securitySummary($admin),
             ],
         ];
+    }
+
+    private function putPendingTwoFactorSession(Request $request, AdminUser $admin): void
+    {
+        $request->session()->put('admin_two_factor_pending_admin_id', $admin->id);
+        $request->session()->put('admin_two_factor_pending_at', now()->timestamp);
+        $request->session()->forget('admin_two_factor_pending_secret');
+    }
+
+    private function pendingTwoFactorAdmin(Request $request): ?AdminUser
+    {
+        $id = $request->session()->get('admin_two_factor_pending_admin_id');
+
+        if (! $id) {
+            return null;
+        }
+
+        return AdminUser::query()
+            ->whereKey($id)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    private function completeLogin(Request $request, AdminUser $admin): array
+    {
+        auth('admin')->login($admin);
+        $request->session()->regenerate();
+        $request->session()->forget([
+            'admin_two_factor_pending_admin_id',
+            'admin_two_factor_pending_secret',
+            'admin_two_factor_pending_at',
+        ]);
+        $request->session()->put('admin_session_version', (int) $admin->session_version);
+        $this->sessions->touch($request);
+
+        $admin->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+            'last_login_user_agent' => $this->userAgentSummary($request->userAgent()),
+        ])->save();
+
+        return $this->profile($admin->refresh());
+    }
+
+    private function twoFactorExpiredResponse(): JsonResponse
+    {
+        return response()->json([
+            'code' => 401,
+            'message' => '二次验证会话已失效，请重新登录。',
+            'data' => null,
+            'timestamp' => now()->timestamp,
+        ], 401);
     }
 
     private function userAgentSummary(?string $userAgent): string

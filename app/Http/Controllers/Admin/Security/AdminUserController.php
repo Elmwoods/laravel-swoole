@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\Security\AdminUserUpdateRequest;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminPasswordCryptoService;
+use App\Services\Admin\AdminTwoFactorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -16,6 +17,7 @@ class AdminUserController extends Controller
 {
     public function __construct(
         private readonly AdminPasswordCryptoService $passwordCrypto,
+        private readonly AdminTwoFactorService $twoFactor,
     ) {}
 
     public function index(): JsonResponse
@@ -86,6 +88,30 @@ class AdminUserController extends Controller
         return $this->success($this->serialize($adminUser->refresh()->load('roles')));
     }
 
+    public function resetTwoFactor(AdminUser $adminUser): JsonResponse
+    {
+        $actor = request()->user('admin');
+
+        if (! $actor?->isSuperAdmin()) {
+            return response()->json([
+                'code' => 403,
+                'message' => '只有超级管理员可以重置二次验证。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 403);
+        }
+
+        if ((int) $actor->id === (int) $adminUser->id) {
+            throw ValidationException::withMessages([
+                'admin_user' => ['不能重置自己的二次验证。'],
+            ]);
+        }
+
+        $this->twoFactor->reset($adminUser);
+
+        return $this->success($this->serialize($adminUser->refresh()->load('roles')));
+    }
+
     public function resetPassword(AdminPasswordResetRequest $request, AdminUser $adminUser): JsonResponse
     {
         if (! $request->user('admin')?->isSuperAdmin()) {
@@ -118,6 +144,7 @@ class AdminUserController extends Controller
             'email' => $user->email,
             'is_active' => $user->is_active,
             'last_login_at' => optional($user->last_login_at)->toDateTimeString(),
+            'security' => $this->twoFactor->securitySummary($user),
             'roles' => $user->roles
                 ->map(fn (AdminRole $role): array => [
                     'id' => $role->id,

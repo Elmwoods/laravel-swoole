@@ -132,6 +132,7 @@ class OpsReleaseCheckService
             'ops_alert_evaluations',
             'ops_alert_events',
             'ops_alert_settings',
+            'ops_release_checks',
             'cache',
         ] as $table) {
             $exists = $connected && Schema::hasTable($table);
@@ -255,6 +256,8 @@ class OpsReleaseCheckService
             'docs/ops-center-phase-7-release.md',
             'docs/ops-center-phase-8.md',
             'docs/ops-center-phase-9.md',
+            'docs/ops-center-phase-10.md',
+            'docs/ops-center-phase-11.md',
         ])
             ->map(fn (string $path): array => $this->check('发布文档', $path, is_file(base_path($path)), 'warn', is_file(base_path($path)) ? "{$path} 存在。" : "{$path} 缺失。", '补齐发布验收和回滚说明。'))
             ->all();
