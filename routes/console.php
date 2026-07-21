@@ -10,7 +10,6 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-
 /**
  * Ops - Scheduler Layer
  * 所有采集任务统一在这里调度
@@ -19,7 +18,7 @@ Artisan::command('inspire', function () {
 /**
  * Docker logs 推送
  */
-Schedule::job(new CollectDockerLogsJob())
+Schedule::job(new CollectDockerLogsJob)
     ->everyTenSeconds()
     ->withoutOverlapping();
 
@@ -41,6 +40,13 @@ Schedule::command('ops:inspections:run --type=light')
     ->withoutOverlapping();
 
 /**
+ * 每分钟持久化一个系统指标点，供多天趋势。
+ */
+Schedule::command('ops:metrics:persist')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/**
  * 每日清理过期巡检历史，避免 ops_inspections 无限增长。
  */
 Schedule::command('ops:inspections:prune')
@@ -52,4 +58,11 @@ Schedule::command('ops:inspections:prune')
  */
 Schedule::command('ops:alerts:prune-evaluations')
     ->dailyAt('03:20')
+    ->withoutOverlapping();
+
+/**
+ * 每日清理过期系统指标采样，避免 ops_metric_samples 无限增长。
+ */
+Schedule::command('ops:metrics:prune')
+    ->dailyAt('03:30')
     ->withoutOverlapping();

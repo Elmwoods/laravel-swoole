@@ -121,6 +121,16 @@ const routes = [
                 },
             },
             {
+                path: 'system/trend',
+                name: 'SystemTrend',
+                component: () => import('../pages/ops/system/SystemTrend.vue'),
+                meta: {
+                    title: '系统趋势',
+                    description: '系统指标多天历史趋势',
+                    permission: 'ops.system.view',
+                },
+            },
+            {
                 path: 'network',
                 name: 'NetworkMonitor',
                 component: () => import('../pages/ops/NetworkMonitor.vue'),
