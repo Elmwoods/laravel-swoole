@@ -116,7 +116,9 @@ class AdminAuthController extends Controller
             'code' => ['required', 'string', 'regex:/^\d{6}$/'],
         ]);
 
-        if (! $this->twoFactor->verifyTotp($secret, $data['code'])) {
+        $usedStep = $this->twoFactor->matchStep($secret, $data['code']);
+
+        if ($usedStep === null) {
             $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'failure', 422, admin: $admin);
 
             throw ValidationException::withMessages([
@@ -125,7 +127,7 @@ class AdminAuthController extends Controller
         }
 
         $recoveryCodes = $this->twoFactor->generateRecoveryCodes();
-        $this->twoFactor->enable($admin, $secret, $recoveryCodes);
+        $this->twoFactor->enable($admin, $secret, $recoveryCodes, $usedStep);
         $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'success', 200, admin: $admin);
 
         return $this->success([
@@ -148,7 +150,7 @@ class AdminAuthController extends Controller
         ]);
 
         $verified = isset($data['code']) && $data['code'] !== ''
-            ? $this->twoFactor->verifyTotp((string) $admin->two_factor_secret, $data['code'])
+            ? $this->twoFactor->verifyLoginTotp($admin, $data['code'])
             : $this->twoFactor->consumeRecoveryCode($admin, (string) ($data['recovery_code'] ?? ''));
 
         if (! $verified) {

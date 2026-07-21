@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Ops;
 
-use App\Models\AdminAuditLog;
 use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
@@ -194,6 +193,70 @@ class PhaseElevenTwoFactorTest extends TestCase
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['recovery_code']);
+    }
+
+    public function test_totp_code_cannot_be_replayed_on_a_later_challenge(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+        ['secret' => $secret] = $this->enableTwoFactor($admin);
+
+        $code = app(AdminTwoFactorService::class)->totpCode($secret);
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))->assertOk();
+
+        $this->postJson('/api/admin/auth/two-factor/challenge', [
+            'code' => $code,
+        ])->assertOk();
+
+        auth('admin')->logout();
+        session()->invalidate();
+        session()->regenerateToken();
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))->assertOk();
+
+        $this->postJson('/api/admin/auth/two-factor/challenge', [
+            'code' => $code,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['code']);
+
+        $this->getJson('/api/admin/auth/me')->assertStatus(401);
+    }
+
+    public function test_setup_confirm_code_cannot_be_replayed_as_first_login_challenge(): void
+    {
+        $admin = $this->createAdmin(['ops.dashboard.view']);
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))->assertOk();
+
+        $pendingSecret = session('admin_two_factor_pending_secret');
+        $code = app(AdminTwoFactorService::class)->totpCode($pendingSecret);
+
+        $this->postJson('/api/admin/auth/two-factor/confirm', [
+            'code' => $code,
+        ])->assertOk();
+
+        auth('admin')->logout();
+        session()->invalidate();
+        session()->regenerateToken();
+
+        $this->postJson('/api/admin/auth/login', array_merge([
+            'email' => $admin->email,
+        ], $this->encryptedPasswordPayload('secret-password')))
+            ->assertOk()
+            ->assertJsonPath('data.requires_two_factor', true);
+
+        $this->postJson('/api/admin/auth/two-factor/challenge', [
+            'code' => $code,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['code']);
     }
 
     public function test_super_admin_can_reset_other_admin_two_factor_and_invalidate_sessions(): void
