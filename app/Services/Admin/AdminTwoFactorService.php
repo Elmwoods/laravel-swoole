@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Models\AdminTrustedDevice;
 use App\Models\AdminUser;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -133,6 +134,10 @@ class AdminTwoFactorService
             'two_factor_last_used_step' => null,
             'session_version' => ((int) $admin->session_version) + 1,
         ])->save();
+
+        // Resetting 2FA revokes every trusted device so a lost/compromised
+        // account cannot keep bypassing the 2FA challenge.
+        AdminTrustedDevice::query()->where('admin_user_id', $admin->id)->delete();
     }
 
     public function consumeRecoveryCode(AdminUser $admin, string $code): bool
