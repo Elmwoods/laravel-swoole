@@ -172,6 +172,7 @@ Route::prefix('/ops')
             ->middleware('admin.permission:ops.system.view')
             ->group(function (): void {
                 Route::get('/summary', [SystemMonitorController::class, 'summary']);
+                Route::get('/metrics-trend', [SystemMonitorController::class, 'metricsTrend']);
                 Route::get('/advanced', [AdvancedSystemController::class, 'summary']);
                 Route::get('/disk', [DiskController::class, 'index']);
                 Route::get('/disk/push', [DiskPushController::class, 'push']);
