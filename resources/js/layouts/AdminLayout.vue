@@ -30,6 +30,11 @@
                     <span>发布自检</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.inspections.view')" index="/admin/ops/inspection">
+                    <el-icon><Operation /></el-icon>
+                    <span>自动巡检</span>
+                </el-menu-item>
+
                 <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/redis">
                     <el-icon><Coin /></el-icon>
                     <span>Redis</span>
