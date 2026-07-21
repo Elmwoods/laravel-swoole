@@ -8,6 +8,7 @@ use App\Models\OpsAlert;
 use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertEvent;
 use App\Models\OpsAlertSetting;
+use App\Models\OpsInspection;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\System\DiskService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -397,6 +398,95 @@ class AlertCenterService
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
         ];
+    }
+
+    /**
+     * 自动巡检失败时升起（或刷新）一条告警，并复用现有通知/广播闭环。
+     *
+     * 固定来源 inspection、固定指纹，重复失败只增加 hit_count，
+     * 首次或超过冷却时间才重复推送通知，避免刷屏。
+     */
+    public function raiseInspectionAlert(OpsInspection $inspection): void
+    {
+        $failedChecks = collect($inspection->checks ?? [])
+            ->where('status', 'fail')
+            ->map(fn ($check): string => $this->safeInspectionText((string) ($check['name'] ?? '')))
+            ->filter()
+            ->values()
+            ->all();
+
+        $dto = new AlertDTO(
+            source: 'inspection',
+            severity: 'critical',
+            title: '自动巡检失败',
+            message: $this->safeInspectionText((string) ($inspection->failure_message ?: '自动巡检检测到失败项。')),
+            context: [
+                'target' => 'inspection',
+                'inspection_id' => $inspection->id,
+                'type' => $inspection->type,
+                'trigger' => $inspection->trigger,
+                'failed_checks' => $failedChecks,
+            ],
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'inspection_failed' : 'inspection_refired',
+            'ops-inspection',
+            null,
+            null,
+            $alert->status,
+            ['inspection_id' => $inspection->id],
+        );
+
+        broadcast(new AlertTriggered($alert));
+    }
+
+    /**
+     * 巡检恢复后自动关闭仍处于 open/acknowledged 的巡检告警。
+     */
+    public function resolveInspectionAlert(): void
+    {
+        OpsAlert::query()
+            ->where('source', 'inspection')
+            ->whereIn('status', ['open', 'acknowledged'])
+            ->get()
+            ->each(function (OpsAlert $alert): void {
+                $fromStatus = $alert->status;
+                $alert->forceFill([
+                    'status' => 'resolved',
+                    'acknowledged_at' => $alert->acknowledged_at ?: now(),
+                    'acknowledged_by' => $alert->acknowledged_by ?: 'ops-inspection',
+                    'acknowledge_note' => '巡检恢复后自动关闭',
+                ])->save();
+
+                $alert = $alert->refresh();
+                $this->recordAlertEvent($alert, 'inspection_recovered', 'ops-inspection', '巡检恢复后自动关闭', $fromStatus, $alert->status);
+                broadcast(new AlertTriggered($alert));
+            });
+    }
+
+    /**
+     * 巡检告警文本二次脱敏（防止上游遗漏时把密钥写入告警或通知）。
+     */
+    private function safeInspectionText(string $text): string
+    {
+        $patterns = [
+            '/\b(password|token|secret|cookie|authorization|private_key|api_key)\s*=\s*[^,\s;]+/iu',
+            '/\b(password|token|secret|cookie|authorization|private_key|api_key)\s*:\s*[^,\s;]+/iu',
+        ];
+
+        foreach ($patterns as $pattern) {
+            $text = preg_replace($pattern, '$1=[FILTERED]', $text) ?? $text;
+        }
+
+        return mb_strimwidth($text, 0, 500, '...');
     }
 
     /**

@@ -57,7 +57,7 @@ class OpsInspectionService
             ? $this->firstFailureMessage($checks)
             : null;
 
-        return OpsInspection::query()->create([
+        $inspection = OpsInspection::query()->create([
             'admin_user_id' => $admin?->id,
             'admin_email' => $admin?->email,
             'type' => $type,
@@ -70,6 +70,14 @@ class OpsInspectionService
             'finished_at' => now(),
             'failure_message' => $failureMessage,
         ]);
+
+        if ($status === 'fail') {
+            $this->alerts->raiseInspectionAlert($inspection);
+        } else {
+            $this->alerts->resolveInspectionAlert();
+        }
+
+        return $inspection;
     }
 
     public function summary(): array
@@ -114,16 +122,19 @@ class OpsInspectionService
         foreach ($payload as $key => $value) {
             if ($this->isSensitiveKey((string) $key)) {
                 $sanitized[$key] = '[FILTERED]';
+
                 continue;
             }
 
             if (is_array($value)) {
                 $sanitized[$key] = $this->sanitize($value);
+
                 continue;
             }
 
             if (is_string($value)) {
                 $sanitized[$key] = $this->safeText($value);
+
                 continue;
             }
 

@@ -42,6 +42,7 @@ class OpsInspectionServiceTest extends TestCase
                 'auto_resolved' => 0,
                 'checked_at' => now()->toDateTimeString(),
             ]);
+            $mock->shouldReceive('resolveInspectionAlert')->once();
         });
         $this->mock(OpsLogErrorWatcherService::class, function ($mock): void {
             $mock->shouldReceive('scan')->once()->andReturn([
@@ -77,6 +78,7 @@ class OpsInspectionServiceTest extends TestCase
         });
         $this->mock(AlertCenterService::class, function ($mock): void {
             $mock->shouldReceive('evaluate')->once()->andReturn(['detected' => 0, 'auto_resolved' => 0]);
+            $mock->shouldReceive('raiseInspectionAlert')->once();
         });
         $this->mock(OpsLogErrorWatcherService::class, function ($mock): void {
             $mock->shouldReceive('scan')->once()->andReturn(['enabled' => true, 'scanned' => 1, 'detected' => 0, 'events' => []]);

@@ -2,15 +2,18 @@
 
 namespace Tests\Feature\Ops;
 
-use App\Models\AdminAuditLog;
 use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
+use App\Models\OpsAlert;
+use App\Models\OpsAlertSetting;
 use App\Models\OpsInspection;
 use App\Services\Admin\AdminPermissionRegistry;
+use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\OpsInspectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PhaseTwelveInspectionTest extends TestCase
@@ -191,6 +194,81 @@ class PhaseTwelveInspectionTest extends TestCase
         $this->assertStringNotContainsString('unsafe-token', $json);
         $this->assertStringNotContainsString('plain-password', $json);
         $this->assertStringNotContainsString('unsafe-secret', $json);
+    }
+
+    public function test_failed_inspection_raises_alert_and_dispatches_notification(): void
+    {
+        config()->set('ops.alerts.telegram.enabled', true);
+        config()->set('ops.alerts.telegram.bot_token', 'test-token');
+        config()->set('ops.alerts.telegram.chat_id', '123456');
+        OpsAlertSetting::setValue('telegram_enabled', true);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true], 200)]);
+
+        $inspection = $this->failedInspection('token=leak failed');
+
+        app(AlertCenterService::class)->raiseInspectionAlert($inspection);
+
+        $alert = OpsAlert::query()->where('source', 'inspection')->first();
+        $this->assertNotNull($alert);
+        $this->assertSame('critical', $alert->severity);
+        $this->assertSame('open', $alert->status);
+        $this->assertSame(1, $alert->hit_count);
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'api.telegram.org'));
+
+        // Leaked secrets from the failure must not reach the alert payload.
+        $this->assertStringNotContainsString('leak', json_encode($alert->only(['message', 'context']), JSON_THROW_ON_ERROR));
+    }
+
+    public function test_repeated_failure_reuses_single_alert(): void
+    {
+        $first = $this->failedInspection();
+        $second = $this->failedInspection();
+
+        $service = app(AlertCenterService::class);
+        $service->raiseInspectionAlert($first);
+        $service->raiseInspectionAlert($second);
+
+        $alerts = OpsAlert::query()->where('source', 'inspection')->get();
+        $this->assertCount(1, $alerts);
+        $this->assertSame(2, $alerts->first()->hit_count);
+    }
+
+    public function test_recovered_inspection_resolves_open_alert(): void
+    {
+        $service = app(AlertCenterService::class);
+        $service->raiseInspectionAlert($this->failedInspection());
+        $this->assertSame('open', OpsAlert::query()->where('source', 'inspection')->value('status'));
+
+        $service->resolveInspectionAlert();
+
+        $alert = OpsAlert::query()->where('source', 'inspection')->first();
+        $this->assertSame('resolved', $alert->status);
+        $this->assertDatabaseHas('ops_alert_events', [
+            'alert_id' => $alert->id,
+            'action' => 'inspection_recovered',
+            'to_status' => 'resolved',
+        ]);
+    }
+
+    private function failedInspection(string $failureMessage = '巡检检测到失败项。'): OpsInspection
+    {
+        return OpsInspection::query()->create([
+            'type' => 'light',
+            'trigger' => 'schedule',
+            'status' => 'fail',
+            'summary' => ['pass' => 0, 'warn' => 0, 'fail' => 1],
+            'checks' => [[
+                'group' => '队列/调度',
+                'name' => 'Queue Workers',
+                'status' => 'fail',
+                'message' => $failureMessage,
+                'hint' => '检查 worker。',
+            ]],
+            'failure_message' => $failureMessage,
+            'duration_ms' => 10,
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+        ]);
     }
 
     protected function actingAsAdminWithPermissions(array $permissions): AdminUser
