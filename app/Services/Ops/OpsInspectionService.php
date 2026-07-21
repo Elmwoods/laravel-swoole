@@ -80,6 +80,45 @@ class OpsInspectionService
         return $inspection;
     }
 
+    /**
+     * 按天聚合巡检结果趋势（近 $days 天，零填充连续日期）。
+     */
+    public function trend(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->startOfDay()->subDays($days - 1);
+
+        $rows = OpsInspection::query()
+            ->where('created_at', '>=', $since)
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw("SUM(CASE WHEN status = 'pass' THEN 1 ELSE 0 END) as pass")
+            ->selectRaw("SUM(CASE WHEN status = 'warn' THEN 1 ELSE 0 END) as warn")
+            ->selectRaw("SUM(CASE WHEN status = 'fail' THEN 1 ELSE 0 END) as fail")
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('AVG(duration_ms) as avg_duration_ms')
+            ->groupByRaw('DATE(created_at)')
+            ->get()
+            ->keyBy('date');
+
+        $buckets = [];
+
+        for ($i = 0; $i < $days; $i++) {
+            $date = $since->copy()->addDays($i)->toDateString();
+            $row = $rows->get($date);
+
+            $buckets[] = [
+                'date' => $date,
+                'pass' => (int) ($row->pass ?? 0),
+                'warn' => (int) ($row->warn ?? 0),
+                'fail' => (int) ($row->fail ?? 0),
+                'total' => (int) ($row->total ?? 0),
+                'avg_duration_ms' => (int) round((float) ($row->avg_duration_ms ?? 0)),
+            ];
+        }
+
+        return $buckets;
+    }
+
     public function summary(): array
     {
         $latest = OpsInspection::query()->latest('id')->first();

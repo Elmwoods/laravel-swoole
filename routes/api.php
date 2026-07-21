@@ -88,6 +88,7 @@ Route::prefix('/ops')
             ->middleware('admin.permission:ops.inspections.view')
             ->group(function (): void {
                 Route::get('/summary', [OpsInspectionController::class, 'summary']);
+                Route::get('/trend', [OpsInspectionController::class, 'trend']);
                 Route::get('/history', [OpsInspectionController::class, 'history']);
                 Route::get('/history/{record}', [OpsInspectionController::class, 'show']);
                 Route::post('/run', [OpsInspectionController::class, 'run'])
@@ -187,6 +188,7 @@ Route::prefix('/ops')
                 Route::put('/settings', [AlertController::class, 'updateSettings'])
                     ->middleware(['admin.audit:ops.alerts,settings_update', 'admin.permission:ops.alerts.manage']);
                 Route::get('/evaluations/latest', [AlertController::class, 'latestEvaluation']);
+                Route::get('/trend', [AlertController::class, 'trend']);
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);

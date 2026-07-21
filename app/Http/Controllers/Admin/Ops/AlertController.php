@@ -12,6 +12,7 @@ use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Ops Center 告警中心控制器。
@@ -76,6 +77,19 @@ class AlertController extends Controller
     public function latestEvaluation(): JsonResponse
     {
         return $this->success($this->service->latestEvaluation());
+    }
+
+    /**
+     * 告警评估趋势（近 N 天按天聚合）。
+     */
+    public function trend(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 14)));
+
+        return $this->success([
+            'days' => $days,
+            'buckets' => $this->service->evaluationTrend($days),
+        ]);
     }
 
     /**
