@@ -46,3 +46,10 @@ Schedule::command('ops:inspections:run --type=light')
 Schedule::command('ops:inspections:prune')
     ->dailyAt('03:10')
     ->withoutOverlapping();
+
+/**
+ * 每日清理过期告警评估历史，避免 ops_alert_evaluations 无限增长。
+ */
+Schedule::command('ops:alerts:prune-evaluations')
+    ->dailyAt('03:20')
+    ->withoutOverlapping();
