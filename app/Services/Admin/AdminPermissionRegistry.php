@@ -10,6 +10,7 @@ class AdminPermissionRegistry
     public const PERMISSIONS = [
         'ops.dashboard.view' => ['name' => '运维总览查看', 'group' => 'ops', 'description' => '查看 Ops Center 总览'],
         'ops.release.view' => ['name' => '发布自检查看', 'group' => 'ops', 'description' => '查看并运行 Ops Center 发布自检'],
+        'ops.inspections.view' => ['name' => '自动巡检查看', 'group' => 'ops', 'description' => '查看并运行 Ops Center 自动巡检'],
         'ops.logs.view' => ['name' => '日志中心查看', 'group' => 'ops', 'description' => '查看 Laravel、Octane、Redis 与系统日志'],
         'ops.alerts.view' => ['name' => '告警中心查看', 'group' => 'ops', 'description' => '查看告警列表与摘要'],
         'ops.alerts.manage' => ['name' => '告警处理', 'group' => 'ops', 'description' => '确认、恢复、测试通知和手动评估告警'],
@@ -45,6 +46,7 @@ class AdminPermissionRegistry
         $this->syncRole('ops_admin', '运维管理员', '管理 Ops Center 日常运维功能', [
             'ops.dashboard.view',
             'ops.release.view',
+            'ops.inspections.view',
             'ops.logs.view',
             'ops.alerts.view',
             'ops.alerts.manage',

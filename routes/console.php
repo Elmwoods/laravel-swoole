@@ -35,3 +35,7 @@ Schedule::command('ops:alerts:evaluate')
 Schedule::command('ops:logs:watch-errors --once')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('ops:inspections:run --type=light')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
