@@ -27,6 +27,24 @@
             <div class="summary-tile fail"><span>Fail</span><strong>{{ activeSummary.fail }}</strong></div>
         </section>
 
+        <section class="trend-panel">
+            <div class="panel-header">
+                <div>
+                    <h3>巡检趋势</h3>
+                    <p>近 {{ trendDays }} 天每日 通过 / 警告 / 失败 分布。</p>
+                </div>
+
+                <el-select v-model="trendDays" class="days-select" @change="loadTrend">
+                    <el-option :value="7" label="近 7 天" />
+                    <el-option :value="14" label="近 14 天" />
+                    <el-option :value="30" label="近 30 天" />
+                </el-select>
+            </div>
+
+            <el-empty v-if="!trendLoading && trendEmpty" description="暂无巡检趋势数据" />
+            <div v-show="!trendEmpty" ref="trendRef" class="trend-chart"></div>
+        </section>
+
         <section class="info-band">
             <div>
                 <span>调度</span>
@@ -152,13 +170,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, View } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
 import {
     getInspectionDetail,
     getInspectionHistory,
     getInspectionSummary,
+    getInspectionTrend,
     runInspection,
     type InspectionCheckItem,
     type InspectionRecordDetail,
@@ -178,6 +198,11 @@ const running = ref(false)
 const historyLoading = ref(false)
 const detailVisible = ref(false)
 const groupFilter = ref('')
+const trendRef = ref<HTMLDivElement>()
+const trendDays = ref(14)
+const trendLoading = ref(false)
+const trendEmpty = ref(false)
+let trendChart: echarts.ECharts | null = null
 const pagination = reactive({
     current_page: 1,
     per_page: 20,
@@ -261,9 +286,44 @@ const openDetail = async (id: number) => {
     detailVisible.value = true
 }
 
+const loadTrend = async () => {
+    trendLoading.value = true
+
+    try {
+        const res = await getInspectionTrend(trendDays.value)
+        const buckets = res.data.data.buckets
+        trendEmpty.value = buckets.every(bucket => bucket.total === 0)
+
+        if (!trendChart && trendRef.value) {
+            trendChart = echarts.init(trendRef.value)
+        }
+
+        trendChart?.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['通过', '警告', '失败'] },
+            grid: { left: 44, right: 20, top: 40, bottom: 30 },
+            xAxis: { type: 'category', data: buckets.map(bucket => bucket.date) },
+            yAxis: { type: 'value', minInterval: 1 },
+            series: [
+                { name: '通过', type: 'bar', stack: 'total', itemStyle: { color: '#16a34a' }, data: buckets.map(bucket => bucket.pass) },
+                { name: '警告', type: 'bar', stack: 'total', itemStyle: { color: '#d97706' }, data: buckets.map(bucket => bucket.warn) },
+                { name: '失败', type: 'bar', stack: 'total', itemStyle: { color: '#dc2626' }, data: buckets.map(bucket => bucket.fail) },
+            ],
+        })
+    } finally {
+        trendLoading.value = false
+    }
+}
+
 onMounted(async () => {
     await loadSummary()
     await loadHistory()
+    await loadTrend()
+})
+
+onBeforeUnmount(() => {
+    trendChart?.dispose()
+    trendChart = null
 })
 </script>
 
@@ -276,11 +336,21 @@ onMounted(async () => {
 .overview-band,
 .checks-panel,
 .history-panel,
+.trend-panel,
 .info-band {
     background: #fff;
     border: 1px solid #dbe3ef;
     border-radius: 8px;
     padding: 16px;
+}
+
+.days-select {
+    width: 140px;
+}
+
+.trend-chart {
+    height: 300px;
+    min-height: 260px;
 }
 
 .overview-band {

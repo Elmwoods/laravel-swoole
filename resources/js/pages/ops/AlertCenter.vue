@@ -8,6 +8,24 @@
             </el-card>
         </div>
 
+        <el-card v-loading="trendLoading" shadow="never" class="trend-card">
+            <div class="notification-header">
+                <div>
+                    <div class="panel-title">告警趋势</div>
+                    <div class="panel-subtitle">近 {{ trendDays }} 天每日命中告警与自动恢复数量</div>
+                </div>
+
+                <el-select v-model="trendDays" size="small" class="trend-days" @change="loadTrend">
+                    <el-option :value="7" label="近 7 天" />
+                    <el-option :value="14" label="近 14 天" />
+                    <el-option :value="30" label="近 30 天" />
+                </el-select>
+            </div>
+
+            <el-empty v-if="!trendLoading && trendEmpty" description="暂无告警趋势数据" />
+            <div v-show="!trendEmpty" ref="trendRef" class="trend-chart"></div>
+        </el-card>
+
         <el-card shadow="never" class="notification-card">
             <div class="notification-header">
                 <div>
@@ -337,6 +355,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, Refresh } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
 import echo from '@/utils/echo'
 import {
     acknowledgeAlert,
@@ -344,6 +363,7 @@ import {
     createAlertDemoScenarios,
     evaluateAlerts,
     getAlertSettings,
+    getAlertTrend,
     getLatestAlertEvaluation,
     getAlertNotificationStatus,
     getAlertRules,
@@ -368,6 +388,11 @@ import {
 const loading = ref(false)
 const evaluating = ref(false)
 const testingNotification = ref(false)
+const trendRef = ref<HTMLDivElement>()
+const trendDays = ref(14)
+const trendLoading = ref(false)
+const trendEmpty = ref(false)
+let trendChart: echarts.ECharts | null = null
 const demoLoading = ref(false)
 const notificationLoading = ref(false)
 const rulesLoading = ref(false)
@@ -893,12 +918,44 @@ const statusLabel = (value: string) => {
 
 const thresholdPrecision = (unit: string | null) => unit === 'MB/s' ? 2 : 0
 
+const loadTrend = async () => {
+    trendLoading.value = true
+
+    try {
+        const res = await getAlertTrend(trendDays.value)
+        const buckets = res.data.data.buckets
+        trendEmpty.value = buckets.every(bucket => bucket.evaluations === 0)
+
+        if (!trendChart && trendRef.value) {
+            trendChart = echarts.init(trendRef.value)
+        }
+
+        trendChart?.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['命中告警', '自动恢复'] },
+            grid: { left: 44, right: 20, top: 40, bottom: 30 },
+            xAxis: { type: 'category', data: buckets.map(bucket => bucket.date) },
+            yAxis: { type: 'value', minInterval: 1 },
+            series: [
+                { name: '命中告警', type: 'line', smooth: true, itemStyle: { color: '#dc2626' }, data: buckets.map(bucket => bucket.detected) },
+                { name: '自动恢复', type: 'line', smooth: true, itemStyle: { color: '#16a34a' }, data: buckets.map(bucket => bucket.auto_resolved) },
+            ],
+        })
+    } finally {
+        trendLoading.value = false
+    }
+}
+
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend()])
     startRealtime()
 })
 
-onBeforeUnmount(stopRealtime)
+onBeforeUnmount(() => {
+    stopRealtime()
+    trendChart?.dispose()
+    trendChart = null
+})
 </script>
 
 <style scoped>
@@ -906,6 +963,15 @@ onBeforeUnmount(stopRealtime)
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.trend-days {
+    width: 130px;
+}
+
+.trend-chart {
+    height: 280px;
+    min-height: 240px;
 }
 
 .summary-grid {

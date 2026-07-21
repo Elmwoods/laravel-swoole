@@ -195,6 +195,22 @@ export const updateAlertSettings = (payload: AlertSettings) =>
 export const getLatestAlertEvaluation = () =>
     request.get<ApiResponse<AlertEvaluationStatus | null>>('/api/ops/alerts/evaluations/latest')
 
+export interface AlertTrendBucket {
+    date: string
+    evaluations: number
+    detected: number
+    auto_resolved: number
+    avg_duration_ms: number
+}
+
+export interface AlertTrendResult {
+    days: number
+    buckets: AlertTrendBucket[]
+}
+
+export const getAlertTrend = (days = 14) =>
+    request.get<ApiResponse<AlertTrendResult>>('/api/ops/alerts/trend', { params: { days } })
+
 export const getAlertRules = () =>
     request.get<ApiResponse<AlertRuleListResult>>('/api/ops/alerts/rules')
 
