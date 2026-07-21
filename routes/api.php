@@ -61,6 +61,8 @@ Route::prefix('/admin')
                     ->middleware('admin.audit:admin.roles,update');
             });
 
+            Route::get('/audit-logs/facets', [AdminAuditLogController::class, 'facets'])
+                ->middleware('admin.permission:admin.audit.view');
             Route::get('/audit-logs/export', [AdminAuditLogController::class, 'export'])
                 ->middleware(['admin.permission:admin.audit.view', 'admin.audit:admin.audit,export']);
             Route::get('/audit-logs', [AdminAuditLogController::class, 'index'])
