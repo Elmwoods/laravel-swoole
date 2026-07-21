@@ -267,3 +267,12 @@ export const exportAdminAuditLogs = (params = {}) =>
         params,
         responseType: 'blob',
     })
+
+export interface AdminAuditFacets {
+    modules: string[]
+    actions: string[]
+    results: string[]
+}
+
+export const getAdminAuditFacets = () =>
+    request.get<ApiResponse<AdminAuditFacets>>('/api/admin/audit-logs/facets')

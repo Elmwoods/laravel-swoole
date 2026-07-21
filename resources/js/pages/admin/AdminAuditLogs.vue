@@ -2,8 +2,17 @@
     <div class="security-page">
         <el-form :inline="true" :model="filters" class="filters">
             <el-form-item label="操作者ID"><el-input-number v-model="filters.admin_user_id" :min="1" controls-position="right" /></el-form-item>
-            <el-form-item label="模块"><el-input v-model="filters.module" clearable /></el-form-item>
-            <el-form-item label="动作"><el-input v-model="filters.action" clearable /></el-form-item>
+            <el-form-item label="关键词"><el-input v-model="filters.keyword" clearable placeholder="邮箱/消息/模块/动作" /></el-form-item>
+            <el-form-item label="模块">
+                <el-select v-model="filters.module" clearable filterable allow-create default-first-option placeholder="全部模块" class="facet-select">
+                    <el-option v-for="module in facets.modules" :key="module" :label="module" :value="module" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="动作">
+                <el-select v-model="filters.action" clearable filterable allow-create default-first-option placeholder="全部动作" class="facet-select">
+                    <el-option v-for="action in facets.actions" :key="action" :label="action" :value="action" />
+                </el-select>
+            </el-form-item>
             <el-form-item label="状态码"><el-input-number v-model="filters.status_code" :min="100" :max="599" controls-position="right" /></el-form-item>
             <el-form-item label="结果">
                 <el-select v-model="filters.result" clearable>
@@ -19,6 +28,7 @@
                     start-placeholder="开始时间"
                     end-placeholder="结束时间"
                     value-format="YYYY-MM-DD HH:mm:ss"
+                    :shortcuts="dateShortcuts"
                 />
             </el-form-item>
             <el-form-item>
@@ -69,19 +79,57 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { exportAdminAuditLogs, getAdminAuditLogs, type AdminAuditLog } from '@/api/adminSecurity'
+import {
+    exportAdminAuditLogs,
+    getAdminAuditFacets,
+    getAdminAuditLogs,
+    type AdminAuditFacets,
+    type AdminAuditLog,
+} from '@/api/adminSecurity'
 
 const logs = ref<AdminAuditLog[]>([])
 const loading = ref(false)
 const exporting = ref(false)
+const facets = reactive<AdminAuditFacets>({ modules: [], actions: [], results: [] })
 const filters = reactive({
     admin_user_id: undefined as number | undefined,
+    keyword: '',
     module: '',
     action: '',
     status_code: undefined as number | undefined,
     result: '',
     range: [] as string[],
 })
+
+const dateShortcuts = [
+    {
+        text: '今天',
+        value: () => {
+            const end = new Date()
+            const start = new Date()
+            start.setHours(0, 0, 0, 0)
+            return [start, end]
+        },
+    },
+    {
+        text: '近 7 天',
+        value: () => {
+            const end = new Date()
+            const start = new Date()
+            start.setDate(start.getDate() - 7)
+            return [start, end]
+        },
+    },
+    {
+        text: '近 30 天',
+        value: () => {
+            const end = new Date()
+            const start = new Date()
+            start.setDate(start.getDate() - 30)
+            return [start, end]
+        },
+    },
+]
 const pagination = reactive({
     current_page: 1,
     per_page: 20,
@@ -109,6 +157,7 @@ const auditLogParams = () => {
     }
 
     if (filters.admin_user_id) params.admin_user_id = filters.admin_user_id
+    if (filters.keyword) params.keyword = filters.keyword
     if (filters.module) params.module = filters.module
     if (filters.action) params.action = filters.action
     if (filters.status_code) params.status_code = filters.status_code
@@ -127,6 +176,7 @@ const search = async () => {
 const reset = async () => {
     Object.assign(filters, {
         admin_user_id: undefined,
+        keyword: '',
         module: '',
         action: '',
         status_code: undefined,
@@ -135,6 +185,15 @@ const reset = async () => {
     })
     pagination.current_page = 1
     await load()
+}
+
+const loadFacets = async () => {
+    try {
+        const res = await getAdminAuditFacets()
+        Object.assign(facets, res.data.data)
+    } catch {
+        // facets 仅用于下拉建议，失败不阻塞列表加载
+    }
 }
 
 const changePageSize = async (size: number) => {
@@ -169,7 +228,9 @@ const exportLogs = async () => {
     }
 }
 
-onMounted(load)
+onMounted(async () => {
+    await Promise.all([load(), loadFacets()])
+})
 </script>
 
 <style scoped>
@@ -183,6 +244,10 @@ onMounted(load)
     border: 1px solid #dbe3ef;
     border-radius: 8px;
     padding: 16px 16px 0;
+}
+
+.facet-select {
+    width: 180px;
 }
 
 code {
