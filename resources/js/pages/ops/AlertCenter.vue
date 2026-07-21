@@ -87,18 +87,26 @@
                         <div class="severity-grid">
                             <div v-for="level in severityLevels" :key="level" class="severity-row">
                                 <span class="severity-label">{{ level }}</span>
-                                <el-checkbox v-model="settingsDraft.severity_channels[level].telegram" :disabled="settingsSaving">
-                                    Telegram
-                                </el-checkbox>
-                                <el-checkbox v-model="settingsDraft.severity_channels[level].mail" :disabled="settingsSaving">
-                                    邮件
+                                <el-checkbox
+                                    v-for="ch in channelKeys"
+                                    :key="ch"
+                                    v-model="settingsDraft.severity_channels[level][ch]"
+                                    :disabled="settingsSaving"
+                                >
+                                    {{ channelLabel(ch) }}
                                 </el-checkbox>
                             </div>
                         </div>
                     </el-form-item>
                     <el-form-item label="总开关">
-                        <el-checkbox v-model="settingsDraft.telegram_enabled" :disabled="settingsSaving">Telegram</el-checkbox>
-                        <el-checkbox v-model="settingsDraft.mail_enabled" :disabled="settingsSaving">邮件</el-checkbox>
+                        <el-checkbox
+                            v-for="ch in channelKeys"
+                            :key="ch"
+                            v-model="settingsDraft[`${ch}_enabled`]"
+                            :disabled="settingsSaving"
+                        >
+                            {{ channelLabel(ch) }}
+                        </el-checkbox>
                     </el-form-item>
                     <el-button type="primary" :loading="settingsSaving" @click="handleSaveSettings">
                         保存策略
@@ -378,6 +386,7 @@ import {
     type AlertRule,
     type AlertRealtimePayload,
     type AlertNotificationStatus,
+    type ChannelStatus,
     type AlertSettings,
     type AlertSeverity,
     type AlertSummary,
@@ -482,18 +491,28 @@ const summaryCards = computed(() => [
     },
 ])
 
-const notificationChannels = computed(() => [
-    {
-        name: 'telegram',
-        label: 'Telegram',
-        ...notificationStatus.value.telegram,
-    },
-    {
-        name: 'mail',
-        label: '邮件',
-        ...notificationStatus.value.mail,
-    },
-])
+const CHANNEL_LABELS: Record<string, string> = {
+    telegram: 'Telegram',
+    mail: '邮件',
+    webhook: 'Webhook',
+    dingtalk: '钉钉',
+    feishu: '飞书',
+}
+
+const channelLabel = (name: string): string => CHANNEL_LABELS[name] ?? name
+
+// 通道列表来自后端通知状态（单一来源），前端不再写死 telegram/mail。
+const channelKeys = computed<string[]>(() =>
+    Object.keys(notificationStatus.value).filter(key => key !== 'checked_at' && key !== 'settings'),
+)
+
+const notificationChannels = computed(() =>
+    channelKeys.value.map(name => ({
+        name,
+        label: channelLabel(name),
+        ...(notificationStatus.value[name] as ChannelStatus),
+    })),
+)
 
 /**
  * 加载告警规则配置。
@@ -642,7 +661,7 @@ const handleTestNotification = async () => {
 
     try {
         const res = await testAlertNotification({
-            channels: ['telegram', 'mail'],
+            channels: channelKeys.value,
             message: 'Ops Center 告警中心通知通道测试。',
         })
         const result = res.data.data.result
