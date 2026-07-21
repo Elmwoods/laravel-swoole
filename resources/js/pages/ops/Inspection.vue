@@ -300,8 +300,8 @@ const loadTrend = async () => {
 
         trendChart?.setOption({
             tooltip: { trigger: 'axis' },
-            legend: { data: ['通过', '警告', '失败'] },
-            grid: { left: 44, right: 20, top: 40, bottom: 30 },
+            legend: { top: 8, left: 'center' },
+            grid: { top: 44, left: 8, right: 16, bottom: 8, containLabel: true },
             xAxis: { type: 'category', data: buckets.map(bucket => bucket.date) },
             yAxis: { type: 'value', minInterval: 1 },
             series: [
@@ -310,18 +310,24 @@ const loadTrend = async () => {
                 { name: '失败', type: 'bar', stack: 'total', itemStyle: { color: '#dc2626' }, data: buckets.map(bucket => bucket.fail) },
             ],
         })
+
+        trendChart?.resize()
     } finally {
         trendLoading.value = false
     }
 }
 
+const handleTrendResize = () => trendChart?.resize()
+
 onMounted(async () => {
     await loadSummary()
     await loadHistory()
     await loadTrend()
+    window.addEventListener('resize', handleTrendResize)
 })
 
 onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleTrendResize)
     trendChart?.dispose()
     trendChart = null
 })

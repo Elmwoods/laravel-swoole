@@ -932,26 +932,32 @@ const loadTrend = async () => {
 
         trendChart?.setOption({
             tooltip: { trigger: 'axis' },
-            legend: { data: ['命中告警', '自动恢复'] },
-            grid: { left: 44, right: 20, top: 40, bottom: 30 },
-            xAxis: { type: 'category', data: buckets.map(bucket => bucket.date) },
+            legend: { top: 8, left: 'center' },
+            grid: { top: 44, left: 8, right: 16, bottom: 8, containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: buckets.map(bucket => bucket.date) },
             yAxis: { type: 'value', minInterval: 1 },
             series: [
                 { name: '命中告警', type: 'line', smooth: true, itemStyle: { color: '#dc2626' }, data: buckets.map(bucket => bucket.detected) },
                 { name: '自动恢复', type: 'line', smooth: true, itemStyle: { color: '#16a34a' }, data: buckets.map(bucket => bucket.auto_resolved) },
             ],
         })
+
+        trendChart?.resize()
     } finally {
         trendLoading.value = false
     }
 }
 
+const handleTrendResize = () => trendChart?.resize()
+
 onMounted(async () => {
     await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend()])
     startRealtime()
+    window.addEventListener('resize', handleTrendResize)
 })
 
 onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleTrendResize)
     stopRealtime()
     trendChart?.dispose()
     trendChart = null
