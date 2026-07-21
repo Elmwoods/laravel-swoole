@@ -34,6 +34,7 @@ Route::prefix('/admin')
             Route::middleware('admin.auth')->group(function (): void {
                 Route::get('/me', [AdminAuthController::class, 'me']);
                 Route::post('/logout', [AdminAuthController::class, 'logout']);
+                Route::get('/login-history', [AdminAuthController::class, 'loginHistory']);
             });
 
             Route::post('/two-factor/confirm', [AdminAuthController::class, 'confirmTwoFactor']);

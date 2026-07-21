@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Auth\AdminLoginRequest;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminLoginEventService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
@@ -26,6 +27,7 @@ class AdminAuthController extends Controller
         private readonly AdminPermissionRegistry $permissions,
         private readonly AdminSessionSecurityService $sessions,
         private readonly AdminTwoFactorService $twoFactor,
+        private readonly AdminLoginEventService $loginEvents,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -173,6 +175,13 @@ class AdminAuthController extends Controller
         return $this->success($this->profile(request()->user('admin')));
     }
 
+    public function loginHistory(Request $request): JsonResponse
+    {
+        return $this->success([
+            'events' => $this->loginEvents->history($request->user('admin'), 20),
+        ]);
+    }
+
     public function logout(): JsonResponse
     {
         $request = request();
@@ -241,7 +250,7 @@ class AdminAuthController extends Controller
             ->first();
     }
 
-    private function completeLogin(Request $request, AdminUser $admin): array
+    private function completeLogin(Request $request, AdminUser $admin, bool $trusted = false): array
     {
         auth('admin')->login($admin);
         $request->session()->regenerate();
@@ -252,6 +261,8 @@ class AdminAuthController extends Controller
         ]);
         $request->session()->put('admin_session_version', (int) $admin->session_version);
         $this->sessions->touch($request);
+
+        $this->loginEvents->record($admin, $request, $trusted);
 
         $admin->forceFill([
             'last_login_at' => now(),
