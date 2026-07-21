@@ -35,9 +35,12 @@ npm run build
 
 ## 当前阶段
 
-- 第一阶段：Octane、Redis、Queue、Supervisor 已完成基础监控。
-- 第二阶段：Docker、CPU/Memory、Disk、Network 已完成页面与 API。
-- 第三阶段：日志中心需要继续做分页、搜索、tail 和权限隔离。
+- 基础监控：Octane、Redis、Queue、Supervisor、Docker、CPU/Memory、Disk、Network 页面与 API 已完成。
+- 日志中心：分页、搜索、tail 与权限隔离已完成。
+- 告警中心：规则评估、告警操作、通知（Telegram/邮件）与评估历史保留已完成。
+- 后台安全（RBAC + 审计 + 强制 2FA）：管理员 / 角色 / 审计日志、RSA 加密登录、强制 TOTP 2FA 已完成。
+- 自动巡检 / 发布自检 / 趋势可观测性（phase 12-13）已完成。
+- **phase 17 登录安全加固（进行中/本分支）**：TOTP 重放保护、CLI break-glass 重置（`admin:reset-two-factor`）、登录风控/异地登录记录、设备信任（记住此设备）、自助「账号安全」页。见 `docs/ops-center-phase-17.md`。
 
 # 项目级 Codex 测试规范
 
