@@ -15,12 +15,12 @@ use App\Services\Ops\RedisService;
 use App\Services\Ops\SupervisorService;
 use App\Services\Ops\System\DiskService;
 use App\Services\Ops\SystemMonitorService;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
 use Mockery;
 use Tests\TestCase;
 
@@ -147,18 +147,16 @@ class PhaseEightAlertOperationsTest extends TestCase
             ->assertJsonPath('data.notification_repeat_minutes', 30)
             ->assertJsonMissingPath('data.telegram.bot_token');
 
-        $this->putJson('/api/ops/alerts/settings', [
+        $this->putJson('/api/ops/alerts/settings', $this->settingsPayload([
             'notification_repeat_minutes' => 10,
-            'auto_resolve_enabled' => true,
             'auto_resolve_grace_minutes' => 3,
             'severity_channels' => [
-                'critical' => ['telegram' => true, 'mail' => true],
-                'warning' => ['telegram' => true, 'mail' => false],
-                'info' => ['telegram' => false, 'mail' => false],
+                'critical' => $this->channelRow(true),
+                'warning' => $this->channelRow(true, ['mail' => false]),
+                'info' => $this->channelRow(false),
             ],
             'telegram_enabled' => false,
-            'mail_enabled' => true,
-        ])->assertOk()
+        ]))->assertOk()
             ->assertJsonPath('data.notification_repeat_minutes', 10)
             ->assertJsonPath('data.severity_channels.warning.mail', false);
 
@@ -181,18 +179,10 @@ class PhaseEightAlertOperationsTest extends TestCase
         $this->getJson('/api/ops/alerts/settings')
             ->assertOk();
 
-        $this->putJson('/api/ops/alerts/settings', [
+        $this->putJson('/api/ops/alerts/settings', $this->settingsPayload([
             'notification_repeat_minutes' => 10,
-            'auto_resolve_enabled' => true,
             'auto_resolve_grace_minutes' => 3,
-            'severity_channels' => [
-                'critical' => ['telegram' => true, 'mail' => true],
-                'warning' => ['telegram' => true, 'mail' => false],
-                'info' => ['telegram' => false, 'mail' => false],
-            ],
-            'telegram_enabled' => true,
-            'mail_enabled' => true,
-        ])->assertStatus(403);
+        ]))->assertStatus(403);
     }
 
     public function test_notification_policy_skips_disabled_severity_channels(): void
@@ -228,7 +218,7 @@ class PhaseEightAlertOperationsTest extends TestCase
             Schema::dropIfExists('ops_alert_settings');
 
             $this->assertSame(
-                OpsAlertSetting::DEFAULT_SEVERITY_CHANNELS,
+                OpsAlertSetting::defaultSeverityChannels(),
                 OpsAlertSetting::value('severity_channels'),
             );
 
@@ -296,6 +286,37 @@ class PhaseEightAlertOperationsTest extends TestCase
                     && ! str_contains($json, 'password=secret')
                     && str_contains($json, '[FILTERED]');
             }));
+    }
+
+    private function channelRow(bool $default, array $overrides = []): array
+    {
+        $row = [];
+
+        foreach ((array) config('ops.alerts.channels') as $channel) {
+            $row[$channel] = $default;
+        }
+
+        return array_merge($row, $overrides);
+    }
+
+    private function settingsPayload(array $overrides = []): array
+    {
+        $payload = [
+            'notification_repeat_minutes' => 10,
+            'auto_resolve_enabled' => true,
+            'auto_resolve_grace_minutes' => 3,
+            'severity_channels' => [
+                'critical' => $this->channelRow(true),
+                'warning' => $this->channelRow(true),
+                'info' => $this->channelRow(true),
+            ],
+        ];
+
+        foreach ((array) config('ops.alerts.channels') as $channel) {
+            $payload["{$channel}_enabled"] = true;
+        }
+
+        return array_merge($payload, $overrides);
     }
 
     private function mockHealthySnapshot(): void

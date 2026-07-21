@@ -80,6 +80,9 @@ return [
     |
     */
     'alerts' => [
+        // 通知通道单一来源：新增通道只需在此登记，Service / Settings / 请求校验 / 前端都据此遍历。
+        'channels' => ['telegram', 'mail', 'webhook', 'dingtalk', 'feishu'],
+
         'thresholds' => [
             'disk_usage_warning' => (int) env('OPS_ALERT_DISK_USAGE_WARNING', 85),
             'disk_usage_critical' => (int) env('OPS_ALERT_DISK_USAGE_CRITICAL', 95),
@@ -101,6 +104,24 @@ return [
         'mail' => [
             'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
             'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))),
+        ],
+
+        'webhook' => [
+            'enabled' => filter_var(env('OPS_ALERT_WEBHOOK_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'url' => env('OPS_ALERT_WEBHOOK_URL'),
+            'secret' => env('OPS_ALERT_WEBHOOK_SECRET'),
+        ],
+
+        'dingtalk' => [
+            'enabled' => filter_var(env('OPS_ALERT_DINGTALK_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'webhook' => env('OPS_ALERT_DINGTALK_WEBHOOK'),
+            'secret' => env('OPS_ALERT_DINGTALK_SECRET'),
+        ],
+
+        'feishu' => [
+            'enabled' => filter_var(env('OPS_ALERT_FEISHU_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'webhook' => env('OPS_ALERT_FEISHU_WEBHOOK'),
+            'secret' => env('OPS_ALERT_FEISHU_SECRET'),
         ],
 
         'demo' => [

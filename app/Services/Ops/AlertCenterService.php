@@ -207,14 +207,18 @@ class AlertCenterService
 
     public function updateSettings(array $payload): array
     {
-        foreach ([
+        $keys = [
             'notification_repeat_minutes',
             'auto_resolve_enabled',
             'auto_resolve_grace_minutes',
             'severity_channels',
-            'telegram_enabled',
-            'mail_enabled',
-        ] as $key) {
+        ];
+
+        foreach ((array) config('ops.alerts.channels', ['telegram', 'mail']) as $channel) {
+            $keys[] = "{$channel}_enabled";
+        }
+
+        foreach ($keys as $key) {
             OpsAlertSetting::setValue($key, $payload[$key]);
         }
 
