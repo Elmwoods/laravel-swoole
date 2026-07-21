@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
 use App\Http\Controllers\Admin\Ops\OctaneController;
+use App\Http\Controllers\Admin\Ops\OpsInspectionController;
 use App\Http\Controllers\Admin\Ops\OpsReleaseCheckController;
 use App\Http\Controllers\Admin\Ops\QueueController;
 use App\Http\Controllers\Admin\Ops\RedisMetricsController;
@@ -81,6 +82,16 @@ Route::prefix('/ops')
                     ->middleware('admin.audit:ops.release,run');
                 Route::get('/history', [OpsReleaseCheckController::class, 'history']);
                 Route::get('/history/{record}', [OpsReleaseCheckController::class, 'show']);
+            });
+
+        Route::prefix('inspections')
+            ->middleware('admin.permission:ops.inspections.view')
+            ->group(function (): void {
+                Route::get('/summary', [OpsInspectionController::class, 'summary']);
+                Route::get('/history', [OpsInspectionController::class, 'history']);
+                Route::get('/history/{record}', [OpsInspectionController::class, 'show']);
+                Route::post('/run', [OpsInspectionController::class, 'run'])
+                    ->middleware('admin.audit:ops.inspections,run');
             });
 
         Route::prefix('octane')

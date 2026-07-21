@@ -35,3 +35,14 @@ Schedule::command('ops:alerts:evaluate')
 Schedule::command('ops:logs:watch-errors --once')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('ops:inspections:run --type=light')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+
+/**
+ * 每日清理过期巡检历史，避免 ops_inspections 无限增长。
+ */
+Schedule::command('ops:inspections:prune')
+    ->dailyAt('03:10')
+    ->withoutOverlapping();

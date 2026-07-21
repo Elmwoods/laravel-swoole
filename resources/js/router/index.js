@@ -51,6 +51,16 @@ const routes = [
                 },
             },
             {
+                path: 'inspection',
+                name: 'OpsInspection',
+                component: () => import('../pages/ops/Inspection.vue'),
+                meta: {
+                    title: '自动巡检',
+                    description: '定时巡检结果、失败告警与历史台账',
+                    permission: 'ops.inspections.view',
+                },
+            },
+            {
                 path: 'redis',
                 name: 'RedisMonitor',
                 component: () => import('../pages/ops/RedisMonitor.vue'),
@@ -227,6 +237,7 @@ const firstAllowedPath = (permissions) => {
     const candidates = [
         ['ops.dashboard.view', '/admin/ops'],
         ['ops.release.view', '/admin/ops/release-check'],
+        ['ops.inspections.view', '/admin/ops/inspection'],
         ['ops.system.view', '/admin/ops/octane'],
         ['ops.supervisor.view', '/admin/ops/supervisor'],
         ['ops.docker.view', '/admin/ops/docker'],
