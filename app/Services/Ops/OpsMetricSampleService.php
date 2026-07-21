@@ -41,6 +41,36 @@ class OpsMetricSampleService
     }
 
     /**
+     * 回填 N 天的 demo 系统指标样本（每天 6 个点，确定性曲线），用于本地/演示环境观察趋势。
+     *
+     * 返回写入条数。
+     */
+    public function seedDemo(int $days): int
+    {
+        $days = max(1, min(90, $days));
+        $now = now();
+        $seeded = 0;
+
+        for ($d = $days - 1; $d >= 0; $d--) {
+            for ($h = 0; $h < 6; $h++) {
+                $at = $now->copy()->subDays($d)->setTime(2 + $h * 3, 0, 0);
+                $phase = ($d * 6 + $h) / 4.0;
+
+                OpsMetricSample::query()->create([
+                    'cpu_load' => round(1.0 + 2.0 * (0.5 + 0.5 * sin($phase)), 2),
+                    'load1' => round(0.8 + 2.2 * (0.5 + 0.5 * sin($phase + 0.3)), 2),
+                    'memory_used_percent' => round(45 + 25 * (0.5 + 0.5 * cos($d / 2.0)), 2),
+                    'swap_used_percent' => round(max(0, 6 * (0.5 + 0.5 * sin($d))), 2),
+                    'captured_at' => $at,
+                ]);
+                $seeded++;
+            }
+        }
+
+        return $seeded;
+    }
+
+    /**
      * 按天聚合近 $days 天的系统指标平均值（只返回有数据的天，升序）。
      */
     public function trend(int $days): array

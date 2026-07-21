@@ -75,6 +75,16 @@ class OpsMetricSampleServiceTest extends TestCase
         $this->assertSame(1.0, $twoDaysAgo['cpu_load']);
     }
 
+    public function test_seed_demo_backfills_samples_across_days(): void
+    {
+        $service = app(OpsMetricSampleService::class);
+
+        $count = $service->seedDemo(3);
+
+        $this->assertSame(18, $count);
+        $this->assertCount(3, $service->trend(7));
+    }
+
     private function sampleAt(Carbon $at, float $cpu, float $mem): void
     {
         $sample = OpsMetricSample::query()->create([

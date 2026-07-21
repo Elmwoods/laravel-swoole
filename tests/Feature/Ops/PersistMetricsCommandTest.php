@@ -41,4 +41,20 @@ class PersistMetricsCommandTest extends TestCase
 
         $this->assertDatabaseCount('ops_metric_samples', 0);
     }
+
+    public function test_demo_option_backfills_samples(): void
+    {
+        $this->artisan('ops:metrics:persist', ['--demo' => 2])->assertSuccessful();
+
+        $this->assertDatabaseCount('ops_metric_samples', 12);
+    }
+
+    public function test_demo_option_is_rejected_in_production(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+
+        $this->artisan('ops:metrics:persist', ['--demo' => 2])->assertFailed();
+
+        $this->assertDatabaseCount('ops_metric_samples', 0);
+    }
 }

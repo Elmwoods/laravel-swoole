@@ -27,7 +27,8 @@ GET /api/ops/system/metrics-trend?days=N   # 权限 ops.system.view
 ## 命令与调度
 
 ```text
-ops:metrics:persist                     # 每分钟
+ops:metrics:persist                     # 每分钟（真实采集）
+ops:metrics:persist --demo=14           # 回填 14 天 demo 样本（仅非生产，用于本地观察趋势）
 ops:metrics:prune {--days=30} {--dry-run}   # 每日 03:30
 ```
 
