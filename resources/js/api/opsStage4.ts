@@ -93,31 +93,26 @@ export interface AlertNotificationTestResult {
     checked_at: string
 }
 
+export interface ChannelStatus {
+    enabled: boolean
+    configured: boolean
+    missing: string[]
+}
+
 export interface AlertNotificationStatus {
-    telegram: {
-        enabled: boolean
-        configured: boolean
-        missing: string[]
-    }
-    mail: {
-        enabled: boolean
-        configured: boolean
-        missing: string[]
-    }
     checked_at: string
     settings?: AlertSettings
+    // 其余键为各通道（telegram/mail/webhook/dingtalk/feishu …）的 ChannelStatus
+    [channel: string]: ChannelStatus | AlertSettings | string | undefined
 }
 
 export interface AlertSettings {
     notification_repeat_minutes: number
     auto_resolve_enabled: boolean
     auto_resolve_grace_minutes: number
-    telegram_enabled: boolean
-    mail_enabled: boolean
-    severity_channels: Record<AlertSeverity, {
-        telegram: boolean
-        mail: boolean
-    }>
+    severity_channels: Record<AlertSeverity, Record<string, boolean>>
+    // 各通道总开关 <channel>_enabled
+    [key: string]: number | boolean | Record<string, unknown>
 }
 
 export interface AlertEvaluationStatus {

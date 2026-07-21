@@ -4,6 +4,7 @@ namespace App\Console\Commands\Ops;
 
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
 use Illuminate\Console\Command;
+use Throwable;
 
 class WatchLogErrorsCommand extends Command
 {
@@ -28,11 +29,18 @@ class WatchLogErrorsCommand extends Command
             }
         }
 
-        $result = $watcher->scan(
-            sources: $sources,
-            dryRun: (bool) $this->option('dry-run'),
-            resetOffsets: (bool) $this->option('since-offset-reset'),
-        );
+        try {
+            $result = $watcher->scan(
+                sources: $sources,
+                dryRun: (bool) $this->option('dry-run'),
+                resetOffsets: (bool) $this->option('since-offset-reset'),
+            );
+        } catch (Throwable $e) {
+            // 扫描本身失败不让命令非零退出，否则调度器写 ERROR 又被本命令采集成新告警。
+            $this->warn('Ops log error scan skipped: '.$e->getMessage());
+
+            return self::SUCCESS;
+        }
 
         if ((bool) $this->option('dry-run')) {
             foreach ($result['events'] as $event) {

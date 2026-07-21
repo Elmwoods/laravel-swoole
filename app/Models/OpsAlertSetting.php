@@ -20,11 +20,24 @@ class OpsAlertSetting extends Model
         ];
     }
 
-    public const DEFAULT_SEVERITY_CHANNELS = [
-        'critical' => ['telegram' => true, 'mail' => true],
-        'warning' => ['telegram' => true, 'mail' => true],
-        'info' => ['telegram' => true, 'mail' => true],
-    ];
+    public const SEVERITIES = ['critical', 'warning', 'info'];
+
+    /**
+     * 按当前登记的通道动态生成"严重级 × 通道"默认路由矩阵（默认全部允许）。
+     */
+    public static function defaultSeverityChannels(): array
+    {
+        $channels = (array) config('ops.alerts.channels', ['telegram', 'mail']);
+        $matrix = [];
+
+        foreach (self::SEVERITIES as $severity) {
+            foreach ($channels as $channel) {
+                $matrix[$severity][$channel] = true;
+            }
+        }
+
+        return $matrix;
+    }
 
     public function valueFor(string $key): mixed
     {
@@ -75,13 +88,17 @@ class OpsAlertSetting extends Model
 
     public static function defaults(): array
     {
-        return [
+        $defaults = [
             'notification_repeat_minutes' => max(0, (int) config('ops.alerts.thresholds.notification_repeat_minutes', 30)),
             'auto_resolve_enabled' => (bool) config('ops.alerts.thresholds.auto_resolve_enabled', true),
             'auto_resolve_grace_minutes' => max(1, (int) config('ops.alerts.thresholds.auto_resolve_grace_minutes', 5)),
-            'severity_channels' => self::DEFAULT_SEVERITY_CHANNELS,
-            'telegram_enabled' => true,
-            'mail_enabled' => true,
+            'severity_channels' => self::defaultSeverityChannels(),
         ];
+
+        foreach ((array) config('ops.alerts.channels', ['telegram', 'mail']) as $channel) {
+            $defaults["{$channel}_enabled"] = true;
+        }
+
+        return $defaults;
     }
 }
