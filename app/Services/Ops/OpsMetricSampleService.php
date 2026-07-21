@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Services\Ops;
+
+use App\Models\OpsMetricSample;
+
+/**
+ * 系统指标采样持久化与趋势聚合。
+ */
+class OpsMetricSampleService
+{
+    /**
+     * 从 SystemMetricsCollector::collect() 的快照派生便于趋势的标量指标。
+     */
+    public function deriveMetrics(array $snapshot): array
+    {
+        $load = (array) ($snapshot['load'] ?? []);
+        $memory = (array) ($snapshot['memory'] ?? []);
+        $swap = (array) ($snapshot['swap'] ?? []);
+
+        return [
+            'cpu_load' => round((float) ($snapshot['cpu'] ?? ($load[0] ?? 0)), 2),
+            'load1' => round((float) ($load[0] ?? 0), 2),
+            'memory_used_percent' => $this->usedPercent(
+                (float) ($memory['total'] ?? 0),
+                (float) ($memory['available'] ?? 0),
+            ),
+            'swap_used_percent' => $this->usedPercent(
+                (float) ($swap['total'] ?? 0),
+                (float) ($swap['free'] ?? 0),
+            ),
+        ];
+    }
+
+    public function record(array $snapshot): OpsMetricSample
+    {
+        return OpsMetricSample::query()->create(array_merge(
+            $this->deriveMetrics($snapshot),
+            ['captured_at' => now()],
+        ));
+    }
+
+    /**
+     * 按天聚合近 $days 天的系统指标平均值（只返回有数据的天，升序）。
+     */
+    public function trend(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->startOfDay()->subDays($days - 1);
+
+        return OpsMetricSample::query()
+            ->where('captured_at', '>=', $since)
+            ->selectRaw('DATE(captured_at) as date')
+            ->selectRaw('AVG(cpu_load) as cpu_load')
+            ->selectRaw('AVG(load1) as load1')
+            ->selectRaw('AVG(memory_used_percent) as memory_used_percent')
+            ->selectRaw('AVG(swap_used_percent) as swap_used_percent')
+            ->groupByRaw('DATE(captured_at)')
+            ->orderByRaw('DATE(captured_at)')
+            ->get()
+            ->map(fn ($row): array => [
+                'date' => $row->date,
+                'cpu_load' => round((float) $row->cpu_load, 2),
+                'load1' => round((float) $row->load1, 2),
+                'memory_used_percent' => round((float) $row->memory_used_percent, 2),
+                'swap_used_percent' => round((float) $row->swap_used_percent, 2),
+            ])
+            ->all();
+    }
+
+    private function usedPercent(float $total, float $available): float
+    {
+        if ($total <= 0) {
+            return 0.0;
+        }
+
+        return round(max(0, min(100, ($total - $available) / $total * 100)), 2);
+    }
+}
