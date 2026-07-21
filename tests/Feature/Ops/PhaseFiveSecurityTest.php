@@ -702,7 +702,7 @@ class PhaseFiveSecurityTest extends TestCase
 
         $content = $response->streamedContent();
 
-        $this->assertStringContainsString('id,admin_user_id,admin_email,module,action,result,status_code,target,ip_address,created_at,payload_summary', $content);
+        $this->assertStringContainsString('id,admin_user_id,admin_email,admin_name,module,action,result,status_code,target,ip_address,message,created_at,payload_summary', $content);
         $this->assertStringContainsString((string) $matched->id, $content);
         $this->assertStringContainsString("'=admin@example.com", $content);
         $this->assertStringContainsString("admin_user:'+42", $content);

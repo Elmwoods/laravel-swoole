@@ -44,6 +44,16 @@ class OpsInspectionController extends Controller
         return $this->success($service->serializeDetail($record));
     }
 
+    public function trend(Request $request, OpsInspectionService $service): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 14)));
+
+        return $this->success([
+            'days' => $days,
+            'buckets' => $service->trend($days),
+        ]);
+    }
+
     public function run(Request $request, OpsInspectionService $service): JsonResponse
     {
         $record = $service->run('full', 'manual', $request->user('admin'));

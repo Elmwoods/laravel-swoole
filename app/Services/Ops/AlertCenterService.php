@@ -163,6 +163,43 @@ class AlertCenterService
         return $evaluation === null ? null : $this->serializeEvaluation($evaluation);
     }
 
+    /**
+     * 按天聚合告警评估趋势（近 $days 天，零填充连续日期）。
+     */
+    public function evaluationTrend(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->startOfDay()->subDays($days - 1);
+
+        $rows = OpsAlertEvaluation::query()
+            ->where('created_at', '>=', $since)
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw('COUNT(*) as evaluations')
+            ->selectRaw('SUM(detected_count) as detected')
+            ->selectRaw('SUM(auto_resolved_count) as auto_resolved')
+            ->selectRaw('AVG(duration_ms) as avg_duration_ms')
+            ->groupByRaw('DATE(created_at)')
+            ->get()
+            ->keyBy('date');
+
+        $buckets = [];
+
+        for ($i = 0; $i < $days; $i++) {
+            $date = $since->copy()->addDays($i)->toDateString();
+            $row = $rows->get($date);
+
+            $buckets[] = [
+                'date' => $date,
+                'evaluations' => (int) ($row->evaluations ?? 0),
+                'detected' => (int) ($row->detected ?? 0),
+                'auto_resolved' => (int) ($row->auto_resolved ?? 0),
+                'avg_duration_ms' => (int) round((float) ($row->avg_duration_ms ?? 0)),
+            ];
+        }
+
+        return $buckets;
+    }
+
     public function settings(): array
     {
         return OpsAlertSetting::allValues();

@@ -60,6 +60,20 @@ export interface InspectionHistoryResult {
     }
 }
 
+export interface InspectionTrendBucket {
+    date: string
+    pass: number
+    warn: number
+    fail: number
+    total: number
+    avg_duration_ms: number
+}
+
+export interface InspectionTrendResult {
+    days: number
+    buckets: InspectionTrendBucket[]
+}
+
 export const getInspectionSummary = () =>
     request.get<ApiResponse<InspectionSummaryResult>>('/api/ops/inspections/summary')
 
@@ -71,3 +85,6 @@ export const getInspectionDetail = (id: number) =>
 
 export const runInspection = () =>
     request.post<ApiResponse<InspectionRecordDetail>>('/api/ops/inspections/run')
+
+export const getInspectionTrend = (days = 14) =>
+    request.get<ApiResponse<InspectionTrendResult>>('/api/ops/inspections/trend', { params: { days } })

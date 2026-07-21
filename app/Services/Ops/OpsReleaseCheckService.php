@@ -73,16 +73,19 @@ class OpsReleaseCheckService
         foreach ($payload as $key => $value) {
             if ($this->isSensitiveKey((string) $key)) {
                 $sanitized[$key] = '[FILTERED]';
+
                 continue;
             }
 
             if (is_array($value)) {
                 $sanitized[$key] = $this->sanitize($value);
+
                 continue;
             }
 
             if (is_string($value)) {
                 $sanitized[$key] = mb_strimwidth($value, 0, 500, '...');
+
                 continue;
             }
 
@@ -260,6 +263,7 @@ class OpsReleaseCheckService
             'docs/ops-center-phase-10.md',
             'docs/ops-center-phase-11.md',
             'docs/ops-center-phase-12.md',
+            'docs/ops-center-phase-13.md',
         ])
             ->map(fn (string $path): array => $this->check('发布文档', $path, is_file(base_path($path)), 'warn', is_file(base_path($path)) ? "{$path} 存在。" : "{$path} 缺失。", '补齐发布验收和回滚说明。'))
             ->all();
