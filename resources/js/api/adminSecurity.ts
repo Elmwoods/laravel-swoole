@@ -204,10 +204,10 @@ export const adminLogin = async (payload: { email: string; password: string }) =
     })
 }
 
-export const confirmAdminTwoFactor = (payload: { code: string }) =>
+export const confirmAdminTwoFactor = (payload: { code: string; trust_device?: boolean }) =>
     request.post<ApiResponse<AdminTwoFactorConfirmResult>>('/api/admin/auth/two-factor/confirm', payload)
 
-export const challengeAdminTwoFactor = (payload: { code?: string; recovery_code?: string }) =>
+export const challengeAdminTwoFactor = (payload: { code?: string; recovery_code?: string; trust_device?: boolean }) =>
     request.post<ApiResponse<AdminProfile>>('/api/admin/auth/two-factor/challenge', payload)
 
 export const adminLogout = () =>

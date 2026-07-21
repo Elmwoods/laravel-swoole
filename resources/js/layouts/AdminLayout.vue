@@ -121,6 +121,11 @@
                         <span>审计日志</span>
                     </el-menu-item>
                 </el-sub-menu>
+
+                <el-menu-item index="/admin/ops/account-security">
+                    <el-icon><Avatar /></el-icon>
+                    <span>账号安全</span>
+                </el-menu-item>
             </el-menu>
         </el-aside>
 
@@ -153,6 +158,7 @@ import { getAlertSummary } from '@/api/opsStage4'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 import echo from '@/utils/echo'
 import {
+    Avatar,
     Bell,
     Box,
     Coin,

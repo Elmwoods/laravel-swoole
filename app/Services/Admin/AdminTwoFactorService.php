@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Models\AdminTrustedDevice;
 use App\Models\AdminUser;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -9,6 +10,7 @@ use Illuminate\Support\Str;
 class AdminTwoFactorService
 {
     private const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
     private const RECOVERY_CODE_COUNT = 8;
 
     public function generateSecret(int $length = 32): string
@@ -44,23 +46,66 @@ class AdminTwoFactorService
         return str_pad((string) ($truncated % 1_000_000), 6, '0', STR_PAD_LEFT);
     }
 
-    public function verifyTotp(string $secret, string $code, ?int $timestamp = null): bool
+    /**
+     * 返回命中该验证码的时间步（intdiv(timestamp, 30)），未命中返回 null。
+     *
+     * 时间步用于重放保护：调用方记录已用步，拒绝重复使用同一步的验证码。
+     */
+    public function matchStep(string $secret, string $code, ?int $timestamp = null): ?int
     {
         $normalized = preg_replace('/\s+/', '', $code) ?? '';
 
         if (! preg_match('/^\d{6}$/', $normalized)) {
-            return false;
+            return null;
         }
 
         $timestamp ??= time();
 
         foreach ([-30, 0, 30] as $offset) {
-            if (hash_equals($this->totpCode($secret, $timestamp + $offset), $normalized)) {
-                return true;
+            $candidate = $timestamp + $offset;
+
+            if (hash_equals($this->totpCode($secret, $candidate), $normalized)) {
+                return intdiv($candidate, 30);
             }
         }
 
-        return false;
+        return null;
+    }
+
+    public function verifyTotp(string $secret, string $code, ?int $timestamp = null): bool
+    {
+        return $this->matchStep($secret, $code, $timestamp) !== null;
+    }
+
+    /**
+     * 登录挑战专用校验：命中且未被重放（时间步严格大于上次已用步）才通过，
+     * 通过后记录该步，使同一验证码在其窗口内无法二次使用。
+     */
+    public function verifyLoginTotp(AdminUser $admin, string $code, ?int $timestamp = null): bool
+    {
+        $secret = (string) $admin->two_factor_secret;
+
+        if ($secret === '') {
+            return false;
+        }
+
+        $step = $this->matchStep($secret, $code, $timestamp);
+
+        if ($step === null) {
+            return false;
+        }
+
+        $lastStep = $admin->two_factor_last_used_step;
+
+        if ($lastStep !== null && $step <= (int) $lastStep) {
+            return false;
+        }
+
+        $admin->forceFill([
+            'two_factor_last_used_step' => $step,
+        ])->save();
+
+        return true;
     }
 
     public function generateRecoveryCodes(): array
@@ -70,12 +115,13 @@ class AdminTwoFactorService
             ->all();
     }
 
-    public function enable(AdminUser $admin, string $secret, array $recoveryCodes): void
+    public function enable(AdminUser $admin, string $secret, array $recoveryCodes, ?int $usedStep = null): void
     {
         $admin->forceFill([
             'two_factor_secret' => $secret,
             'two_factor_confirmed_at' => now(),
             'two_factor_recovery_codes' => $this->hashRecoveryCodes($recoveryCodes),
+            'two_factor_last_used_step' => $usedStep,
         ])->save();
     }
 
@@ -85,8 +131,13 @@ class AdminTwoFactorService
             'two_factor_secret' => null,
             'two_factor_confirmed_at' => null,
             'two_factor_recovery_codes' => null,
+            'two_factor_last_used_step' => null,
             'session_version' => ((int) $admin->session_version) + 1,
         ])->save();
+
+        // Resetting 2FA revokes every trusted device so a lost/compromised
+        // account cannot keep bypassing the 2FA challenge.
+        AdminTrustedDevice::query()->where('admin_user_id', $admin->id)->delete();
     }
 
     public function consumeRecoveryCode(AdminUser $admin, string $code): bool

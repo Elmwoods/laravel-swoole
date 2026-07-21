@@ -34,6 +34,9 @@ Route::prefix('/admin')
             Route::middleware('admin.auth')->group(function (): void {
                 Route::get('/me', [AdminAuthController::class, 'me']);
                 Route::post('/logout', [AdminAuthController::class, 'logout']);
+                Route::get('/login-history', [AdminAuthController::class, 'loginHistory']);
+                Route::get('/trusted-devices', [AdminAuthController::class, 'trustedDevices']);
+                Route::post('/trusted-devices/{device}/revoke', [AdminAuthController::class, 'revokeTrustedDevice']);
             });
 
             Route::post('/two-factor/confirm', [AdminAuthController::class, 'confirmTwoFactor']);

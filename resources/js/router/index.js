@@ -201,6 +201,15 @@ const routes = [
                 },
             },
             {
+                path: 'account-security',
+                name: 'AccountSecurity',
+                component: () => import('../pages/admin/AccountSecurity.vue'),
+                meta: {
+                    title: '账号安全',
+                    description: '二次验证状态、登录历史与受信任设备',
+                },
+            },
+            {
                 path: 'no-permission',
                 name: 'AdminNoPermission',
                 component: () => import('../pages/admin/NoPermission.vue'),

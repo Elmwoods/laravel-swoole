@@ -6,13 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Auth\AdminLoginRequest;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminLoginEventService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminSessionSecurityService;
+use App\Services\Admin\AdminTrustedDeviceService;
 use App\Services\Admin\AdminTwoFactorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -26,6 +29,8 @@ class AdminAuthController extends Controller
         private readonly AdminPermissionRegistry $permissions,
         private readonly AdminSessionSecurityService $sessions,
         private readonly AdminTwoFactorService $twoFactor,
+        private readonly AdminLoginEventService $loginEvents,
+        private readonly AdminTrustedDeviceService $trustedDevices,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -76,6 +81,22 @@ class AdminAuthController extends Controller
 
         $this->throttle->clear($email, $ip);
 
+        if ($admin->twoFactorEnabled()) {
+            $device = $this->trustedDevices->findValid(
+                $admin,
+                $request->cookie(AdminTrustedDeviceService::COOKIE_NAME),
+            );
+
+            if ($device !== null) {
+                $this->trustedDevices->touch($device, $request);
+                $this->audit->record($request, 'admin.auth', 'login', 'success', 200, admin: $admin, payload: [
+                    'trusted_device' => true,
+                ]);
+
+                return $this->success($this->completeLogin($request, $admin, true));
+            }
+        }
+
         $this->putPendingTwoFactorSession($request, $admin);
 
         if (! $admin->twoFactorEnabled()) {
@@ -114,9 +135,12 @@ class AdminAuthController extends Controller
 
         $data = $request->validate([
             'code' => ['required', 'string', 'regex:/^\d{6}$/'],
+            'trust_device' => ['nullable', 'boolean'],
         ]);
 
-        if (! $this->twoFactor->verifyTotp($secret, $data['code'])) {
+        $usedStep = $this->twoFactor->matchStep($secret, $data['code']);
+
+        if ($usedStep === null) {
             $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'failure', 422, admin: $admin);
 
             throw ValidationException::withMessages([
@@ -125,8 +149,9 @@ class AdminAuthController extends Controller
         }
 
         $recoveryCodes = $this->twoFactor->generateRecoveryCodes();
-        $this->twoFactor->enable($admin, $secret, $recoveryCodes);
+        $this->twoFactor->enable($admin, $secret, $recoveryCodes, $usedStep);
         $this->audit->record($request, 'admin.auth', 'two_factor_setup', 'success', 200, admin: $admin);
+        $this->maybeIssueTrustedDevice($request, $admin->refresh());
 
         return $this->success([
             'profile' => $this->completeLogin($request, $admin->refresh()),
@@ -145,10 +170,11 @@ class AdminAuthController extends Controller
         $data = $request->validate([
             'code' => ['nullable', 'string', 'regex:/^\d{6}$/', 'required_without:recovery_code'],
             'recovery_code' => ['nullable', 'string', 'max:32', 'required_without:code'],
+            'trust_device' => ['nullable', 'boolean'],
         ]);
 
         $verified = isset($data['code']) && $data['code'] !== ''
-            ? $this->twoFactor->verifyTotp((string) $admin->two_factor_secret, $data['code'])
+            ? $this->twoFactor->verifyLoginTotp($admin, $data['code'])
             : $this->twoFactor->consumeRecoveryCode($admin, (string) ($data['recovery_code'] ?? ''));
 
         if (! $verified) {
@@ -162,6 +188,7 @@ class AdminAuthController extends Controller
         }
 
         $this->audit->record($request, 'admin.auth', 'two_factor_challenge', 'success', 200, admin: $admin);
+        $this->maybeIssueTrustedDevice($request, $admin);
 
         return $this->success($this->completeLogin($request, $admin->refresh()));
     }
@@ -169,6 +196,33 @@ class AdminAuthController extends Controller
     public function me(): JsonResponse
     {
         return $this->success($this->profile(request()->user('admin')));
+    }
+
+    public function loginHistory(Request $request): JsonResponse
+    {
+        return $this->success([
+            'events' => $this->loginEvents->history($request->user('admin'), 20),
+        ]);
+    }
+
+    public function trustedDevices(Request $request): JsonResponse
+    {
+        return $this->success([
+            'devices' => $this->trustedDevices->list($request->user('admin')),
+        ]);
+    }
+
+    public function revokeTrustedDevice(Request $request, int $device): JsonResponse
+    {
+        $revoked = $this->trustedDevices->revoke($request->user('admin'), $device);
+
+        $this->audit->record($request, 'admin.auth', 'trusted_device_revoke', $revoked ? 'success' : 'failure', $revoked ? 200 : 404, admin: $request->user('admin'), payload: [
+            'device_id' => $device,
+        ]);
+
+        return $this->success([
+            'revoked' => $revoked,
+        ]);
     }
 
     public function logout(): JsonResponse
@@ -225,6 +279,27 @@ class AdminAuthController extends Controller
         $request->session()->forget('admin_two_factor_pending_secret');
     }
 
+    private function maybeIssueTrustedDevice(Request $request, AdminUser $admin): void
+    {
+        if (! $request->boolean('trust_device')) {
+            return;
+        }
+
+        $token = $this->trustedDevices->issue($admin, $request);
+
+        Cookie::queue(Cookie::make(
+            AdminTrustedDeviceService::COOKIE_NAME,
+            $token,
+            AdminTrustedDeviceService::LIFETIME_DAYS * 24 * 60,
+            '/',
+            null,
+            app()->environment('production'),
+            true,
+            false,
+            'lax',
+        ));
+    }
+
     private function pendingTwoFactorAdmin(Request $request): ?AdminUser
     {
         $id = $request->session()->get('admin_two_factor_pending_admin_id');
@@ -239,7 +314,7 @@ class AdminAuthController extends Controller
             ->first();
     }
 
-    private function completeLogin(Request $request, AdminUser $admin): array
+    private function completeLogin(Request $request, AdminUser $admin, bool $trusted = false): array
     {
         auth('admin')->login($admin);
         $request->session()->regenerate();
@@ -250,6 +325,8 @@ class AdminAuthController extends Controller
         ]);
         $request->session()->put('admin_session_version', (int) $admin->session_version);
         $this->sessions->touch($request);
+
+        $this->loginEvents->record($admin, $request, $trusted);
 
         $admin->forceFill([
             'last_login_at' => now(),
