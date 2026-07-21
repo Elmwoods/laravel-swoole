@@ -79,6 +79,10 @@
                         />
                     </el-form-item>
 
+                    <el-checkbox v-model="trustDevice" class="trust-device">
+                        记住此设备 30 天（此后在本设备登录跳过二次验证）
+                    </el-checkbox>
+
                     <el-button :loading="loading" native-type="submit" type="primary">
                         验证并登录
                     </el-button>
@@ -122,6 +126,7 @@ const step = ref<'password' | 'setup' | 'challenge' | 'recovery'>('password')
 const setup = ref<AdminTwoFactorSetup | null>(null)
 const qrDataUrl = ref('')
 const useRecovery = ref(false)
+const trustDevice = ref(false)
 const recoveryCodes = ref<string[]>([])
 const form = reactive({
     email: '',
@@ -210,8 +215,8 @@ const submitChallenge = async () => {
 
     try {
         await auth.challengeTwoFactor(useRecovery.value
-            ? { recovery_code: twoFactorForm.recovery_code }
-            : { code: twoFactorForm.code })
+            ? { recovery_code: twoFactorForm.recovery_code, trust_device: trustDevice.value }
+            : { code: twoFactorForm.code, trust_device: trustDevice.value })
         twoFactorForm.code = ''
         twoFactorForm.recovery_code = ''
         await finishLogin()
@@ -286,6 +291,13 @@ p {
 .recovery-step {
     display: grid;
     gap: 16px;
+}
+
+.trust-device {
+    color: #475569;
+    height: auto;
+    line-height: 1.4;
+    white-space: normal;
 }
 
 .qr-wrap {

@@ -47,14 +47,14 @@ export const useAdminAuthStore = defineStore('adminAuth', {
 
             return data as AdminLoginResult
         },
-        async confirmTwoFactor(payload: { code: string }) {
+        async confirmTwoFactor(payload: { code: string; trust_device?: boolean }) {
             const res = await confirmAdminTwoFactor(payload)
             this.profile = res.data.data.profile
             this.loaded = true
 
             return res.data.data
         },
-        async challengeTwoFactor(payload: { code?: string; recovery_code?: string }) {
+        async challengeTwoFactor(payload: { code?: string; recovery_code?: string; trust_device?: boolean }) {
             const res = await challengeAdminTwoFactor(payload)
             this.profile = res.data.data
             this.loaded = true
