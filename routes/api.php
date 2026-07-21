@@ -122,6 +122,7 @@ Route::prefix('/ops')
             ->group(function (): void {
                 Route::get('/push', [RedisMetricsController::class, 'push']);
                 Route::get('/chart', [RedisMetricsController::class, 'chart']);
+                Route::get('/trend', [RedisMetricsController::class, 'trend']);
             });
 
         Route::prefix('queue')

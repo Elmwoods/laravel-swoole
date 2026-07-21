@@ -81,6 +81,16 @@ const routes = [
                 },
             },
             {
+                path: 'redis/trend',
+                name: 'RedisTrend',
+                component: () => import('../pages/ops/RedisTrend.vue'),
+                meta: {
+                    title: 'Redis 多天趋势',
+                    description: 'Redis 指标多天历史趋势',
+                    permission: 'ops.system.view',
+                },
+            },
+            {
                 path: 'queue',
                 name: 'QueueMonitor',
                 component: () => import('../pages/ops/QueueMonitor.vue'),

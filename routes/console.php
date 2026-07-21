@@ -47,6 +47,13 @@ Schedule::command('ops:metrics:persist')
     ->withoutOverlapping();
 
 /**
+ * 每分钟持久化一个 Redis 指标点，供多天趋势。
+ */
+Schedule::command('ops:redis-metrics:persist')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/**
  * 每日清理过期巡检历史，避免 ops_inspections 无限增长。
  */
 Schedule::command('ops:inspections:prune')
@@ -65,4 +72,11 @@ Schedule::command('ops:alerts:prune-evaluations')
  */
 Schedule::command('ops:metrics:prune')
     ->dailyAt('03:30')
+    ->withoutOverlapping();
+
+/**
+ * 每日清理过期 Redis 指标采样。
+ */
+Schedule::command('ops:redis-metrics:prune')
+    ->dailyAt('03:40')
     ->withoutOverlapping();

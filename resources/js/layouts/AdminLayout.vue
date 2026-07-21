@@ -40,6 +40,11 @@
                     <span>Redis</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/redis/trend">
+                    <el-icon><DataLine /></el-icon>
+                    <span>Redis 趋势</span>
+                </el-menu-item>
+
                 <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/queue">
                     <el-icon><List /></el-icon>
                     <span>Queue</span>
