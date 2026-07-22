@@ -13,6 +13,7 @@ use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminSessionSecurityService;
 use App\Services\Admin\AdminTrustedDeviceService;
 use App\Services\Admin\AdminTwoFactorService;
+use App\Services\Ops\AlertCenterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
@@ -31,6 +32,7 @@ class AdminAuthController extends Controller
         private readonly AdminTwoFactorService $twoFactor,
         private readonly AdminLoginEventService $loginEvents,
         private readonly AdminTrustedDeviceService $trustedDevices,
+        private readonly AlertCenterService $alerts,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -326,7 +328,8 @@ class AdminAuthController extends Controller
         $request->session()->put('admin_session_version', (int) $admin->session_version);
         $this->sessions->touch($request);
 
-        $this->loginEvents->record($admin, $request, $trusted);
+        $event = $this->loginEvents->record($admin, $request, $trusted);
+        $this->alerts->raiseLoginAnomalyAlert($admin, $event);
 
         $admin->forceFill([
             'last_login_at' => now(),
