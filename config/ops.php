@@ -44,6 +44,20 @@ return [
     | 防止日志查看接口读取任意服务器文件。
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Ops Center 自动巡检配置
+    |--------------------------------------------------------------------------
+    |
+    | 巡检的 Alert Evaluation 检查会跑一次告警评估；单次瞬时失败（部署后未
+    | reload、依赖瞬断）降级为 warn，只有连续失败达到阈值才判 fail（推 critical），
+    | 避免一次抖动就刷屏。阈值按每分钟的 ops:alerts:evaluate 落库的评估历史统计。
+    |
+    */
+    'inspections' => [
+        'alert_eval_fail_threshold' => max(1, (int) env('OPS_INSPECTION_ALERT_EVAL_FAIL_THRESHOLD', 3)),
+    ],
+
     'logs' => [
         'system_sources' => [
             'supervisor' => '/tmp/supervisord.log',

@@ -3,6 +3,7 @@
 namespace App\Services\Ops;
 
 use App\Models\AdminUser;
+use App\Models\OpsAlertEvaluation;
 use App\Models\OpsInspection;
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
 use Throwable;
@@ -216,8 +217,51 @@ class OpsInspectionService
                 'hint' => $detected > 0 ? '进入告警中心处理未恢复告警。' : '告警规则评估正常。',
             ]];
         } catch (Throwable $e) {
-            return [$this->failedCheck('告警中心', 'Alert Evaluation', $e)];
+            return [$this->alertEvaluationFailureCheck($e)];
         }
+    }
+
+    /**
+     * 告警评估抛错时的降级判定：单次/少量瞬时失败 → warn；连续失败达阈值 → fail。
+     *
+     * 依据每分钟 ops:alerts:evaluate 落库的 ops_alert_evaluations 历史统计连续失败数
+     * （本次失败已由 evaluate() 的 catch 记为最新一行），避免一次部署抖动就推 critical。
+     */
+    private function alertEvaluationFailureCheck(Throwable $e): array
+    {
+        $threshold = max(1, (int) config('ops.inspections.alert_eval_fail_threshold', 3));
+
+        $recent = OpsAlertEvaluation::query()
+            ->orderByDesc('id')
+            ->limit($threshold)
+            ->pluck('status');
+
+        $failStreak = 0;
+
+        foreach ($recent as $status) {
+            if ($status === 'failure') {
+                $failStreak++;
+
+                continue;
+            }
+
+            break;
+        }
+
+        $persistent = $failStreak >= $threshold;
+        $message = $this->safeText($e->getMessage());
+
+        return [
+            'group' => '告警中心',
+            'name' => 'Alert Evaluation',
+            'status' => $persistent ? 'fail' : 'warn',
+            'message' => $persistent
+                ? $message
+                : "告警评估瞬时失败，已降级为警告（连续失败 {$failStreak}/{$threshold} 次）：{$message}",
+            'hint' => $persistent
+                ? '告警评估连续失败，请检查采集依赖（redis/docker/supervisor）与是否部署后未 octane:reload。'
+                : '单次评估失败多为瞬时抖动（部署后未 reload、依赖瞬断）；连续失败达阈值才升级为严重。',
+        ];
     }
 
     private function runLogWatcher(): array
