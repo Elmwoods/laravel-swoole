@@ -80,3 +80,10 @@ Schedule::command('ops:metrics:prune')
 Schedule::command('ops:redis-metrics:prune')
     ->dailyAt('03:40')
     ->withoutOverlapping();
+
+/**
+ * 每日推送告警聚合摘要（默认 opt-in，config 关闭时命令内 no-op）。
+ */
+Schedule::command('ops:alerts:digest')
+    ->dailyAt('08:00')
+    ->withoutOverlapping();

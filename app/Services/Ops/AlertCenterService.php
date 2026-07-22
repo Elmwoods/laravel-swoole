@@ -84,6 +84,110 @@ class AlertCenterService
     }
 
     /**
+     * 聚合最近 $hours 小时的告警（按严重级 / 状态 / 来源计数），供 digest 使用。
+     */
+    public function digestSummary(int $hours): array
+    {
+        $hours = max(1, min(168, $hours));
+        $since = now()->subHours($hours);
+        $scope = OpsAlert::query()->where('created_at', '>=', $since);
+
+        $countBy = fn (string $column): array => (clone $scope)
+            ->select($column, DB::raw('count(*) as total'))
+            ->groupBy($column)
+            ->pluck('total', $column)
+            ->map(fn ($total): int => (int) $total)
+            ->all();
+
+        $bySeverity = $countBy('severity');
+        $byStatus = $countBy('status');
+
+        return [
+            'window_hours' => $hours,
+            'since' => $since->toDateTimeString(),
+            'generated_at' => now()->toDateTimeString(),
+            'total' => (clone $scope)->count(),
+            'by_severity' => [
+                'critical' => $bySeverity['critical'] ?? 0,
+                'warning' => $bySeverity['warning'] ?? 0,
+                'info' => $bySeverity['info'] ?? 0,
+            ],
+            'by_status' => [
+                'open' => $byStatus['open'] ?? 0,
+                'acknowledged' => $byStatus['acknowledged'] ?? 0,
+                'resolved' => $byStatus['resolved'] ?? 0,
+            ],
+            'sources' => (clone $scope)
+                ->select('source', DB::raw('count(*) as total'))
+                ->groupBy('source')
+                ->orderByDesc('total')
+                ->limit(5)
+                ->get()
+                ->map(fn (object $row): array => [
+                    'source' => (string) $row->source,
+                    'total' => (int) $row->total,
+                ])
+                ->all(),
+        ];
+    }
+
+    /**
+     * 把聚合结果渲染成纯文本摘要正文。
+     */
+    public function renderDigest(array $summary): string
+    {
+        $sev = $summary['by_severity'];
+        $status = $summary['by_status'];
+
+        $sources = collect($summary['sources'])
+            ->map(fn (array $row): string => "{$row['source']} {$row['total']}")
+            ->implode(' / ');
+
+        $lines = [
+            "过去 {$summary['window_hours']} 小时告警摘要（{$summary['generated_at']}）",
+            "共 {$summary['total']} 条（严重 {$sev['critical']} / 警告 {$sev['warning']} / 提示 {$sev['info']}）",
+            "状态：待处理 {$status['open']} / 已确认 {$status['acknowledged']} / 已恢复 {$status['resolved']}",
+            'Top 来源：'.($sources !== '' ? $sources : '无'),
+        ];
+
+        return $this->safeInspectionText(implode(PHP_EOL, $lines));
+    }
+
+    /**
+     * 构造一条不落库的合成告警，把窗口摘要经现有通道推送。
+     *
+     * config 未开或窗口内无告警（且未配置空发）时不发送。
+     */
+    public function sendDigest(int $hours): array
+    {
+        if (! (bool) config('ops.alerts.digest.enabled', false)) {
+            return ['sent' => false, 'reason' => 'disabled'];
+        }
+
+        $summary = $this->digestSummary($hours);
+
+        if ($summary['total'] === 0 && ! (bool) config('ops.alerts.digest.send_when_empty', false)) {
+            return ['sent' => false, 'reason' => 'empty', 'summary' => $summary];
+        }
+
+        $alert = new OpsAlert([
+            'source' => 'digest',
+            'severity' => (string) config('ops.alerts.digest.severity', 'info'),
+            'title' => 'Ops Center 告警摘要',
+            'message' => $this->renderDigest($summary),
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        return [
+            'sent' => true,
+            'summary' => $summary,
+            'channels' => $this->notification->send($alert),
+        ];
+    }
+
+    /**
      * 通知通道配置状态。
      */
     public function notificationStatus(): array
