@@ -276,3 +276,19 @@ export interface AdminAuditFacets {
 
 export const getAdminAuditFacets = () =>
     request.get<ApiResponse<AdminAuditFacets>>('/api/admin/audit-logs/facets')
+
+export interface AdminAuditPreset {
+    id: number
+    name: string
+    filters: Record<string, string | number>
+    created_at: string | null
+}
+
+export const getAuditPresets = () =>
+    request.get<ApiResponse<{ items: AdminAuditPreset[] }>>('/api/admin/audit-logs/presets')
+
+export const saveAuditPreset = (payload: { name: string; filters: Record<string, unknown> }) =>
+    request.post<ApiResponse<{ preset: AdminAuditPreset }>>('/api/admin/audit-logs/presets', payload)
+
+export const deleteAuditPreset = (id: number) =>
+    request.delete<ApiResponse<{ deleted: boolean }>>(`/api/admin/audit-logs/presets/${id}`)
