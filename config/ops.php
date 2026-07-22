@@ -127,5 +127,13 @@ return [
         'demo' => [
             'enabled' => filter_var(env('OPS_ALERT_DEMO_ENABLED', env('APP_ENV', 'local') !== 'production'), FILTER_VALIDATE_BOOL),
         ],
+
+        // 定时聚合摘要：把一段窗口内的告警汇总成一条消息经现有通道推送。默认关闭（opt-in），避免意外外发。
+        'digest' => [
+            'enabled' => filter_var(env('OPS_ALERT_DIGEST_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'window_hours' => (int) env('OPS_ALERT_DIGEST_WINDOW_HOURS', 24),
+            'severity' => env('OPS_ALERT_DIGEST_SEVERITY', 'info'),
+            'send_when_empty' => filter_var(env('OPS_ALERT_DIGEST_SEND_WHEN_EMPTY', false), FILTER_VALIDATE_BOOL),
+        ],
     ],
 ];
