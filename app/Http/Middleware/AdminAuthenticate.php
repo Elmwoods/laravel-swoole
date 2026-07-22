@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Admin\AdminSessionRegistryService;
 use App\Services\Admin\AdminSessionSecurityService;
 use Closure;
 use Illuminate\Http\Request;
@@ -9,7 +10,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AdminAuthenticate
 {
-    public function __construct(private readonly AdminSessionSecurityService $sessions) {}
+    public function __construct(
+        private readonly AdminSessionSecurityService $sessions,
+        private readonly AdminSessionRegistryService $sessionRegistry,
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -30,6 +34,7 @@ class AdminAuthenticate
 
         if ($sessionVersion === null) {
             $request->session()->put('admin_session_version', (int) $admin->session_version);
+            $this->sessionRegistry->ensureActive($admin, $request);
             $this->sessions->touch($request);
 
             return $next($request);
@@ -43,6 +48,19 @@ class AdminAuthenticate
             return response()->json([
                 'code' => 401,
                 'message' => '登录状态已失效，请重新登录后台。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 401);
+        }
+
+        if (! $this->sessionRegistry->ensureActive($admin, $request)) {
+            auth('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return response()->json([
+                'code' => 401,
+                'message' => '会话已被注销，请重新登录后台。',
                 'data' => null,
                 'timestamp' => now()->timestamp,
             ], 401);

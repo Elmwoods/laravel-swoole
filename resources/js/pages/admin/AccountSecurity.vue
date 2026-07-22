@@ -105,6 +105,57 @@
                 </template>
             </el-table>
         </el-card>
+
+        <el-card shadow="never" class="section">
+            <template #header>
+                <div class="section-header">
+                    <span>活跃会话</span>
+                    <div class="header-actions">
+                        <el-button
+                            :loading="revokingOthers"
+                            :disabled="otherSessionCount === 0"
+                            text
+                            type="danger"
+                            @click="revokeOthers"
+                        >
+                            注销其他会话
+                        </el-button>
+                        <el-button :loading="loadingSessions" text type="primary" @click="loadSessions">刷新</el-button>
+                    </div>
+                </div>
+            </template>
+
+            <el-table v-loading="loadingSessions" :data="activeSessions" size="small">
+                <el-table-column label="设备" min-width="150">
+                    <template #default="{ row }">
+                        <span>{{ row.label || '未知' }}</span>
+                        <el-tag v-if="row.current" type="success" size="small" effect="plain" class="badge">
+                            当前会话
+                        </el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="IP" prop="ip_address" width="150" />
+                <el-table-column label="UA" prop="user_agent" min-width="240" />
+                <el-table-column label="最近活动" prop="last_activity_at" width="180" />
+                <el-table-column label="操作" width="100" fixed="right">
+                    <template #default="{ row }">
+                        <el-button
+                            v-if="!row.current"
+                            :loading="revokingSessionId === row.id"
+                            text
+                            type="danger"
+                            @click="revokeOne(row.id)"
+                        >
+                            注销
+                        </el-button>
+                        <span v-else class="muted">—</span>
+                    </template>
+                </el-table-column>
+                <template #empty>
+                    <el-empty description="暂无活跃会话" />
+                </template>
+            </el-table>
+        </el-card>
     </div>
 </template>
 
@@ -112,9 +163,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+    getActiveSessions,
     getLoginHistory,
     getTrustedDevices,
+    revokeOtherSessions,
+    revokeSession,
     revokeTrustedDevice,
+    type AdminActiveSession,
     type AdminLoginEvent,
     type AdminTrustedDevice,
 } from '@/api/accountSecurity'
@@ -123,11 +178,16 @@ import { useAdminAuthStore } from '@/stores/adminAuth'
 const auth = useAdminAuthStore()
 const loginEvents = ref<AdminLoginEvent[]>([])
 const trustedDevices = ref<AdminTrustedDevice[]>([])
+const activeSessions = ref<AdminActiveSession[]>([])
 const loadingHistory = ref(false)
 const loadingDevices = ref(false)
+const loadingSessions = ref(false)
 const revokingId = ref<number | null>(null)
+const revokingSessionId = ref<number | null>(null)
+const revokingOthers = ref(false)
 
 const security = computed(() => auth.profile?.security ?? null)
+const otherSessionCount = computed(() => activeSessions.value.filter(session => !session.current).length)
 
 const loadHistory = async () => {
     loadingHistory.value = true
@@ -179,12 +239,73 @@ const revoke = async (id: number) => {
     }
 }
 
+const loadSessions = async () => {
+    loadingSessions.value = true
+
+    try {
+        const res = await getActiveSessions()
+        activeSessions.value = res.data.data.sessions
+    } catch {
+        ElMessage.error('加载活跃会话失败')
+    } finally {
+        loadingSessions.value = false
+    }
+}
+
+const revokeOne = async (id: number) => {
+    try {
+        await ElMessageBox.confirm('注销后，该会话下次操作需要重新登录。', '注销会话', {
+            type: 'warning',
+            confirmButtonText: '注销',
+            cancelButtonText: '取消',
+        })
+    } catch {
+        return
+    }
+
+    revokingSessionId.value = id
+
+    try {
+        await revokeSession(id)
+        ElMessage.success('已注销')
+        await loadSessions()
+    } catch {
+        ElMessage.error('注销失败')
+    } finally {
+        revokingSessionId.value = null
+    }
+}
+
+const revokeOthers = async () => {
+    try {
+        await ElMessageBox.confirm('将注销除当前会话外的所有登录会话。', '注销其他会话', {
+            type: 'warning',
+            confirmButtonText: '注销',
+            cancelButtonText: '取消',
+        })
+    } catch {
+        return
+    }
+
+    revokingOthers.value = true
+
+    try {
+        await revokeOtherSessions()
+        ElMessage.success('已注销其他会话')
+        await loadSessions()
+    } catch {
+        ElMessage.error('注销失败')
+    } finally {
+        revokingOthers.value = false
+    }
+}
+
 onMounted(async () => {
     if (!auth.loaded) {
         await auth.loadProfile()
     }
 
-    await Promise.all([loadHistory(), loadDevices()])
+    await Promise.all([loadHistory(), loadDevices(), loadSessions()])
 })
 </script>
 
@@ -212,5 +333,15 @@ onMounted(async () => {
 
 .ua {
     word-break: break-all;
+}
+
+.header-actions {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+}
+
+.muted {
+    color: #9ca3af;
 }
 </style>

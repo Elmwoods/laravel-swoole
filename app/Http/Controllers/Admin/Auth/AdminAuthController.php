@@ -10,6 +10,7 @@ use App\Services\Admin\AdminLoginEventService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminPermissionRegistry;
+use App\Services\Admin\AdminSessionRegistryService;
 use App\Services\Admin\AdminSessionSecurityService;
 use App\Services\Admin\AdminTrustedDeviceService;
 use App\Services\Admin\AdminTwoFactorService;
@@ -33,6 +34,7 @@ class AdminAuthController extends Controller
         private readonly AdminLoginEventService $loginEvents,
         private readonly AdminTrustedDeviceService $trustedDevices,
         private readonly AlertCenterService $alerts,
+        private readonly AdminSessionRegistryService $sessionRegistry,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -227,12 +229,46 @@ class AdminAuthController extends Controller
         ]);
     }
 
+    public function activeSessions(Request $request): JsonResponse
+    {
+        return $this->success([
+            'sessions' => $this->sessionRegistry->list($request->user('admin'), $request),
+        ]);
+    }
+
+    public function revokeSession(Request $request, int $session): JsonResponse
+    {
+        $revoked = $this->sessionRegistry->revoke($request->user('admin'), $session);
+
+        $this->audit->record($request, 'admin.auth', 'session_revoke', $revoked ? 'success' : 'failure', $revoked ? 200 : 404, admin: $request->user('admin'), payload: [
+            'session_id' => $session,
+        ]);
+
+        return $this->success([
+            'revoked' => $revoked,
+        ]);
+    }
+
+    public function revokeOtherSessions(Request $request): JsonResponse
+    {
+        $revoked = $this->sessionRegistry->revokeOthers($request->user('admin'), $request);
+
+        $this->audit->record($request, 'admin.auth', 'session_revoke_others', 'success', 200, admin: $request->user('admin'), payload: [
+            'revoked' => $revoked,
+        ]);
+
+        return $this->success([
+            'revoked' => $revoked,
+        ]);
+    }
+
     public function logout(): JsonResponse
     {
         $request = request();
         $admin = $request->user('admin');
 
         $this->audit->record($request, 'admin.auth', 'logout', 'success', 200, admin: $admin);
+        $this->sessionRegistry->forget($request);
         auth('admin')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
@@ -328,6 +364,7 @@ class AdminAuthController extends Controller
         $request->session()->put('admin_session_version', (int) $admin->session_version);
         $this->sessions->touch($request);
 
+        $this->sessionRegistry->register($admin, $request);
         $event = $this->loginEvents->record($admin, $request, $trusted);
         $this->alerts->raiseLoginAnomalyAlert($admin, $event);
 
