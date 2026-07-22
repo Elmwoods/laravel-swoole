@@ -305,6 +305,8 @@ class PhaseEightAlertOperationsTest extends TestCase
             'notification_repeat_minutes' => 10,
             'auto_resolve_enabled' => true,
             'auto_resolve_grace_minutes' => 3,
+            'escalation_enabled' => true,
+            'escalation_after_minutes' => 30,
             'severity_channels' => [
                 'critical' => $this->channelRow(true),
                 'warning' => $this->channelRow(true),

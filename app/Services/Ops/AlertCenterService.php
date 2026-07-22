@@ -317,6 +317,8 @@ class AlertCenterService
             'notification_repeat_minutes',
             'auto_resolve_enabled',
             'auto_resolve_grace_minutes',
+            'escalation_enabled',
+            'escalation_after_minutes',
             'severity_channels',
         ];
 
@@ -541,6 +543,7 @@ class AlertCenterService
             'acknowledge_note' => $alert->acknowledge_note,
             'assigned_to' => $alert->assigned_to,
             'assigned_at' => optional($alert->assigned_at)->toDateTimeString(),
+            'escalated_at' => optional($alert->escalated_at)->toDateTimeString(),
             'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
@@ -778,6 +781,58 @@ class AlertCenterService
      * 为避免短暂采集失败误关闭，只有超过宽限时间仍未命中的 open / acknowledged
      * 告警才会被标记为 resolved。
      */
+    /**
+     * 升级长期未确认的 critical 告警：定时重推（绕过冷却）+ 记 escalated 事件 + 广播。
+     *
+     * 超时判定用 created_at（唯一稳定的 open-since；last_seen_at/updated_at 会在 re-fire 刷新）。
+     * escalated_at 作再升级间隔锚点，防每分钟重复升级。
+     */
+    public function escalateStaleAlerts(bool $dryRun = false): Collection
+    {
+        if (! (bool) OpsAlertSetting::value('escalation_enabled')) {
+            return collect();
+        }
+
+        $after = max(1, (int) OpsAlertSetting::value('escalation_after_minutes'));
+        $cutoff = now()->subMinutes($after);
+
+        $alerts = OpsAlert::query()
+            ->where('status', 'open')
+            ->where('severity', 'critical')
+            ->where('created_at', '<=', $cutoff)
+            ->where(function ($query) use ($cutoff): void {
+                $query->whereNull('escalated_at')->orWhere('escalated_at', '<=', $cutoff);
+            })
+            ->get();
+
+        if ($dryRun) {
+            return $alerts;
+        }
+
+        return $alerts->map(function (OpsAlert $alert) use ($after): OpsAlert {
+            $unackedMinutes = optional($alert->created_at)->diffInMinutes(now()) ?? 0;
+
+            $alert->forceFill(['escalated_at' => now()])->save();
+            $alert = $alert->refresh();
+
+            $this->notification->send($alert);
+
+            $this->recordAlertEvent(
+                $alert,
+                'escalated',
+                'ops-escalator',
+                "未确认超过 {$after} 分钟，已升级重推。",
+                $alert->status,
+                $alert->status,
+                ['unacked_minutes' => (int) $unackedMinutes, 'hit_count' => (int) $alert->hit_count],
+            );
+
+            broadcast(new AlertTriggered($alert));
+
+            return $alert;
+        });
+    }
+
     private function autoResolveRecoveredAlerts(array $detectedFingerprints): Collection
     {
         if (! (bool) OpsAlertSetting::value('auto_resolve_enabled')) {

@@ -66,4 +66,13 @@ class ScheduledCommandResilienceTest extends TestCase
 
         $this->artisan('ops:logs:watch-errors', ['--once' => true])->assertExitCode(0);
     }
+
+    public function test_escalate_command_succeeds_even_when_escalation_throws(): void
+    {
+        $this->mock(AlertCenterService::class, function ($mock): void {
+            $mock->shouldReceive('escalateStaleAlerts')->once()->andThrow(new RuntimeException('db down'));
+        });
+
+        $this->artisan('ops:alerts:escalate')->assertExitCode(0);
+    }
 }

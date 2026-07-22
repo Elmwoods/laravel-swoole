@@ -94,3 +94,10 @@ Schedule::command('ops:alerts:digest')
 Schedule::command('admin:sessions:prune')
     ->dailyAt('03:50')
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟升级长期未确认的 critical 告警（重推），避免关键告警被遗漏。
+ */
+Schedule::command('ops:alerts:escalate')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
