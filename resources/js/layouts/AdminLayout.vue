@@ -35,15 +35,22 @@
                     <span>自动巡检</span>
                 </el-menu-item>
 
-                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/redis">
-                    <el-icon><Coin /></el-icon>
-                    <span>Redis</span>
-                </el-menu-item>
+                <el-sub-menu v-if="hasPermission('ops.system.view')" index="redis">
+                    <template #title>
+                        <el-icon><Coin /></el-icon>
+                        <span>Redis</span>
+                    </template>
 
-                <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/redis/trend">
-                    <el-icon><DataLine /></el-icon>
-                    <span>Redis 趋势</span>
-                </el-menu-item>
+                    <el-menu-item index="/admin/ops/redis">
+                        <el-icon><Coin /></el-icon>
+                        <span>Redis 监控</span>
+                    </el-menu-item>
+
+                    <el-menu-item index="/admin/ops/redis/trend">
+                        <el-icon><DataLine /></el-icon>
+                        <span>Redis 趋势</span>
+                    </el-menu-item>
+                </el-sub-menu>
 
                 <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/queue">
                     <el-icon><List /></el-icon>
