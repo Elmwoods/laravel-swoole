@@ -87,3 +87,10 @@ Schedule::command('ops:redis-metrics:prune')
 Schedule::command('ops:alerts:digest')
     ->dailyAt('08:00')
     ->withoutOverlapping();
+
+/**
+ * 每日清理陈旧/已撤销的管理员会话注册表行。
+ */
+Schedule::command('admin:sessions:prune')
+    ->dailyAt('03:50')
+    ->withoutOverlapping();
