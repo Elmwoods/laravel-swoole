@@ -24,7 +24,10 @@
 npm run build
 ./vendor/bin/sail artisan route:list --path=ops
 ./vendor/bin/sail artisan test
+# 部署收尾必做（Octane 常驻字节码，改类/常量/配置后不 reload 会触发 Undefined constant 等致命）：
+./vendor/bin/sail artisan config:clear && ./vendor/bin/sail artisan octane:reload
 ```
+> 部署与事故排查见 `docs/ops-center-deploy-runbook.md`。
 
 ## 交付要求
 
