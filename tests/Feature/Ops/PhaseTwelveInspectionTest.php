@@ -6,14 +6,18 @@ use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Models\OpsAlert;
+use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertSetting;
 use App\Models\OpsInspection;
 use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\Log\OpsLogErrorWatcherService;
 use App\Services\Ops\OpsInspectionService;
+use App\Services\Ops\QueueMonitorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Tests\TestCase;
 
 class PhaseTwelveInspectionTest extends TestCase
@@ -248,6 +252,79 @@ class PhaseTwelveInspectionTest extends TestCase
             'action' => 'inspection_recovered',
             'to_status' => 'resolved',
         ]);
+    }
+
+    public function test_transient_alert_evaluation_failure_is_downgraded_to_warn(): void
+    {
+        config()->set('ops.inspections.alert_eval_fail_threshold', 3);
+        $this->stubLightInspectionServices(evaluateThrows: true, failureCount: 2);
+
+        $this->mockAlerts(expectRaise: false);
+
+        $inspection = app(OpsInspectionService::class)->run('light');
+
+        $this->assertSame('warn', $inspection->status);
+        $check = collect($inspection->checks)->firstWhere('name', 'Alert Evaluation');
+        $this->assertSame('warn', $check['status']);
+        $this->assertStringContainsString('瞬时失败', $check['message']);
+    }
+
+    public function test_persistent_alert_evaluation_failure_is_fail(): void
+    {
+        config()->set('ops.inspections.alert_eval_fail_threshold', 3);
+        $this->stubLightInspectionServices(evaluateThrows: true, failureCount: 3);
+
+        $this->mockAlerts(expectRaise: true);
+
+        $inspection = app(OpsInspectionService::class)->run('light');
+
+        $this->assertSame('fail', $inspection->status);
+        $check = collect($inspection->checks)->firstWhere('name', 'Alert Evaluation');
+        $this->assertSame('fail', $check['status']);
+    }
+
+    /**
+     * 预置评估历史 + 把 log/queue 检查桩成 pass，使巡检结果只由 Alert Evaluation 决定。
+     */
+    private function stubLightInspectionServices(bool $evaluateThrows, int $failureCount): void
+    {
+        for ($i = 0; $i < $failureCount; $i++) {
+            OpsAlertEvaluation::query()->create([
+                'trigger' => 'schedule',
+                'status' => 'failure',
+                'detected_count' => 0,
+                'auto_resolved_count' => 0,
+                'duration_ms' => 1,
+                'message' => 'boom',
+            ]);
+        }
+
+        $this->mock(OpsLogErrorWatcherService::class, function ($mock): void {
+            $mock->shouldReceive('scan')->andReturn(['enabled' => true, 'detected' => 0, 'scanned' => 1]);
+        });
+
+        $this->mock(QueueMonitorService::class, function ($mock): void {
+            $mock->shouldReceive('summary')->andReturn([
+                'failed_jobs' => ['count' => 0],
+                'workers' => ['running' => true],
+                'queues' => [],
+            ]);
+        });
+    }
+
+    private function mockAlerts(bool $expectRaise): void
+    {
+        $this->mock(AlertCenterService::class, function ($mock) use ($expectRaise): void {
+            $mock->shouldReceive('evaluate')->andThrow(new RuntimeException('boom'));
+
+            if ($expectRaise) {
+                $mock->shouldReceive('raiseInspectionAlert')->once();
+                $mock->shouldReceive('resolveInspectionAlert')->never();
+            } else {
+                $mock->shouldReceive('raiseInspectionAlert')->never();
+                $mock->shouldReceive('resolveInspectionAlert')->once();
+            }
+        });
     }
 
     private function failedInspection(string $failureMessage = '巡检检测到失败项。'): OpsInspection
