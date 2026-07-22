@@ -268,6 +268,7 @@ class OpsReleaseCheckService
             'docs/ops-center-phase-15.md',
             'docs/ops-center-phase-16.md',
             'docs/ops-center-phase-17.md',
+            'docs/ops-center-phase-19.md',
         ])
             ->map(fn (string $path): array => $this->check('发布文档', $path, is_file(base_path($path)), 'warn', is_file(base_path($path)) ? "{$path} 存在。" : "{$path} 缺失。", '补齐发布验收和回滚说明。'))
             ->all();
