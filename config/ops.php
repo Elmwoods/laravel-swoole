@@ -127,5 +127,11 @@ return [
         'demo' => [
             'enabled' => filter_var(env('OPS_ALERT_DEMO_ENABLED', env('APP_ENV', 'local') !== 'production'), FILTER_VALIDATE_BOOL),
         ],
+
+        // 异常登录（新 IP / 新设备）主动告警：命中 phase-17 登录事件的风控标记时升起告警并经现有通道推送。
+        'login_alerts' => [
+            'enabled' => filter_var(env('OPS_LOGIN_ALERTS_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'severity' => env('OPS_LOGIN_ALERTS_SEVERITY', 'warning'),
+        ],
     ],
 ];

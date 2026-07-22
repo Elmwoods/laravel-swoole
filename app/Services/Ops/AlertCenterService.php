@@ -4,6 +4,8 @@ namespace App\Services\Ops;
 
 use App\DTO\Ops\AlertDTO;
 use App\Events\Ops\AlertTriggered;
+use App\Models\AdminLoginEvent;
+use App\Models\AdminUser;
 use App\Models\OpsAlert;
 use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertEvent;
@@ -484,6 +486,77 @@ class AlertCenterService
             null,
             $alert->status,
             ['inspection_id' => $inspection->id],
+        );
+
+        broadcast(new AlertTriggered($alert));
+    }
+
+    /**
+     * 管理员从新 IP / 新设备登录时升起一条安全告警，并复用现有通知/广播闭环。
+     *
+     * 首登（无历史）不告警；按 管理员+IP 去重，重复只增 hit_count；
+     * 首次或超冷却时间才推送，避免刷屏。登录告警不进 autoResolveRecoveredAlerts
+     * 托管源，需人工确认。
+     */
+    public function raiseLoginAnomalyAlert(AdminUser $admin, AdminLoginEvent $event): void
+    {
+        if (! (bool) config('ops.alerts.login_alerts.enabled', true)) {
+            return;
+        }
+
+        if (! $event->is_new_ip && ! $event->is_new_user_agent) {
+            return;
+        }
+
+        // 首登抑制：该管理员没有更早的登录事件时，说明是首次登录（如绑定 2FA 后首登），不算异常。
+        $hasPriorLogin = AdminLoginEvent::query()
+            ->where('admin_user_id', $admin->id)
+            ->where('id', '<', $event->id)
+            ->exists();
+
+        if (! $hasPriorLogin) {
+            return;
+        }
+
+        $flags = collect([
+            $event->is_new_ip ? '新 IP' : null,
+            $event->is_new_user_agent ? '新设备' : null,
+        ])->filter()->implode(' / ');
+
+        $ip = (string) ($event->ip_address ?: '未知');
+
+        $dto = new AlertDTO(
+            source: 'security_login',
+            severity: (string) config('ops.alerts.login_alerts.severity', 'warning'),
+            title: '异地/新设备登录',
+            message: $this->safeInspectionText(
+                "管理员 {$admin->email} 从 {$flags} 登录（IP：{$ip}，UA：".((string) ($event->user_agent ?: '未知')).'）。'
+            ),
+            context: [
+                'target' => "admin:{$admin->id}:ip:{$ip}",
+                'admin_id' => $admin->id,
+                'login_event_id' => $event->id,
+                'ip' => $event->ip_address,
+                'is_new_ip' => (bool) $event->is_new_ip,
+                'is_new_user_agent' => (bool) $event->is_new_user_agent,
+                'trusted' => (bool) $event->trusted,
+            ],
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'new_ip_login' : 'new_ip_login_refired',
+            'ops-security',
+            null,
+            null,
+            $alert->status,
+            ['admin_id' => $admin->id, 'login_event_id' => $event->id],
         );
 
         broadcast(new AlertTriggered($alert));
