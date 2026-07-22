@@ -667,6 +667,41 @@ class AlertCenterService
     }
 
     /**
+     * 审计异常（失败登录暴增 / 敏感操作）升告警，复用现有通知/广播闭环。
+     *
+     * $key 作 fingerprint 去重锚点（失败登录按 subject、敏感操作按审计行 id）；
+     * source=security_audit 不在 autoResolveRecoveredAlerts 托管源，留人工确认。
+     */
+    public function raiseAuditAnomalyAlert(string $key, string $severity, string $title, string $message, array $context = []): void
+    {
+        $dto = new AlertDTO(
+            source: 'security_audit',
+            severity: $severity,
+            title: $title,
+            message: $this->safeInspectionText($message),
+            context: array_merge($context, ['target' => $key]),
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'audit_anomaly' : 'audit_anomaly_refired',
+            'ops-security',
+            null,
+            null,
+            $alert->status,
+            $context,
+        );
+
+        broadcast(new AlertTriggered($alert));
+    }
+
+    /**
      * 巡检恢复后自动关闭仍处于 open/acknowledged 的巡检告警。
      */
     public function resolveInspectionAlert(): void
