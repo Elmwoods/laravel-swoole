@@ -37,6 +37,9 @@ Route::prefix('/admin')
                 Route::get('/login-history', [AdminAuthController::class, 'loginHistory']);
                 Route::get('/trusted-devices', [AdminAuthController::class, 'trustedDevices']);
                 Route::post('/trusted-devices/{device}/revoke', [AdminAuthController::class, 'revokeTrustedDevice']);
+                Route::get('/sessions', [AdminAuthController::class, 'activeSessions']);
+                Route::post('/sessions/revoke-others', [AdminAuthController::class, 'revokeOtherSessions']);
+                Route::post('/sessions/{session}/revoke', [AdminAuthController::class, 'revokeSession']);
             });
 
             Route::post('/two-factor/confirm', [AdminAuthController::class, 'confirmTwoFactor']);
