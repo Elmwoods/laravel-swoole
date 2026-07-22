@@ -31,5 +31,16 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!--
+            测试环境隔离：强制关闭所有告警外发通道，测试永不触发真实通知。
+            与生产 .env 分开（生产可开 OPS_ALERT_TELEGRAM_ENABLED 等）；需要验证某通道的
+            用例在自身内用 config()->set('ops.alerts.<channel>.enabled', true) + Http::fake() 覆盖。
+        -->
+        <env name="OPS_ALERT_TELEGRAM_ENABLED" value="false"/>
+        <env name="OPS_ALERT_MAIL_ENABLED" value="false"/>
+        <env name="OPS_ALERT_WEBHOOK_ENABLED" value="false"/>
+        <env name="OPS_ALERT_DINGTALK_ENABLED" value="false"/>
+        <env name="OPS_ALERT_FEISHU_ENABLED" value="false"/>
+        <env name="OPS_ALERT_DIGEST_ENABLED" value="false"/>
     </php>
 </phpunit>
