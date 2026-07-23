@@ -94,3 +94,10 @@ Schedule::command('ops:alerts:digest')
 Schedule::command('admin:sessions:prune')
     ->dailyAt('03:50')
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟扫描审计日志异常（失败登录暴增 / 敏感操作），命中升告警。
+ */
+Schedule::command('ops:audit:scan-anomalies')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

@@ -155,5 +155,15 @@ return [
             'severity' => env('OPS_ALERT_DIGEST_SEVERITY', 'info'),
             'send_when_empty' => filter_var(env('OPS_ALERT_DIGEST_SEND_WHEN_EMPTY', false), FILTER_VALIDATE_BOOL),
         ],
+
+        // 审计异常检测：定时扫描 admin_audit_logs，命中失败登录暴增 / 敏感操作时升 security_audit 告警。
+        'audit_anomaly' => [
+            'enabled' => filter_var(env('OPS_AUDIT_ANOMALY_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'window_minutes' => max(1, (int) env('OPS_AUDIT_ANOMALY_WINDOW_MINUTES', 10)),
+            'failed_login_threshold' => max(1, (int) env('OPS_AUDIT_ANOMALY_FAILED_LOGIN_THRESHOLD', 5)),
+            'sensitive_actions' => array_values(array_filter(explode(',', env('OPS_AUDIT_ANOMALY_SENSITIVE_ACTIONS', 'admin.users:create,admin.users:reset_password,admin.users:two_factor_reset,admin.users:two_factor_reset_cli,admin.roles:create,admin.roles:update')))),
+            'max_rows_per_run' => max(1, (int) env('OPS_AUDIT_ANOMALY_MAX_ROWS_PER_RUN', 500)),
+            'state_file' => storage_path('app/ops-audit-anomaly-state.json'),
+        ],
     ],
 ];

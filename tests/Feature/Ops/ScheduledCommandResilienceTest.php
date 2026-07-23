@@ -4,6 +4,7 @@ namespace Tests\Feature\Ops;
 
 use App\Models\OpsInspection;
 use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\AuditAnomalyScanService;
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
 use App\Services\Ops\OpsInspectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -65,5 +66,14 @@ class ScheduledCommandResilienceTest extends TestCase
         });
 
         $this->artisan('ops:logs:watch-errors', ['--once' => true])->assertExitCode(0);
+    }
+
+    public function test_audit_anomaly_scan_command_succeeds_even_when_scan_throws(): void
+    {
+        $this->mock(AuditAnomalyScanService::class, function ($mock): void {
+            $mock->shouldReceive('scan')->once()->andThrow(new RuntimeException('audit table down'));
+        });
+
+        $this->artisan('ops:audit:scan-anomalies')->assertExitCode(0);
     }
 }
