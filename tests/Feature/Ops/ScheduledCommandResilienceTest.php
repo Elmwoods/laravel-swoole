@@ -4,6 +4,7 @@ namespace Tests\Feature\Ops;
 
 use App\Models\OpsInspection;
 use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\AlertChannelHealthService;
 use App\Services\Ops\AuditAnomalyScanService;
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
 use App\Services\Ops\OpsInspectionService;
@@ -84,5 +85,14 @@ class ScheduledCommandResilienceTest extends TestCase
         });
 
         $this->artisan('ops:alerts:escalate')->assertExitCode(0);
+    }
+
+    public function test_health_check_command_succeeds_even_when_probe_throws(): void
+    {
+        $this->mock(AlertChannelHealthService::class, function ($mock): void {
+            $mock->shouldReceive('run')->once()->andThrow(new RuntimeException('probe down'));
+        });
+
+        $this->artisan('ops:alerts:health-check')->assertExitCode(0);
     }
 }

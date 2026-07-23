@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\Ops\AlertNotificationTestRequest;
 use App\Http\Requests\Admin\Ops\AlertSettingsUpdateRequest;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
+use App\Services\Ops\AlertChannelHealthService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -106,6 +107,19 @@ class AlertController extends Controller
     public function testNotification(AlertNotificationTestRequest $request): JsonResponse
     {
         return $this->success($this->service->testNotification($request->validated()));
+    }
+
+    /**
+     * 立即对已启用通道做一次连通性自检，返回更新后的通知状态。
+     */
+    public function runHealthCheck(AlertChannelHealthService $health): JsonResponse
+    {
+        $summary = $health->run();
+
+        return $this->success([
+            'summary' => $summary,
+            ...$this->service->notificationStatus(),
+        ]);
     }
 
     /**

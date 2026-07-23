@@ -214,6 +214,8 @@ Route::prefix('/ops')
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,evaluate']);
                 Route::post('/test-notification', [AlertController::class, 'testNotification'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,test_notification']);
+                Route::post('/health-check', [AlertController::class, 'runHealthCheck'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,health_check']);
                 Route::post('/demo-scenarios', [AlertController::class, 'demoScenarios'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,demo_scenarios']);
                 Route::post('/{alert}/acknowledge', [AlertController::class, 'acknowledge'])

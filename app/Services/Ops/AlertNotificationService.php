@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
 
 /**
  * 告警通知服务。
@@ -122,6 +123,57 @@ class AlertNotificationService
             'dingtalk' => $this->sendDingtalk($alert),
             'feishu' => $this->sendFeishu($alert),
             default => ['enabled' => false, 'sent' => false, 'reason' => 'unknown_channel'],
+        };
+    }
+
+    /**
+     * 连通性静默探测多个通道（不投递用户可见告警，钉钉/飞书除外——发轻量心跳）。
+     *
+     * @return array<string, array{healthy: bool, reason?: string, checked_via: string}>
+     */
+    public function probeChannels(array $channels = []): array
+    {
+        $supported = $this->channels();
+        $channels = $channels ?: $supported;
+        $channels = array_values(array_intersect($channels, $supported));
+
+        $result = [];
+
+        foreach ($channels as $channel) {
+            $result[$channel] = $this->probeChannel($channel);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 探测单个通道连通性。checked_via='skipped' 表示未启用/未配置（不计入健康统计）。
+     *
+     * @return array{healthy: bool, reason?: string, checked_via: string}
+     */
+    public function probeChannel(string $channel): array
+    {
+        if (! (bool) config("ops.alerts.{$channel}.enabled", false)) {
+            return ['healthy' => false, 'reason' => 'not_enabled', 'checked_via' => 'skipped'];
+        }
+
+        if (! (bool) OpsAlertSetting::value("{$channel}_enabled")) {
+            return ['healthy' => false, 'reason' => 'disabled_by_toggle', 'checked_via' => 'skipped'];
+        }
+
+        foreach (self::CHANNEL_CREDENTIALS[$channel] ?? [] as $credential) {
+            if ($this->credentialMissing($channel, $credential)) {
+                return ['healthy' => false, 'reason' => "missing_{$credential}", 'checked_via' => 'skipped'];
+            }
+        }
+
+        return match ($channel) {
+            'telegram' => $this->probeTelegram(),
+            'mail' => $this->probeMail(),
+            'webhook' => $this->probeWebhook(),
+            'dingtalk' => $this->probeDingtalk(),
+            'feishu' => $this->probeFeishu(),
+            default => ['healthy' => false, 'reason' => 'unknown_channel', 'checked_via' => 'skipped'],
         };
     }
 
@@ -305,6 +357,138 @@ class AlertNotificationService
         } catch (\Throwable $e) {
             return $this->failure('feishu', $alert, $e);
         }
+    }
+
+    /**
+     * Telegram 静默探测：getMe（验证 token + 网络，不投递消息）。
+     */
+    private function probeTelegram(): array
+    {
+        $token = (string) config('ops.alerts.telegram.bot_token', '');
+
+        try {
+            $response = Http::timeout(5)->get("https://api.telegram.org/bot{$token}/getMe");
+            $ok = $response->successful() && (bool) data_get($response->json(), 'ok', false);
+
+            return $ok
+                ? ['healthy' => true, 'checked_via' => 'getMe']
+                : ['healthy' => false, 'reason' => 'telegram_getme_status_'.$response->status(), 'checked_via' => 'getMe'];
+        } catch (\Throwable $e) {
+            return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'getMe'];
+        }
+    }
+
+    /**
+     * 邮件静默探测：打开 SMTP 传输连接（不投递邮件）。非 SMTP 驱动视为跳过。
+     */
+    private function probeMail(): array
+    {
+        try {
+            $transport = Mail::mailer()->getSymfonyTransport();
+
+            if (! $transport instanceof SmtpTransport) {
+                return ['healthy' => false, 'reason' => 'non_smtp_driver', 'checked_via' => 'skipped'];
+            }
+
+            $transport->start();
+            $transport->stop();
+
+            return ['healthy' => true, 'checked_via' => 'smtp'];
+        } catch (\Throwable $e) {
+            return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'smtp'];
+        }
+    }
+
+    /**
+     * Webhook 探测：POST 最小健康载荷到机器端点（非用户可见）。
+     */
+    private function probeWebhook(): array
+    {
+        $url = (string) config('ops.alerts.webhook.url', '');
+        $secret = (string) config('ops.alerts.webhook.secret', '');
+        $body = json_encode(['event' => 'ops_health_check', 'time' => now()->toDateTimeString()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        try {
+            $request = Http::timeout(5)->withBody($body, 'application/json');
+
+            if ($secret !== '') {
+                $request = $request->withHeaders(['X-Ops-Signature' => hash_hmac('sha256', $body, $secret)]);
+            }
+
+            $response = $request->post($url);
+
+            return $response->successful()
+                ? ['healthy' => true, 'checked_via' => 'http_post']
+                : ['healthy' => false, 'reason' => 'webhook_status_'.$response->status(), 'checked_via' => 'http_post'];
+        } catch (\Throwable $e) {
+            return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'http_post'];
+        }
+    }
+
+    /**
+     * 钉钉探测：无静默 ping，发一条明确标注的轻量心跳，errcode==0 视为连通。
+     */
+    private function probeDingtalk(): array
+    {
+        $webhook = (string) config('ops.alerts.dingtalk.webhook', '');
+        $secret = (string) config('ops.alerts.dingtalk.secret', '');
+        $url = $webhook;
+
+        if ($secret !== '') {
+            $timestamp = (string) (int) round(microtime(true) * 1000);
+            $sign = base64_encode(hash_hmac('sha256', $timestamp."\n".$secret, $secret, true));
+            $url .= (str_contains($url, '?') ? '&' : '?').'timestamp='.$timestamp.'&sign='.rawurlencode($sign);
+        }
+
+        try {
+            $response = Http::timeout(5)->post($url, [
+                'msgtype' => 'text',
+                'text' => ['content' => $this->heartbeatText()],
+            ]);
+
+            $errcode = (int) data_get($response->json(), 'errcode', $response->successful() ? 0 : -1);
+
+            return ($response->successful() && $errcode === 0)
+                ? ['healthy' => true, 'checked_via' => 'heartbeat']
+                : ['healthy' => false, 'reason' => 'dingtalk_errcode_'.$errcode, 'checked_via' => 'heartbeat'];
+        } catch (\Throwable $e) {
+            return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'heartbeat'];
+        }
+    }
+
+    /**
+     * 飞书探测：无静默 ping，发一条明确标注的轻量心跳，code==0 视为连通。
+     */
+    private function probeFeishu(): array
+    {
+        $webhook = (string) config('ops.alerts.feishu.webhook', '');
+        $secret = (string) config('ops.alerts.feishu.secret', '');
+        $payload = [
+            'msg_type' => 'text',
+            'content' => ['text' => $this->heartbeatText()],
+        ];
+
+        if ($secret !== '') {
+            $timestamp = (string) time();
+            $payload['timestamp'] = $timestamp;
+            $payload['sign'] = base64_encode(hash_hmac('sha256', '', $timestamp."\n".$secret, true));
+        }
+
+        try {
+            $response = Http::timeout(5)->post($webhook, $payload);
+            $code = (int) data_get($response->json(), 'code', $response->successful() ? 0 : -1);
+
+            return ($response->successful() && $code === 0)
+                ? ['healthy' => true, 'checked_via' => 'heartbeat']
+                : ['healthy' => false, 'reason' => 'feishu_code_'.$code, 'checked_via' => 'heartbeat'];
+        } catch (\Throwable $e) {
+            return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'heartbeat'];
+        }
+    }
+
+    private function heartbeatText(): string
+    {
+        return 'Ops Center 告警通道健康自检：连通正常，请忽略。';
     }
 
     private function failure(string $channel, OpsAlert $alert, \Throwable $e): array
