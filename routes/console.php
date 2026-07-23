@@ -101,3 +101,10 @@ Schedule::command('admin:sessions:prune')
 Schedule::command('ops:audit:scan-anomalies')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟升级长期未确认的 critical 告警（重推），避免关键告警被遗漏。
+ */
+Schedule::command('ops:alerts:escalate')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

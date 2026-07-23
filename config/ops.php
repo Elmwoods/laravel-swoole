@@ -107,6 +107,8 @@ return [
             'auto_resolve_enabled' => filter_var(env('OPS_ALERT_AUTO_RESOLVE_ENABLED', true), FILTER_VALIDATE_BOOL),
             'auto_resolve_grace_minutes' => (int) env('OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES', 5),
             'notification_repeat_minutes' => (int) env('OPS_ALERT_NOTIFICATION_REPEAT_MINUTES', 30),
+            'escalation_enabled' => filter_var(env('OPS_ALERT_ESCALATION_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'escalation_after_minutes' => (int) env('OPS_ALERT_ESCALATION_AFTER_MINUTES', 30),
         ],
 
         'telegram' => [

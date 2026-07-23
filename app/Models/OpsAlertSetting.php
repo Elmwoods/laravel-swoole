@@ -92,6 +92,8 @@ class OpsAlertSetting extends Model
             'notification_repeat_minutes' => max(0, (int) config('ops.alerts.thresholds.notification_repeat_minutes', 30)),
             'auto_resolve_enabled' => (bool) config('ops.alerts.thresholds.auto_resolve_enabled', true),
             'auto_resolve_grace_minutes' => max(1, (int) config('ops.alerts.thresholds.auto_resolve_grace_minutes', 5)),
+            'escalation_enabled' => (bool) config('ops.alerts.thresholds.escalation_enabled', true),
+            'escalation_after_minutes' => max(1, (int) config('ops.alerts.thresholds.escalation_after_minutes', 30)),
             'severity_channels' => self::defaultSeverityChannels(),
         ];
 

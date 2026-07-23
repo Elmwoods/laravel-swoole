@@ -83,6 +83,17 @@
                         />
                         <span class="muted inline-help">分钟宽限</span>
                     </el-form-item>
+                    <el-form-item label="升级重推">
+                        <el-switch v-model="settingsDraft.escalation_enabled" :disabled="settingsSaving" />
+                        <el-input-number
+                            v-model="settingsDraft.escalation_after_minutes"
+                            :min="1"
+                            :max="1440"
+                            controls-position="right"
+                            :disabled="settingsSaving"
+                        />
+                        <span class="muted inline-help">分钟未确认则升级重推</span>
+                    </el-form-item>
                     <el-form-item label="通道策略">
                         <div class="severity-grid">
                             <div v-for="level in severityLevels" :key="level" class="severity-row">
@@ -298,10 +309,13 @@
                     </template>
                 </el-table-column>
 
-                <el-table-column label="状态" width="130">
+                <el-table-column label="状态" width="150">
                     <template #default="{ row }">
                         <el-tag :type="row.status === 'open' ? 'danger' : 'info'" effect="plain">
                             {{ statusLabel(row.status) }}
+                        </el-tag>
+                        <el-tag v-if="row.escalated_at" type="danger" size="small" effect="dark" class="escalated-tag">
+                            已升级
                         </el-tag>
                     </template>
                 </el-table-column>
@@ -1065,6 +1079,10 @@ onBeforeUnmount(() => {
 
 .inline-help {
     margin-left: 8px;
+}
+
+.escalated-tag {
+    margin-left: 6px;
 }
 
 .notification-item {

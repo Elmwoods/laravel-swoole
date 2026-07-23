@@ -54,6 +54,7 @@ npm run build
 - 二十阶段：活跃会话管理——`admin_sessions` 注册表 + 中间件强制，账号安全页可查看/远程注销本人登录会话（会话袋 token、软撤销、每日清理）。
 - 二十一阶段：服务端保存的审计筛选预设——`admin_audit_presets`（owner-scoped）+ 审计页预设下拉/保存/删除。
 - 二十二阶段：审计异常检测告警——`ops:audit:scan-anomalies`（游标扫 `admin_audit_logs`）命中失败登录暴增/敏感操作时升 `security_audit` 告警（每 5 分钟、容错）。
+- 二十三阶段：告警升级/未确认重推——`ops:alerts:escalate` 每 5 分钟把超时无人确认的 open critical 告警强制重推 + 标记 `escalated_at`（阈值 DB 可配、容错）。
 
 候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）。
 

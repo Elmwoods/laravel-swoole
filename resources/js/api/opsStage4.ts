@@ -27,6 +27,7 @@ export interface OpsAlert {
     acknowledge_note: string | null
     assigned_to: string | null
     assigned_at: string | null
+    escalated_at: string | null
     timeline: AlertTimelineItem[]
     created_at: string | null
     updated_at: string | null
@@ -110,6 +111,8 @@ export interface AlertSettings {
     notification_repeat_minutes: number
     auto_resolve_enabled: boolean
     auto_resolve_grace_minutes: number
+    escalation_enabled: boolean
+    escalation_after_minutes: number
     severity_channels: Record<AlertSeverity, Record<string, boolean>>
     // 各通道总开关 <channel>_enabled
     [key: string]: number | boolean | Record<string, unknown>

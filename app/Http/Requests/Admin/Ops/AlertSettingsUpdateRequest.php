@@ -20,6 +20,8 @@ class AlertSettingsUpdateRequest extends FormRequest
             'notification_repeat_minutes' => ['required', 'integer', 'min:0', 'max:1440'],
             'auto_resolve_enabled' => ['required', 'boolean'],
             'auto_resolve_grace_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
+            'escalation_enabled' => ['required', 'boolean'],
+            'escalation_after_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
             'severity_channels' => ['required', 'array'],
         ];
 
