@@ -106,6 +106,9 @@ class AdminIpAccessService
                 'label' => ($label !== null && trim($label) !== '') ? trim($label) : null,
                 'is_active' => true,
                 'created_by' => $actor?->id,
+                // 人工规则始终是永久 manual（即便覆盖了某个 auto 封禁行）。
+                'source' => 'manual',
+                'expires_at' => null,
             ],
         );
 
@@ -165,9 +168,85 @@ class AdminIpAccessService
             );
         }
 
+        if (array_key_exists('auto_ban_enabled', $payload)) {
+            AdminSecuritySetting::setValue('auto_ban_enabled', (bool) $payload['auto_ban_enabled']);
+        }
+
         $this->flushCache();
 
         return $this->settings();
+    }
+
+    /**
+     * 自动封禁：写/续期一条带过期的临时 deny 规则。
+     *
+     * 不覆盖人工规则：同 (deny, cidr) 若已是 manual → 跳过返回 null（人工规则优先保留）；
+     * 若已是 auto → 续期 expires_at；不存在 → 新建 source=auto。
+     */
+    public function autoBan(string $ip, int $minutes, ?string $label = null): ?AdminIpRule
+    {
+        $cidr = trim($ip);
+        $minutes = max(1, $minutes);
+
+        if (! $this->isValidCidr($cidr)) {
+            return null;
+        }
+
+        $existing = AdminIpRule::query()
+            ->where('type', 'deny')
+            ->where('cidr', $cidr)
+            ->first();
+
+        if ($existing !== null && $existing->source === 'manual') {
+            // 已有人工 deny：保留人工语义，不改成会过期的 auto。
+            return null;
+        }
+
+        $rule = AdminIpRule::query()->updateOrCreate(
+            ['type' => 'deny', 'cidr' => $cidr],
+            [
+                'label' => $label ?? '自动封禁：失败登录暴增',
+                'is_active' => true,
+                'created_by' => null,
+                'source' => 'auto',
+                'expires_at' => now()->addMinutes($minutes),
+            ],
+        );
+
+        $this->flushCache();
+
+        return $rule;
+    }
+
+    /**
+     * 清理已过期的自动封禁规则（不动人工规则 / 未过期规则）。
+     */
+    public function deleteExpiredAutoBans(): int
+    {
+        $deleted = AdminIpRule::query()
+            ->where('source', 'auto')
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', now())
+            ->delete();
+
+        if ($deleted > 0) {
+            $this->flushCache();
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * 该 IP 是否命中任一「启用且未过期」的 allow 规则（自动封禁跳过白名单来源）。
+     */
+    public function matchesActiveAllow(string $ip): bool
+    {
+        $allowRules = array_values(array_filter(
+            $this->snapshot()['rules'],
+            static fn (array $rule): bool => $rule['type'] === 'allow',
+        ));
+
+        return $this->firstMatch($ip, $allowRules, 'allow') !== null;
     }
 
     /**
@@ -238,6 +317,7 @@ class AdminIpAccessService
         try {
             $rules = AdminIpRule::query()
                 ->where('is_active', true)
+                ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
                 ->get(['type', 'cidr'])
                 ->map(static fn (AdminIpRule $rule): array => [
                     'type' => (string) $rule->type,
@@ -310,6 +390,8 @@ class AdminIpAccessService
             'cidr' => $rule->cidr,
             'label' => $rule->label,
             'is_active' => (bool) $rule->is_active,
+            'source' => $rule->source ?? 'manual',
+            'expires_at' => optional($rule->expires_at)->toDateTimeString(),
             'created_at' => optional($rule->created_at)->toDateTimeString(),
         ];
     }

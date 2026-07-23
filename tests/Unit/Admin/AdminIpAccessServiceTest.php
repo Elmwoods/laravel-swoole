@@ -144,4 +144,47 @@ class AdminIpAccessServiceTest extends TestCase
         $this->assertFalse($svc->isValidCidr('10.0.0.0/'));
         $this->assertFalse($svc->isValidCidr(''));
     }
+
+    public function test_expired_auto_ban_is_not_enforced(): void
+    {
+        $svc = $this->service();
+        $svc->updateSettings(['ip_access_enabled' => true, 'ip_access_mode' => 'blocklist']);
+
+        // 未过期 auto 封禁 → 拦截。
+        $svc->autoBan('203.0.113.9', 60);
+        $this->assertFalse($svc->allowedFor('203.0.113.9'));
+
+        // 让它过期 → 放行（evaluate 过滤过期规则）。
+        AdminIpRule::query()->where('cidr', '203.0.113.9')->update(['expires_at' => now()->subMinute()]);
+        $svc->flushCache();
+        $this->assertTrue($svc->allowedFor('203.0.113.9'));
+    }
+
+    public function test_delete_expired_auto_bans_only_removes_expired_auto(): void
+    {
+        $svc = $this->service();
+        $svc->autoBan('203.0.113.9', 60);                      // 未过期 auto
+        $svc->autoBan('198.51.100.7', 60);
+        AdminIpRule::query()->where('cidr', '198.51.100.7')->update(['expires_at' => now()->subMinute()]); // 过期 auto
+        $svc->createRule('deny', '10.0.0.0/8', '人工');          // 人工（无过期）
+
+        $removed = $svc->deleteExpiredAutoBans();
+
+        $this->assertSame(1, $removed);
+        $this->assertDatabaseMissing('admin_ip_rules', ['cidr' => '198.51.100.7']);
+        $this->assertDatabaseHas('admin_ip_rules', ['cidr' => '203.0.113.9']);
+        $this->assertDatabaseHas('admin_ip_rules', ['cidr' => '10.0.0.0/8']);
+    }
+
+    public function test_auto_ban_does_not_overwrite_manual_rule(): void
+    {
+        $svc = $this->service();
+        $svc->createRule('deny', '203.0.113.9', '人工永久');
+
+        $this->assertNull($svc->autoBan('203.0.113.9', 60));
+
+        $rule = AdminIpRule::query()->where('cidr', '203.0.113.9')->first();
+        $this->assertSame('manual', $rule->source);
+        $this->assertNull($rule->expires_at);
+    }
 }

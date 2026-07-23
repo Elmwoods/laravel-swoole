@@ -191,5 +191,19 @@ return [
 
         // 可信反向代理列表（逗号分隔的 IP/CIDR，或单个 '*' 表示信任全部）。默认空 = 保持现状不改行为。
         'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_TRUSTED_PROXIES', ''))))),
+
+        // 滥用来源自动封禁：定时按 IP 统计失败登录，超阈值自动写临时 deny 规则（带过期）。
+        // 默认 opt-in 关闭（激进；代理后未配 OPS_TRUSTED_PROXIES 前不要开，否则可能封掉代理=锁死所有人）。
+        // enabled 作种子，运行时被 admin_security_settings.auto_ban_enabled 覆盖（UI 可切换）；阈值/窗口/时长走 env。
+        'auto_ban' => [
+            'enabled' => filter_var(env('OPS_AUTO_BAN_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'threshold' => max(1, (int) env('OPS_AUTO_BAN_THRESHOLD', 10)),
+            'window_minutes' => max(1, (int) env('OPS_AUTO_BAN_WINDOW_MINUTES', 10)),
+            'ban_minutes' => max(1, (int) env('OPS_AUTO_BAN_MINUTES', 60)),
+            'max_rows_per_run' => max(1, (int) env('OPS_AUTO_BAN_MAX_ROWS_PER_RUN', 500)),
+            // never-ban 护栏：默认含 loopback，永不自动封禁这些来源。
+            'never_ban' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_AUTO_BAN_NEVER_BAN', '127.0.0.1/8,::1'))))),
+            'state_file' => storage_path('app/ops-auto-ban-state.json'),
+        ],
     ],
 ];

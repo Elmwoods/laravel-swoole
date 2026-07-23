@@ -705,6 +705,40 @@ class AlertCenterService
     }
 
     /**
+     * 来源 IP 自动封禁告警（滥用来源被临时拉黑时升起）。
+     *
+     * source=security_access 不在 autoResolveRecoveredAlerts 托管源，留人工确认。
+     */
+    public function raiseAutoBanAlert(string $ip, string $message, array $context = []): void
+    {
+        $dto = new AlertDTO(
+            source: 'security_access',
+            severity: 'warning',
+            title: '来源 IP 自动封禁',
+            message: $this->safeInspectionText($message),
+            context: array_merge($context, ['target' => "autoban:ip:{$ip}"]),
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'ip_auto_banned' : 'ip_auto_ban_refired',
+            'ops-security',
+            null,
+            null,
+            $alert->status,
+            $context,
+        );
+
+        broadcast(new AlertTriggered($alert));
+    }
+
+    /**
      * 巡检恢复后自动关闭仍处于 open/acknowledged 的巡检告警。
      */
     public function resolveInspectionAlert(): void
