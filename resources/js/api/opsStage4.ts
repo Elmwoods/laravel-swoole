@@ -98,6 +98,10 @@ export interface ChannelStatus {
     enabled: boolean
     configured: boolean
     missing: string[]
+    health?: 'healthy' | 'failing' | 'unknown'
+    consecutive_failures?: number
+    last_checked_at?: string | null
+    last_error?: string | null
 }
 
 export interface AlertNotificationStatus {
@@ -226,6 +230,10 @@ export const evaluateAlerts = () =>
 
 export const testAlertNotification = (payload: { channels?: string[]; message?: string }) =>
     request.post<ApiResponse<AlertNotificationTestResult>>('/api/ops/alerts/test-notification', payload)
+
+// 返回体是 AlertNotificationStatus 再附带一个 summary（探测统计）；summary 与通道索引签名冲突，故放宽为 any。
+export const runAlertHealthCheck = () =>
+    request.post<ApiResponse<any>>('/api/ops/alerts/health-check')
 
 export const createAlertDemoScenarios = () =>
     request.post<ApiResponse<AlertDemoScenarioResult>>('/api/ops/alerts/demo-scenarios')
