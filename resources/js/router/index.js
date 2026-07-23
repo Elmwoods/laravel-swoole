@@ -201,6 +201,16 @@ const routes = [
                 },
             },
             {
+                path: 'admin-ip-rules',
+                name: 'AdminIpRules',
+                component: () => import('../pages/admin/AdminIpRules.vue'),
+                meta: {
+                    title: '登录准入',
+                    description: '后台登录 IP 白/黑名单与准入策略',
+                    permission: 'admin.security.manage',
+                },
+            },
+            {
                 path: 'account-security',
                 name: 'AccountSecurity',
                 component: () => import('../pages/admin/AccountSecurity.vue'),
@@ -275,6 +285,7 @@ const firstAllowedPath = (permissions) => {
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],
+        ['admin.security.manage', '/admin/ops/admin-ip-rules'],
     ]
     const allowed = candidates.find(([permission]) => permissions.includes(permission))
 
