@@ -27,6 +27,22 @@
                     :closable="false"
                     title="白名单模式下没有任何启用的 allow 规则时，为避免锁死所有人将放行全部来源（fail-open）。请先添加办公网/VPN 出口网段。"
                 />
+                <el-divider content-position="left">自动封禁</el-divider>
+                <el-form-item label="启用自动封禁">
+                    <el-switch v-model="settings.auto_ban_enabled" />
+                    <span class="hint">
+                        失败登录暴增的来源 IP 自动临时封禁（近 {{ autoBan.window_minutes }} 分钟 ≥
+                        {{ autoBan.threshold }} 次 → 封 {{ autoBan.ban_minutes }} 分钟，到期自动解封）。
+                    </span>
+                </el-form-item>
+                <el-alert
+                    v-if="settings.auto_ban_enabled"
+                    class="policy-alert"
+                    type="warning"
+                    show-icon
+                    :closable="false"
+                    title="反向代理后须先配置 OPS_TRUSTED_PROXIES，否则可能封掉代理导致所有人无法登录。阈值/窗口/时长通过环境变量调整。"
+                />
                 <el-form-item>
                     <el-button :loading="savingSettings" type="primary" @click="saveSettings">保存策略</el-button>
                 </el-form-item>
@@ -50,8 +66,18 @@
                     </template>
                 </el-table-column>
                 <el-table-column label="IP / CIDR" prop="cidr" />
+                <el-table-column label="来源" width="90">
+                    <template #default="{ row }">
+                        <el-tag :type="row.source === 'auto' ? 'warning' : 'info'" effect="plain">
+                            {{ row.source === 'auto' ? '自动' : '手动' }}
+                        </el-tag>
+                    </template>
+                </el-table-column>
                 <el-table-column label="备注" prop="label">
                     <template #default="{ row }">{{ row.label || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="过期" width="180">
+                    <template #default="{ row }">{{ row.expires_at || '永久' }}</template>
                 </el-table-column>
                 <el-table-column label="启用" width="90">
                     <template #default="{ row }">
@@ -106,6 +132,7 @@ import {
     toggleIpRule,
     updateIpAccessSettings,
     type AdminIpRule,
+    type AutoBanSummary,
     type IpAccessSettings,
     type IpRuleType,
 } from '@/api/adminIpRules'
@@ -119,6 +146,12 @@ const rules = ref<Array<AdminIpRule & { _toggling?: boolean }>>([])
 const settings = reactive<IpAccessSettings>({
     ip_access_enabled: false,
     ip_access_mode: 'blocklist',
+    auto_ban_enabled: false,
+})
+const autoBan = reactive<AutoBanSummary>({
+    threshold: 10,
+    window_minutes: 10,
+    ban_minutes: 60,
 })
 
 const formRef = ref<FormInstance>()
@@ -152,6 +185,8 @@ const load = async () => {
         const data = res.data.data
         settings.ip_access_enabled = data.settings.ip_access_enabled
         settings.ip_access_mode = data.settings.ip_access_mode
+        settings.auto_ban_enabled = data.settings.auto_ban_enabled
+        Object.assign(autoBan, data.auto_ban)
         rules.value = data.rules
         clientIp.value = data.client_ip
     } finally {
@@ -168,6 +203,7 @@ const saveSettings = async () => {
         await updateIpAccessSettings({
             ip_access_enabled: settings.ip_access_enabled,
             ip_access_mode: settings.ip_access_mode,
+            auto_ban_enabled: settings.auto_ban_enabled,
         })
         ElMessage.success('已保存策略')
         await load()

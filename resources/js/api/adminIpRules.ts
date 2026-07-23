@@ -15,18 +15,28 @@ export interface AdminIpRule {
     cidr: string
     label: string | null
     is_active: boolean
+    source: 'manual' | 'auto'
+    expires_at: string | null
     created_at: string | null
 }
 
 export interface IpAccessSettings {
     ip_access_enabled: boolean
     ip_access_mode: IpAccessMode
+    auto_ban_enabled: boolean
+}
+
+export interface AutoBanSummary {
+    threshold: number
+    window_minutes: number
+    ban_minutes: number
 }
 
 export interface IpAccessOverview {
     settings: IpAccessSettings
     rules: AdminIpRule[]
     client_ip: string
+    auto_ban: AutoBanSummary
 }
 
 export const getIpAccess = () =>

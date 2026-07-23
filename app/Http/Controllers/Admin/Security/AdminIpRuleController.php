@@ -24,6 +24,12 @@ class AdminIpRuleController extends Controller
             'settings' => $this->ipAccess->settings(),
             'rules' => $this->ipAccess->rules(),
             'client_ip' => $request->ip(),
+            // 自动封禁的阈值/窗口/时长走 env（只读展示），启用开关在 settings.auto_ban_enabled。
+            'auto_ban' => [
+                'threshold' => (int) config('ops.security.auto_ban.threshold', 10),
+                'window_minutes' => (int) config('ops.security.auto_ban.window_minutes', 10),
+                'ban_minutes' => (int) config('ops.security.auto_ban.ban_minutes', 60),
+            ],
         ]);
     }
 
