@@ -55,8 +55,9 @@ npm run build
 - 二十一阶段：服务端保存的审计筛选预设——`admin_audit_presets`（owner-scoped）+ 审计页预设下拉/保存/删除。
 - 二十二阶段：审计异常检测告警——`ops:audit:scan-anomalies`（游标扫 `admin_audit_logs`）命中失败登录暴增/敏感操作时升 `security_audit` 告警（每 5 分钟、容错）。
 - 二十三阶段：告警升级/未确认重推——`ops:alerts:escalate` 每 5 分钟把超时无人确认的 open critical 告警强制重推 + 标记 `escalated_at`（阈值 DB 可配、容错）。
+- 二十六阶段：通知通道健康自检——`ops:alerts:health-check` 每 30 分钟静默探测每个已启用通道连通性（telegram getMe / mail SMTP connect / webhook 机器 POST / 钉钉飞书心跳），`ops_channel_health` 记连续失败，超阈值升 `channel_health` 告警、恢复自动 resolve；通知卡显示连通徽标 + 立即自检（opt-in、容错）。
 
-候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）。
+候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、安全总览仪表盘。
 
 # 项目级 Codex 测试规范
 
