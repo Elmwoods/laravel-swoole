@@ -54,8 +54,18 @@ OPS_TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12   # 或单个 '*' 信任全部（�
 ```
 ./vendor/bin/sail artisan admin:ip-access --status     # 查看启用/模式/规则计数
 ./vendor/bin/sail artisan admin:ip-access --disable    # 紧急关闭准入（放行全部）
-./vendor/bin/sail artisan admin:ip-access --flush      # 清空所有 IP 规则
+./vendor/bin/sail artisan admin:ip-access --flush      # 清空所有 IP 规则（含自动封禁）
 ```
+
+## 滥用来源自动封禁（phase 25）
+
+`admin:ip-auto-ban` 每 5 分钟按 IP 统计失败登录暴增，超阈值自动写带过期的临时 deny 规则。
+
+- **代理后未配 `OPS_TRUSTED_PROXIES` 前不要开自动封禁**——否则 `request->ip()` 是代理 IP，
+  可能封掉代理导致所有人无法登录（同 phase-24 前置条件）。
+- 上线前预演：`./vendor/bin/sail artisan admin:ip-auto-ban --dry-run`（只统计不封禁）。
+- 启用开关在「安全管理 → 登录准入」页；阈值/窗口/时长走 env（`OPS_AUTO_BAN_*`）。
+- 误封自救：`admin:ip-access --flush`（清空全部，含自动封禁）或在登录准入页删除对应规则。
 
 ## 其它部署检查
 
