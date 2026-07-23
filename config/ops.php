@@ -168,4 +168,28 @@ return [
             'state_file' => storage_path('app/ops-audit-anomaly-state.json'),
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ops Center 安全准入配置
+    |--------------------------------------------------------------------------
+    |
+    | 后台登录 IP 白/黑名单：CIDR 级准入，在认证入口 + 中间件强制。
+    | 全局启用开关与名单模式默认写在这里作种子，运行时可被 admin_security_settings
+    | 表覆盖（后台 UI 可切换）。CIDR 规则本身存 admin_ip_rules 表。
+    |
+    | ⚠️ 反向代理：要按真实客户端 IP 生效，必须先配 OPS_TRUSTED_PROXIES，
+    | 否则 request->ip() 是代理 IP（详见 docs/ops-center-deploy-runbook.md）。
+    |
+    */
+    'security' => [
+        'ip_access' => [
+            // opt-in：默认关闭，不改现有登录行为；黑名单模式为默认（空名单=全部放行）。
+            'enabled' => filter_var(env('OPS_IP_ACCESS_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'mode' => env('OPS_IP_ACCESS_MODE', 'blocklist'),
+        ],
+
+        // 可信反向代理列表（逗号分隔的 IP/CIDR，或单个 '*' 表示信任全部）。默认空 = 保持现状不改行为。
+        'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_TRUSTED_PROXIES', ''))))),
+    ],
 ];
