@@ -31,6 +31,20 @@
                     :shortcuts="dateShortcuts"
                 />
             </el-form-item>
+            <el-form-item label="预设">
+                <el-select
+                    v-model="selectedPresetId"
+                    clearable
+                    filterable
+                    placeholder="选择预设"
+                    class="facet-select"
+                    @change="onPresetChange"
+                >
+                    <el-option v-for="preset in presets" :key="preset.id" :label="preset.name" :value="preset.id" />
+                </el-select>
+                <el-button :disabled="!selectedPresetId || presetBusy" text type="danger" @click="removeSelectedPreset">删除</el-button>
+                <el-button :loading="presetBusy" plain @click="saveCurrentPreset">保存筛选</el-button>
+            </el-form-item>
             <el-form-item>
                 <el-button :loading="loading" type="primary" @click="search">查询</el-button>
                 <el-button :disabled="loading" @click="reset">重置</el-button>
@@ -78,18 +92,25 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+    deleteAuditPreset,
     exportAdminAuditLogs,
     getAdminAuditFacets,
     getAdminAuditLogs,
+    getAuditPresets,
+    saveAuditPreset,
     type AdminAuditFacets,
     type AdminAuditLog,
+    type AdminAuditPreset,
 } from '@/api/adminSecurity'
 
 const logs = ref<AdminAuditLog[]>([])
 const loading = ref(false)
 const exporting = ref(false)
+const presets = ref<AdminAuditPreset[]>([])
+const selectedPresetId = ref<number | undefined>(undefined)
+const presetBusy = ref(false)
 const facets = reactive<AdminAuditFacets>({ modules: [], actions: [], results: [] })
 const filters = reactive({
     admin_user_id: undefined as number | undefined,
@@ -196,6 +217,94 @@ const loadFacets = async () => {
     }
 }
 
+const loadPresets = async () => {
+    try {
+        const res = await getAuditPresets()
+        presets.value = res.data.data.items
+    } catch {
+        // 预设失败不阻塞列表加载
+    }
+}
+
+const applyPreset = (preset: AdminAuditPreset) => {
+    const f = preset.filters
+    Object.assign(filters, {
+        admin_user_id: (f.admin_user_id as number | undefined) ?? undefined,
+        keyword: (f.keyword as string) ?? '',
+        module: (f.module as string) ?? '',
+        action: (f.action as string) ?? '',
+        status_code: (f.status_code as number | undefined) ?? undefined,
+        result: (f.result as string) ?? '',
+        range: f.from || f.to ? [String(f.from ?? ''), String(f.to ?? '')] : [],
+    })
+}
+
+const onPresetChange = async (id: number | undefined) => {
+    if (!id) return
+    const preset = presets.value.find(p => p.id === id)
+    if (!preset) return
+    applyPreset(preset)
+    await search()
+}
+
+const saveCurrentPreset = async () => {
+    let name = ''
+
+    try {
+        const { value } = await ElMessageBox.prompt('输入预设名称（同名将覆盖）', '保存筛选预设', {
+            confirmButtonText: '保存',
+            cancelButtonText: '取消',
+            inputValidator: v => (v && v.trim() !== '' ? true : '请输入名称'),
+        })
+        name = value.trim()
+    } catch {
+        return
+    }
+
+    const params = auditLogParams()
+    delete params.page
+    delete params.per_page
+
+    presetBusy.value = true
+
+    try {
+        await saveAuditPreset({ name, filters: params })
+        ElMessage.success('已保存预设')
+        await loadPresets()
+    } catch {
+        ElMessage.error('保存预设失败')
+    } finally {
+        presetBusy.value = false
+    }
+}
+
+const removeSelectedPreset = async () => {
+    if (!selectedPresetId.value) return
+
+    try {
+        await ElMessageBox.confirm('删除后不可恢复。', '删除预设', {
+            type: 'warning',
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+        })
+    } catch {
+        return
+    }
+
+    presetBusy.value = true
+
+    try {
+        await deleteAuditPreset(selectedPresetId.value)
+        ElMessage.success('已删除')
+        selectedPresetId.value = undefined
+        await loadPresets()
+    } catch {
+        ElMessage.error('删除预设失败')
+    } finally {
+        presetBusy.value = false
+    }
+}
+
 const changePageSize = async (size: number) => {
     pagination.per_page = size
     pagination.current_page = 1
@@ -229,7 +338,7 @@ const exportLogs = async () => {
 }
 
 onMounted(async () => {
-    await Promise.all([load(), loadFacets()])
+    await Promise.all([load(), loadFacets(), loadPresets()])
 })
 </script>
 

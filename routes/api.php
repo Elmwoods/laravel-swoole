@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\Ops\System\DiskController;
 use App\Http\Controllers\Admin\Ops\System\DiskPushController;
 use App\Http\Controllers\Admin\Ops\SystemMonitorController;
 use App\Http\Controllers\Admin\Security\AdminAuditLogController;
+use App\Http\Controllers\Admin\Security\AdminAuditPresetController;
 use App\Http\Controllers\Admin\Security\AdminRoleController;
 use App\Http\Controllers\Admin\Security\AdminUserController;
 use Illuminate\Support\Facades\Route;
@@ -71,6 +72,11 @@ Route::prefix('/admin')
                 ->middleware('admin.permission:admin.audit.view');
             Route::get('/audit-logs/export', [AdminAuditLogController::class, 'export'])
                 ->middleware(['admin.permission:admin.audit.view', 'admin.audit:admin.audit,export']);
+            Route::middleware('admin.permission:admin.audit.view')->group(function (): void {
+                Route::get('/audit-logs/presets', [AdminAuditPresetController::class, 'index']);
+                Route::post('/audit-logs/presets', [AdminAuditPresetController::class, 'store']);
+                Route::delete('/audit-logs/presets/{preset}', [AdminAuditPresetController::class, 'destroy']);
+            });
             Route::get('/audit-logs', [AdminAuditLogController::class, 'index'])
                 ->middleware('admin.permission:admin.audit.view');
         });
