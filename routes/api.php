@@ -214,6 +214,7 @@ Route::prefix('/ops')
                     ->middleware(['admin.audit:ops.alerts,settings_update', 'admin.permission:ops.alerts.manage']);
                 Route::get('/evaluations/latest', [AlertController::class, 'latestEvaluation']);
                 Route::get('/trend', [AlertController::class, 'trend']);
+                Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
