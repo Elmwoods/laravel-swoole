@@ -213,6 +213,27 @@ export interface AlertTrendResult {
 export const getAlertTrend = (days = 14) =>
     request.get<ApiResponse<AlertTrendResult>>('/api/ops/alerts/trend', { params: { days } })
 
+export interface DurationStat {
+    count: number
+    avg_seconds: number
+    max_seconds: number
+}
+
+export interface AlertSlaResult {
+    days: number
+    window_days: number
+    generated_at: string
+    mtta: DurationStat
+    mttr: DurationStat
+    by_source: Array<{ source: string; mtta_avg_seconds: number; mtta_count: number; mttr_avg_seconds: number; mttr_count: number }>
+    by_severity: Record<'critical' | 'warning' | 'info', { mttr_avg_seconds: number; mttr_count: number }>
+    trend: Array<{ date: string; mttr_avg_seconds: number; resolved_count: number }>
+    open_aging: { under_1h: number; one_to_24h: number; over_24h: number }
+}
+
+export const getAlertSla = (days = 30) =>
+    request.get<ApiResponse<AlertSlaResult>>('/api/ops/alerts/sla', { params: { days } })
+
 export const getAlertRules = () =>
     request.get<ApiResponse<AlertRuleListResult>>('/api/ops/alerts/rules')
 
