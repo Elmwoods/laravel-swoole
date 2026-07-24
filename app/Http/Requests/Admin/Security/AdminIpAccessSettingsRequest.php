@@ -17,6 +17,7 @@ class AdminIpAccessSettingsRequest extends FormRequest
         return [
             'ip_access_enabled' => ['required', 'boolean'],
             'ip_access_mode' => ['required', Rule::in(['blocklist', 'allowlist'])],
+            'auto_ban_enabled' => ['sometimes', 'boolean'],
         ];
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Ops;
 
 use App\Models\OpsInspection;
+use App\Services\Admin\AdminIpAutoBanService;
 use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\AuditAnomalyScanService;
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
@@ -84,5 +85,14 @@ class ScheduledCommandResilienceTest extends TestCase
         });
 
         $this->artisan('ops:alerts:escalate')->assertExitCode(0);
+    }
+
+    public function test_ip_auto_ban_command_succeeds_even_when_scan_throws(): void
+    {
+        $this->mock(AdminIpAutoBanService::class, function ($mock): void {
+            $mock->shouldReceive('scan')->once()->andThrow(new RuntimeException('audit table down'));
+        });
+
+        $this->artisan('admin:ip-auto-ban')->assertExitCode(0);
     }
 }

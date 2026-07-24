@@ -13,12 +13,15 @@ class AdminIpRule extends Model
         'label',
         'is_active',
         'created_by',
+        'expires_at',
+        'source',
     ];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'expires_at' => 'datetime',
         ];
     }
 

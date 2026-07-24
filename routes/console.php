@@ -108,3 +108,10 @@ Schedule::command('ops:audit:scan-anomalies')
 Schedule::command('ops:alerts:escalate')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟扫描失败登录暴增的来源 IP，自动写临时 deny 规则（到期自动解封）。默认 opt-in 关闭。
+ */
+Schedule::command('admin:ip-auto-ban')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

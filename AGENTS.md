@@ -56,8 +56,9 @@ npm run build
 - 二十二阶段：审计异常检测告警——`ops:audit:scan-anomalies`（游标扫 `admin_audit_logs`）命中失败登录暴增/敏感操作时升 `security_audit` 告警（每 5 分钟、容错）。
 - 二十三阶段：告警升级/未确认重推——`ops:alerts:escalate` 每 5 分钟把超时无人确认的 open critical 告警强制重推 + 标记 `escalated_at`（阈值 DB 可配、容错）。
 - 二十四阶段：后台登录 IP 白/黑名单——`admin_ip_rules`（CIDR，v4/v6）+ `admin_security_settings`（启用开关/模式），在登录入口与 `AdminAuthenticate` 中间件按客户端 IP 强制（被拒活跃会话即被踢），白名单空规则 fail-open、`admin:ip-access` break-glass、权限 `admin.security.manage`。反向代理需配 `OPS_TRUSTED_PROXIES` 才能拿到真实客户端 IP。
+- 二十五阶段：滥用来源自动封禁——`admin:ip-auto-ban` 每 5 分钟按 IP 统计失败登录暴增，超阈值自动写带过期的 `source=auto` deny 规则（`admin_ip_rules.expires_at`），到期由 `evaluate` 过滤即时失效 + 扫描顺带清理；护栏：opt-in、never-ban（默认 loopback）、跳过白名单 IP、不覆盖人工规则、告警 `security_access`。阈值/窗口/时长走 env、启用开关 UI 可切换。
 
-候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、滥用来源自动进黑名单（复用审计异常扫描）。
+候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、通知通道健康自检。
 
 # 项目级 Codex 测试规范
 

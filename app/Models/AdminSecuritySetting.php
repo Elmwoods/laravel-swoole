@@ -76,6 +76,7 @@ class AdminSecuritySetting extends Model
         return [
             'ip_access_enabled' => (bool) config('ops.security.ip_access.enabled', false),
             'ip_access_mode' => in_array($mode, self::MODES, true) ? $mode : 'blocklist',
+            'auto_ban_enabled' => (bool) config('ops.security.auto_ban.enabled', false),
         ];
     }
 }
