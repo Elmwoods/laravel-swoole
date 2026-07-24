@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Admin\AdminIpAccessService;
 use App\Services\Admin\AdminSessionRegistryService;
 use App\Services\Admin\AdminSessionSecurityService;
 use Closure;
@@ -13,6 +14,7 @@ class AdminAuthenticate
     public function __construct(
         private readonly AdminSessionSecurityService $sessions,
         private readonly AdminSessionRegistryService $sessionRegistry,
+        private readonly AdminIpAccessService $ipAccess,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -25,6 +27,20 @@ class AdminAuthenticate
             return response()->json([
                 'code' => 401,
                 'message' => '请先登录后台。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 401);
+        }
+
+        // IP 准入：被拉黑 / 移出白名单的活跃会话下次请求即被踢下线。
+        if (! $this->ipAccess->allowedFor((string) $request->ip())) {
+            auth('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return response()->json([
+                'code' => 401,
+                'message' => '您的 IP 不在允许访问后台的范围。',
                 'data' => null,
                 'timestamp' => now()->timestamp,
             ], 401);

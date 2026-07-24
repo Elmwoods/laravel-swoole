@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Auth\AdminLoginRequest;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminAuditService;
+use App\Services\Admin\AdminIpAccessService;
 use App\Services\Admin\AdminLoginEventService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
@@ -35,6 +36,7 @@ class AdminAuthController extends Controller
         private readonly AdminTrustedDeviceService $trustedDevices,
         private readonly AlertCenterService $alerts,
         private readonly AdminSessionRegistryService $sessionRegistry,
+        private readonly AdminIpAccessService $ipAccess,
     ) {}
 
     public function passwordKey(): JsonResponse
@@ -47,6 +49,17 @@ class AdminAuthController extends Controller
         $this->permissions->syncDefaults();
         $email = $request->validated('email');
         $ip = (string) $request->ip();
+
+        if (! $this->ipAccess->allowedFor($ip)) {
+            $this->audit->record($request, 'admin.auth', 'login_denied', 'failure', 403, message: 'ip_denied');
+
+            return response()->json([
+                'code' => 403,
+                'message' => '当前网络环境不允许访问后台。',
+                'data' => null,
+                'timestamp' => now()->timestamp,
+            ], 403);
+        }
 
         if ($this->throttle->tooManyAttempts($email, $ip)) {
             $waitSeconds = max(1, $this->throttle->availableIn($email, $ip));

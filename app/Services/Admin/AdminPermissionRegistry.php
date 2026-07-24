@@ -22,6 +22,7 @@ class AdminPermissionRegistry
         'admin.users.manage' => ['name' => '管理员管理', 'group' => 'admin', 'description' => '创建、编辑、禁用后台管理员和重置密码'],
         'admin.roles.manage' => ['name' => '角色权限管理', 'group' => 'admin', 'description' => '创建、编辑、禁用角色和分配权限'],
         'admin.audit.view' => ['name' => '审计日志查看', 'group' => 'admin', 'description' => '查看后台操作审计日志'],
+        'admin.security.manage' => ['name' => '安全准入管理', 'group' => 'admin', 'description' => '管理后台登录 IP 白/黑名单与准入策略'],
     ];
 
     public static function slugs(): array

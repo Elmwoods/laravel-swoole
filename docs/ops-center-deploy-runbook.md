@@ -37,8 +37,28 @@
 
 前端等价入口：告警中心 → 巡检历史，或 `GET /api/ops/inspections/history/{id}`（含 `checks` 明细，权限 `ops.inspections.view`）。手动全量巡检：`sail artisan ops:inspections:run --type=full`。
 
+## 登录 IP 准入（phase 24）与可信代理
+
+后台登录 IP 白/黑名单按 `request->ip()` 判定。仓库**默认不信任任何代理**，Octane/Swoole 在
+nginx 之后时 `request->ip()` 是**代理 IP**，会让名单失效或误判。要按真实客户端 IP 生效，
+必须把可信代理注入为**真实环境变量**（不是仅写 `.env`——`bootstrap/app.php` 在构建期读取）：
+
+```
+OPS_TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12   # 或单个 '*' 信任全部（仅在入口可信时）
+```
+
+生效后 `X-Forwarded-For` 被信任，`request->ip()` 全局回归真实客户端（审计/限流/会话注册一并受益）。
+
+**Break-glass（把自己 IP 锁在外面时自救）**：从服务器 CLI 恢复，无需登录后台——
+
+```
+./vendor/bin/sail artisan admin:ip-access --status     # 查看启用/模式/规则计数
+./vendor/bin/sail artisan admin:ip-access --disable    # 紧急关闭准入（放行全部）
+./vendor/bin/sail artisan admin:ip-access --flush      # 清空所有 IP 规则
+```
+
 ## 其它部署检查
 
 - `npm run build`（前端资产）
-- `./vendor/bin/sail artisan migrate --force`（有新迁移时）
+- `./vendor/bin/sail artisan migrate --force`（有新迁移时；phase 24 新增 `admin_ip_rules`、`admin_security_settings`）
 - `./vendor/bin/sail artisan ops:release-check` 或发布自检页确认基线（表/超管/权限/路由/文档齐全）

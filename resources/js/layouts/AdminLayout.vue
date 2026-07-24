@@ -107,7 +107,7 @@
                     </span>
                 </el-menu-item>
 
-                <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view'])" index="security">
+                <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
                         <span>安全管理</span>
@@ -126,6 +126,11 @@
                     <el-menu-item v-if="hasPermission('admin.audit.view')" index="/admin/ops/admin-audit-logs">
                         <el-icon><Tickets /></el-icon>
                         <span>审计日志</span>
+                    </el-menu-item>
+
+                    <el-menu-item v-if="hasPermission('admin.security.manage')" index="/admin/ops/admin-ip-rules">
+                        <el-icon><Location /></el-icon>
+                        <span>登录准入</span>
                     </el-menu-item>
                 </el-sub-menu>
 
@@ -176,6 +181,7 @@ import {
     FolderOpened,
     Key,
     List,
+    Location,
     Lock,
     Monitor,
     Operation,
