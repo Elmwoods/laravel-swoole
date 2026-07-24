@@ -20,6 +20,11 @@
                     <span>运维总览</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.security.view')" index="/admin/ops/security">
+                    <el-icon><View /></el-icon>
+                    <span>安全总览</span>
+                </el-menu-item>
+
                 <el-menu-item v-if="hasPermission('ops.system.view')" index="/admin/ops/octane">
                     <el-icon><Cpu /></el-icon>
                     <span>Octane</span>
@@ -187,6 +192,7 @@ import {
     Operation,
     Tickets,
     User,
+    View,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

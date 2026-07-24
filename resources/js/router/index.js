@@ -31,6 +31,16 @@ const routes = [
                 },
             },
             {
+                path: 'security',
+                name: 'OpsSecurity',
+                component: () => import('../pages/ops/SecurityOverview.vue'),
+                meta: {
+                    title: '安全总览',
+                    description: '登录风控、失败登录、会话、2FA、IP 封禁与通道健康一屏总览',
+                    permission: 'ops.security.view',
+                },
+            },
+            {
                 path: 'octane',
                 name: 'OctaneControl',
                 component: () => import('../pages/ops/OctaneControl.vue'),
@@ -275,6 +285,7 @@ router.beforeEach(async (to) => {
 const firstAllowedPath = (permissions) => {
     const candidates = [
         ['ops.dashboard.view', '/admin/ops'],
+        ['ops.security.view', '/admin/ops/security'],
         ['ops.release.view', '/admin/ops/release-check'],
         ['ops.inspections.view', '/admin/ops/inspection'],
         ['ops.system.view', '/admin/ops/octane'],

@@ -19,6 +19,7 @@ class AdminPermissionRegistry
         'ops.supervisor.view' => ['name' => 'Supervisor 查看', 'group' => 'ops', 'description' => '查看 Supervisor 进程和日志'],
         'ops.supervisor.control' => ['name' => 'Supervisor 控制', 'group' => 'ops', 'description' => '启动、停止、重启 Supervisor 进程'],
         'ops.system.view' => ['name' => '系统资源查看', 'group' => 'ops', 'description' => '查看 Redis、Queue、Disk、Network 等资源指标'],
+        'ops.security.view' => ['name' => '安全总览查看', 'group' => 'ops', 'description' => '查看安全总览仪表盘（登录风控、失败登录、会话、2FA、IP 封禁、通道健康）'],
         'admin.users.manage' => ['name' => '管理员管理', 'group' => 'admin', 'description' => '创建、编辑、禁用后台管理员和重置密码'],
         'admin.roles.manage' => ['name' => '角色权限管理', 'group' => 'admin', 'description' => '创建、编辑、禁用角色和分配权限'],
         'admin.audit.view' => ['name' => '审计日志查看', 'group' => 'admin', 'description' => '查看后台操作审计日志'],
@@ -56,6 +57,7 @@ class AdminPermissionRegistry
             'ops.supervisor.view',
             'ops.supervisor.control',
             'ops.system.view',
+            'ops.security.view',
         ], true);
         $this->syncRole('audit_viewer', '审计查看员', '查看 Ops 信息和审计日志', [
             'ops.dashboard.view',
@@ -64,6 +66,7 @@ class AdminPermissionRegistry
             'ops.docker.view',
             'ops.supervisor.view',
             'ops.system.view',
+            'ops.security.view',
             'admin.audit.view',
         ], true);
     }
