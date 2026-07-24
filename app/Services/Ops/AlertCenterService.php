@@ -14,6 +14,7 @@ use App\Models\OpsChannelHealth;
 use App\Models\OpsInspection;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\System\DiskService;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -328,6 +329,164 @@ class AlertCenterService
                 'auto_resolved' => (int) ($row->auto_resolved ?? 0),
                 'avg_duration_ms' => (int) round((float) ($row->avg_duration_ms ?? 0)),
             ];
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * 告警处理 SLA 统计（MTTA/MTTR + 按来源/严重级聚合 + 趋势 + 当前积压分桶）。
+     *
+     * 起点锚固定 ops_alerts.created_at（re-fire 保留首次发生时间）；确认/恢复时间取 ops_alert_events
+     * 事件的 created_at（比被回填的 acknowledged_at 列 / 不稳定的 updated_at 干净）。时长在 PHP 计算（DB 可移植）。
+     */
+    public function slaSummary(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->subDays($days);
+
+        $ackPairs = $this->slaPairs(['acknowledged'], $since);
+        $resolvePairs = $this->slaPairs(
+            ['resolved', 'auto_resolved', 'channel_health_recovered', 'inspection_recovered'],
+            $since,
+        );
+
+        return [
+            'window_days' => $days,
+            'generated_at' => now()->toDateTimeString(),
+            'mtta' => $this->durationStats(array_column($ackPairs, 'seconds')),
+            'mttr' => $this->durationStats(array_column($resolvePairs, 'seconds')),
+            'by_source' => $this->slaBySource($ackPairs, $resolvePairs),
+            'by_severity' => $this->slaBySeverity($resolvePairs),
+            'trend' => $this->slaTrend($resolvePairs),
+            'open_aging' => $this->openAging(),
+        ];
+    }
+
+    /**
+     * 取「事件 → 告警」配对，每个告警取窗口内最早的匹配事件，算 born→事件的秒数。
+     *
+     * @return array<int, array{alert_id: int, source: string, severity: string, at: string, seconds: int}>
+     */
+    private function slaPairs(array $actions, CarbonInterface $since): array
+    {
+        $rows = DB::table('ops_alert_events as e')
+            ->join('ops_alerts as a', 'a.id', '=', 'e.alert_id')
+            ->whereIn('e.action', $actions)
+            ->where('e.created_at', '>=', $since)
+            ->orderBy('e.created_at')
+            ->get(['e.alert_id', 'a.source', 'a.severity', 'a.created_at as born', 'e.created_at as at']);
+
+        $pairs = [];
+
+        foreach ($rows as $row) {
+            $id = (int) $row->alert_id;
+
+            if (isset($pairs[$id])) {
+                continue; // 已取该告警最早事件（结果已按事件时间升序）
+            }
+
+            $seconds = max(0, strtotime((string) $row->at) - strtotime((string) $row->born));
+
+            $pairs[$id] = [
+                'alert_id' => $id,
+                'source' => (string) $row->source,
+                'severity' => (string) $row->severity,
+                'at' => (string) $row->at,
+                'seconds' => $seconds,
+            ];
+        }
+
+        return array_values($pairs);
+    }
+
+    /**
+     * @param  array<int, int>  $seconds
+     * @return array{count: int, avg_seconds: int, max_seconds: int}
+     */
+    private function durationStats(array $seconds): array
+    {
+        if ($seconds === []) {
+            return ['count' => 0, 'avg_seconds' => 0, 'max_seconds' => 0];
+        }
+
+        return [
+            'count' => count($seconds),
+            'avg_seconds' => (int) round(array_sum($seconds) / count($seconds)),
+            'max_seconds' => max($seconds),
+        ];
+    }
+
+    private function slaBySource(array $ackPairs, array $resolvePairs): array
+    {
+        $ackBy = collect($ackPairs)->groupBy('source');
+        $resolveBy = collect($resolvePairs)->groupBy('source');
+        $sources = $ackBy->keys()->merge($resolveBy->keys())->unique()->values();
+
+        return $sources
+            ->map(function (string $source) use ($ackBy, $resolveBy): array {
+                $ack = $this->durationStats($ackBy->get($source, collect())->pluck('seconds')->all());
+                $resolve = $this->durationStats($resolveBy->get($source, collect())->pluck('seconds')->all());
+
+                return [
+                    'source' => $source,
+                    'mtta_avg_seconds' => $ack['avg_seconds'],
+                    'mtta_count' => $ack['count'],
+                    'mttr_avg_seconds' => $resolve['avg_seconds'],
+                    'mttr_count' => $resolve['count'],
+                ];
+            })
+            ->sortByDesc('mttr_avg_seconds')
+            ->values()
+            ->all();
+    }
+
+    private function slaBySeverity(array $resolvePairs): array
+    {
+        $by = collect($resolvePairs)->groupBy('severity');
+
+        $result = [];
+        foreach (['critical', 'warning', 'info'] as $severity) {
+            $stats = $this->durationStats($by->get($severity, collect())->pluck('seconds')->all());
+            $result[$severity] = [
+                'mttr_avg_seconds' => $stats['avg_seconds'],
+                'mttr_count' => $stats['count'],
+            ];
+        }
+
+        return $result;
+    }
+
+    private function slaTrend(array $resolvePairs): array
+    {
+        return collect($resolvePairs)
+            ->groupBy(fn (array $pair): string => substr($pair['at'], 0, 10))
+            ->map(fn ($group, string $date): array => [
+                'date' => $date,
+                'mttr_avg_seconds' => (int) round($group->avg('seconds')),
+                'resolved_count' => $group->count(),
+            ])
+            ->sortKeys()
+            ->values()
+            ->all();
+    }
+
+    private function openAging(): array
+    {
+        $open = OpsAlert::query()->where('status', 'open')->get(['created_at']);
+
+        $buckets = ['under_1h' => 0, 'one_to_24h' => 0, 'over_24h' => 0];
+
+        foreach ($open as $alert) {
+            $ageMinutes = optional($alert->created_at)->diffInMinutes(now()) ?? 0;
+
+            if ($ageMinutes < 60) {
+                $buckets['under_1h']++;
+            } elseif ($ageMinutes < 1440) {
+                $buckets['one_to_24h']++;
+            } else {
+                $buckets['over_24h']++;
+            }
         }
 
         return $buckets;

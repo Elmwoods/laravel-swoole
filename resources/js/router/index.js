@@ -181,6 +181,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-sla',
+                name: 'AlertSla',
+                component: () => import('../pages/ops/AlertSla.vue'),
+                meta: {
+                    title: '告警 SLA',
+                    description: '告警确认/恢复时长（MTTA/MTTR）、按来源严重级分解与趋势',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -293,6 +303,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.docker.view', '/admin/ops/docker'],
         ['ops.logs.view', '/admin/ops/logs'],
         ['ops.alerts.view', '/admin/ops/alerts'],
+        ['ops.alerts.view', '/admin/ops/alerts-sla'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

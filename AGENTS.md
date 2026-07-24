@@ -59,8 +59,9 @@ npm run build
 - 二十五阶段：滥用来源自动封禁——`admin:ip-auto-ban` 每 5 分钟按 IP 统计失败登录暴增，超阈值自动写带过期的 `source=auto` deny 规则（`admin_ip_rules.expires_at`），到期由 `evaluate` 过滤即时失效 + 扫描顺带清理；护栏：opt-in、never-ban（默认 loopback）、跳过白名单 IP、不覆盖人工规则、告警 `security_access`。阈值/窗口/时长走 env、启用开关 UI 可切换。
 - 二十六阶段：通知通道健康自检——`ops:alerts:health-check` 每 30 分钟静默探测每个已启用通道连通性（telegram getMe / mail SMTP connect / webhook 机器 POST / 钉钉飞书心跳），`ops_channel_health` 记连续失败，超阈值升 `channel_health` 告警、恢复自动 resolve；通知卡显示连通徽标 + 立即自检（opt-in、容错）。
 - 二十七阶段：安全总览仪表盘——`SecurityOverviewService` 聚合登录风控/失败登录+TopIP/活跃会话/2FA 覆盖率/受信任设备/开放安全告警/IP 封禁/通道健康/失败登录趋势/近期安全事件，`GET /api/ops/security/overview`（权限 `ops.security.view`），前端「安全总览」页统计卡 + 分项表 + echarts 趋势 + 事件时间线。纯只读聚合。
+- 二十八阶段：告警处理 SLA 统计——`AlertCenterService::slaSummary` 从 `ops_alert_events` 配对算 MTTA（created_at→acknowledged）/MTTR（created_at→resolved/auto_resolved/…），按来源/严重级分解 + 按天趋势 + 当前 open 积压分桶；`GET /api/ops/alerts/sla`（`ops.alerts.view`），前端「告警 SLA」页。纯只读聚合。
 
-候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、告警处理 SLA（MTTA/MTTR）统计。
+候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、告警值班静默窗口。
 
 # 项目级 Codex 测试规范
 

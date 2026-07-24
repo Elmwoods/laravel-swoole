@@ -112,6 +112,11 @@
                     </span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts-sla">
+                    <el-icon><Timer /></el-icon>
+                    <span>告警 SLA</span>
+                </el-menu-item>
+
                 <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
@@ -191,6 +196,7 @@ import {
     Monitor,
     Operation,
     Tickets,
+    Timer,
     User,
     View,
 } from '@element-plus/icons-vue'

@@ -94,6 +94,19 @@ class AlertController extends Controller
     }
 
     /**
+     * 告警处理 SLA 统计（MTTA/MTTR + 按来源/严重级 + 趋势 + 积压分桶）。
+     */
+    public function sla(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 30)));
+
+        return $this->success([
+            'days' => $days,
+            ...$this->service->slaSummary($days),
+        ]);
+    }
+
+    /**
      * 手动触发一次告警评估。
      */
     public function evaluate(): JsonResponse
