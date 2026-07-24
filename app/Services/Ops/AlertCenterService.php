@@ -10,6 +10,7 @@ use App\Models\OpsAlert;
 use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertEvent;
 use App\Models\OpsAlertSetting;
+use App\Models\OpsChannelHealth;
 use App\Models\OpsInspection;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\System\DiskService;
@@ -193,9 +194,35 @@ class AlertCenterService
     public function notificationStatus(): array
     {
         return [
-            ...$this->notification->status(),
+            ...$this->mergeChannelHealth($this->notification->status()),
             'settings' => $this->settings(),
         ];
+    }
+
+    /**
+     * 把每通道健康态（ops_channel_health）合并进通知状态的对应通道对象。
+     */
+    private function mergeChannelHealth(array $status): array
+    {
+        try {
+            $health = OpsChannelHealth::query()->get()->keyBy('channel');
+        } catch (Throwable) {
+            return $status;
+        }
+
+        foreach ($status as $channel => &$item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $row = $health->get($channel);
+            $item['health'] = $row?->status ?? 'unknown';
+            $item['consecutive_failures'] = (int) ($row?->consecutive_failures ?? 0);
+            $item['last_checked_at'] = optional($row?->last_checked_at)->toDateTimeString();
+            $item['last_error'] = $row?->last_error;
+        }
+
+        return $status;
     }
 
     /**
@@ -736,6 +763,65 @@ class AlertCenterService
         );
 
         broadcast(new AlertTriggered($alert));
+    }
+
+    /**
+     * 通知通道连通性自检失败告警（某通道连续失败超阈值时升起）。
+     *
+     * source=channel_health 不在 autoResolveRecoveredAlerts 托管源，恢复走 resolveChannelHealthAlert。
+     */
+    public function raiseChannelHealthAlert(string $channel, string $message, array $context = []): void
+    {
+        $dto = new AlertDTO(
+            source: 'channel_health',
+            severity: 'warning',
+            title: '通知通道连通性异常',
+            message: $this->safeInspectionText($message),
+            context: array_merge($context, ['target' => "channel_health:{$channel}"]),
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'channel_health_failed' : 'channel_health_refired',
+            'ops-health',
+            null,
+            null,
+            $alert->status,
+            $context,
+        );
+
+        broadcast(new AlertTriggered($alert));
+    }
+
+    /**
+     * 某通道连通性恢复后，关闭仍 open/acknowledged 的对应 channel_health 告警。
+     */
+    public function resolveChannelHealthAlert(string $channel): void
+    {
+        OpsAlert::query()
+            ->where('source', 'channel_health')
+            ->where('context->target', "channel_health:{$channel}")
+            ->whereIn('status', ['open', 'acknowledged'])
+            ->get()
+            ->each(function (OpsAlert $alert): void {
+                $fromStatus = $alert->status;
+                $alert->forceFill([
+                    'status' => 'resolved',
+                    'acknowledged_at' => $alert->acknowledged_at ?: now(),
+                    'acknowledged_by' => $alert->acknowledged_by ?: 'ops-health',
+                    'acknowledge_note' => '通道连通性恢复后自动关闭',
+                ])->save();
+
+                $alert = $alert->refresh();
+                $this->recordAlertEvent($alert, 'channel_health_recovered', 'ops-health', '通道连通性恢复后自动关闭', $fromStatus, $alert->status);
+                broadcast(new AlertTriggered($alert));
+            });
     }
 
     /**

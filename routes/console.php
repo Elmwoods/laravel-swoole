@@ -115,3 +115,10 @@ Schedule::command('ops:alerts:escalate')
 Schedule::command('admin:ip-auto-ban')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+/**
+ * 每 30 分钟对已启用通知通道做连通性自检，连续失败超阈值升 channel_health 告警。默认 opt-in 关闭。
+ */
+Schedule::command('ops:alerts:health-check')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();

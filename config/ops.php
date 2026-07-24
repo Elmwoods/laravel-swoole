@@ -167,6 +167,15 @@ return [
             'max_rows_per_run' => max(1, (int) env('OPS_AUDIT_ANOMALY_MAX_ROWS_PER_RUN', 500)),
             'state_file' => storage_path('app/ops-audit-anomaly-state.json'),
         ],
+
+        // 通知通道健康自检：定时静默探测每个已启用通道的连通性，连续失败超阈值升 channel_health 告警。
+        // 默认 opt-in 关闭（定时外拨 + 钉钉/飞书心跳）。
+        'health' => [
+            'enabled' => filter_var(env('OPS_ALERT_HEALTH_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'fail_threshold' => max(1, (int) env('OPS_ALERT_HEALTH_FAIL_THRESHOLD', 2)),
+            // 限定主动探测的通道（csv）；默认空 = 探测全部已启用通道。用于排除钉钉/飞书心跳。
+            'probe_channels' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_ALERT_HEALTH_PROBE_CHANNELS', ''))))),
+        ],
     ],
 
     /*

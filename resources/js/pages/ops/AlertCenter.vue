@@ -33,9 +33,14 @@
                     <div class="panel-subtitle">Telegram 与邮件告警配置状态</div>
                 </div>
 
-                <el-button text :loading="notificationLoading" @click="loadNotificationStatus">
-                    刷新状态
-                </el-button>
+                <div class="notification-actions">
+                    <el-button text :loading="runningHealthCheck" @click="handleHealthCheck">
+                        立即自检
+                    </el-button>
+                    <el-button text :loading="notificationLoading" @click="loadNotificationStatus">
+                        刷新状态
+                    </el-button>
+                </div>
             </div>
 
             <div class="notification-grid">
@@ -49,11 +54,24 @@
                         <el-tag :type="channel.configured ? 'success' : 'warning'" effect="plain">
                             {{ channel.configured ? '可用' : '未就绪' }}
                         </el-tag>
+                        <el-tooltip
+                            v-if="channel.health && channel.health !== 'unknown'"
+                            :content="channel.last_error || '连通正常'"
+                            :disabled="channel.health === 'healthy'"
+                            placement="top"
+                        >
+                            <el-tag :type="channel.health === 'healthy' ? 'success' : 'danger'">
+                                {{ channel.health === 'healthy' ? '连通正常' : '连通异常' }}
+                            </el-tag>
+                        </el-tooltip>
                     </div>
                     <div class="channel-desc">
                         {{ channel.enabled ? '已启用' : '未启用' }}
                         <template v-if="channel.missing.length">
                             · 缺少 {{ channel.missing.join(', ') }}
+                        </template>
+                        <template v-if="channel.last_checked_at">
+                            · 最近自检 {{ channel.last_checked_at }}
                         </template>
                     </div>
                 </div>
@@ -392,6 +410,7 @@ import {
     getAlerts,
     getAlertSummary,
     resolveAlert,
+    runAlertHealthCheck,
     testAlertNotification,
     toggleAlertRule,
     updateAlertSettings,
@@ -418,6 +437,7 @@ const trendEmpty = ref(false)
 let trendChart: echarts.ECharts | null = null
 const demoLoading = ref(false)
 const notificationLoading = ref(false)
+const runningHealthCheck = ref(false)
 const rulesLoading = ref(false)
 const rulesNotice = ref('')
 const evaluationLoading = ref(false)
@@ -582,6 +602,28 @@ const loadNotificationStatus = async () => {
         ElMessage.error('通知通道状态加载失败')
     } finally {
         notificationLoading.value = false
+    }
+}
+
+/**
+ * 立即对已启用通道做一次连通性自检并刷新状态。
+ */
+const handleHealthCheck = async () => {
+    runningHealthCheck.value = true
+
+    try {
+        const res = await runAlertHealthCheck()
+        notificationStatus.value = res.data.data
+        const summary = res.data.data.summary
+        if (summary && summary.enabled === false) {
+            ElMessage.info('通道健康自检未启用（OPS_ALERT_HEALTH_ENABLED）')
+        } else {
+            ElMessage.success(`通道自检完成：正常 ${summary?.healthy ?? 0} / 异常 ${summary?.failing ?? 0}`)
+        }
+    } catch {
+        ElMessage.error('通道健康自检失败')
+    } finally {
+        runningHealthCheck.value = false
     }
 }
 
