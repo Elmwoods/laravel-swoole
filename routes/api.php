@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\Ops\OpsReleaseCheckController;
 use App\Http\Controllers\Admin\Ops\QueueController;
 use App\Http\Controllers\Admin\Ops\RedisMetricsController;
 use App\Http\Controllers\Admin\Ops\RedisMonitorController;
+use App\Http\Controllers\Admin\Ops\SecurityOverviewController;
 use App\Http\Controllers\Admin\Ops\SupervisorController;
 use App\Http\Controllers\Admin\Ops\System\DiskController;
 use App\Http\Controllers\Admin\Ops\System\DiskPushController;
@@ -96,6 +97,9 @@ Route::prefix('/ops')
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->middleware('admin.permission:ops.dashboard.view');
+
+        Route::get('/security/overview', [SecurityOverviewController::class, 'overview'])
+            ->middleware('admin.permission:ops.security.view');
 
         Route::prefix('release-check')
             ->middleware('admin.permission:ops.release.view')
