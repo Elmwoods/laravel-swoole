@@ -378,6 +378,11 @@ onBeforeUnmount(() => {
     margin-bottom: 4px;
 }
 
+/* 隐藏子菜单右侧悬空的展开箭头（短标签下与文字脱节，视觉杂乱）。 */
+.ops-menu :deep(.el-sub-menu__icon-arrow) {
+    display: none;
+}
+
 .ops-menu :deep(.el-menu-item.is-active) {
     background: #2563eb;
     color: #fff;

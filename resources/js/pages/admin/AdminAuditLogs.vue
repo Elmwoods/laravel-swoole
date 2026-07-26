@@ -15,7 +15,7 @@
             </el-form-item>
             <el-form-item label="状态码"><el-input-number v-model="filters.status_code" :min="100" :max="599" controls-position="right" /></el-form-item>
             <el-form-item label="结果">
-                <el-select v-model="filters.result" clearable>
+                <el-select v-model="filters.result" clearable placeholder="全部结果" class="facet-select">
                     <el-option label="成功" value="success" />
                     <el-option label="失败" value="failure" />
                 </el-select>
