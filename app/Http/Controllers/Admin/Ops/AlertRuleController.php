@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Ops;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Ops\AlertRuleImportRequest;
 use App\Http\Requests\Admin\Ops\AlertRuleToggleRequest;
 use App\Http\Requests\Admin\Ops\AlertRuleUpdateRequest;
 use App\Models\OpsAlertRule;
@@ -39,6 +40,16 @@ class AlertRuleController extends Controller
         ])->save();
 
         return $this->success($this->serialize($rule->refresh()));
+    }
+
+    public function export(): JsonResponse
+    {
+        return $this->success($this->registry->export());
+    }
+
+    public function import(AlertRuleImportRequest $request): JsonResponse
+    {
+        return $this->success($this->registry->import($request->validated('rules')));
     }
 
     public function toggle(AlertRuleToggleRequest $request, string $adminRule): JsonResponse

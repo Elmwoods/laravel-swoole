@@ -234,6 +234,9 @@ Route::prefix('/ops')
                 Route::delete('/presets/{preset}', [AlertPresetController::class, 'destroy'])
                     ->middleware('admin.audit:ops.alerts,preset_delete');
                 Route::get('/rules', [AlertRuleController::class, 'index']);
+                Route::get('/rules/export', [AlertRuleController::class, 'export']);
+                Route::post('/rules/import', [AlertRuleController::class, 'import'])
+                    ->middleware(['admin.audit:ops.alerts,rule_import', 'admin.permission:ops.alerts.manage']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
                 Route::post('/rules/{adminRule}/toggle', [AlertRuleController::class, 'toggle'])
