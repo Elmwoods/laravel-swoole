@@ -7,11 +7,17 @@ interface ApiResponse<T> {
     timestamp: number
 }
 
+export type SilenceRecurrence = 'once' | 'daily' | 'weekly'
+
 export interface AlertSilence {
     id: number
     label: string | null
     starts_at: string | null
     ends_at: string | null
+    recurrence: SilenceRecurrence
+    days_of_week: number[]
+    start_time: string | null
+    end_time: string | null
     sources: string[]
     severities: string[]
     is_active: boolean
@@ -30,6 +36,10 @@ export const createAlertSilence = (payload: {
     label?: string | null
     starts_at: string
     ends_at: string
+    recurrence?: SilenceRecurrence
+    days_of_week?: number[]
+    start_time?: string | null
+    end_time?: string | null
     sources?: string[]
     severities?: string[]
 }) => request.post<ApiResponse<{ silence: { id: number } }>>('/api/ops/alerts/silences', payload)
