@@ -11,6 +11,10 @@ class OpsAlertSilence extends Model
         'label',
         'starts_at',
         'ends_at',
+        'recurrence',
+        'days_of_week',
+        'start_time',
+        'end_time',
         'sources',
         'severities',
         'is_active',
@@ -22,6 +26,7 @@ class OpsAlertSilence extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'days_of_week' => 'array',
             'sources' => 'array',
             'severities' => 'array',
             'is_active' => 'boolean',

@@ -5,6 +5,7 @@ namespace App\Services\Ops;
 use App\Models\AdminUser;
 use App\Models\OpsAlert;
 use App\Models\OpsAlertSilence;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Throwable;
@@ -17,6 +18,8 @@ use Throwable;
 class AlertSilenceService
 {
     private const SEVERITIES = ['critical', 'warning', 'info'];
+
+    private const RECURRENCES = ['once', 'daily', 'weekly'];
 
     /**
      * 该告警此刻是否被某个生效中的静默命中。
@@ -34,10 +37,11 @@ class AlertSilenceService
                 ->where('is_active', true)
                 ->where('starts_at', '<=', $now)
                 ->where('ends_at', '>=', $now)
-                ->get(['sources', 'severities']);
+                ->get();
 
             foreach ($silences as $silence) {
-                if ($this->matches($silence, (string) $alert->source, (string) $alert->severity)) {
+                if ($this->matchesRecurrence($silence, $now)
+                    && $this->matches($silence, (string) $alert->source, (string) $alert->severity)) {
                     return true;
                 }
             }
@@ -63,7 +67,9 @@ class AlertSilenceService
             ->where('ends_at', '>=', $now)
             ->orderByDesc('starts_at')
             ->get()
+            ->filter(fn (OpsAlertSilence $s): bool => $this->matchesRecurrence($s, $now))
             ->map(fn (OpsAlertSilence $s): array => $this->serialize($s))
+            ->values()
             ->all();
     }
 
@@ -88,10 +94,43 @@ class AlertSilenceService
             throw new InvalidArgumentException('结束时间必须晚于开始时间。');
         }
 
+        $recurrence = (string) ($data['recurrence'] ?? 'once');
+        $recurrence = in_array($recurrence, self::RECURRENCES, true) ? $recurrence : 'once';
+        $startTime = null;
+        $endTime = null;
+        $daysOfWeek = null;
+
+        if ($recurrence !== 'once') {
+            $startTime = (string) ($data['start_time'] ?? '');
+            $endTime = (string) ($data['end_time'] ?? '');
+
+            if ($startTime === '' || $endTime === '') {
+                throw new InvalidArgumentException('周期性静默必须设置每天的开始与结束时刻。');
+            }
+
+            if ($recurrence === 'weekly') {
+                $daysOfWeek = collect((array) ($data['days_of_week'] ?? []))
+                    ->map(fn ($d): int => (int) $d)
+                    ->filter(fn (int $d): bool => $d >= 0 && $d <= 6)
+                    ->unique()
+                    ->sort()
+                    ->values()
+                    ->all();
+
+                if ($daysOfWeek === []) {
+                    throw new InvalidArgumentException('每周静默必须至少选择一天。');
+                }
+            }
+        }
+
         return OpsAlertSilence::query()->create([
             'label' => isset($data['label']) && trim((string) $data['label']) !== '' ? trim((string) $data['label']) : null,
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
+            'recurrence' => $recurrence,
+            'days_of_week' => $daysOfWeek,
+            'start_time' => $startTime,
+            'end_time' => $endTime,
             'sources' => $this->cleanStrings($data['sources'] ?? []),
             'severities' => array_values(array_intersect($this->cleanStrings($data['severities'] ?? []), self::SEVERITIES)),
             'is_active' => (bool) ($data['is_active'] ?? true),
@@ -107,6 +146,46 @@ class AlertSilenceService
     public function delete(int $id): bool
     {
         return OpsAlertSilence::query()->whereKey($id)->delete() > 0;
+    }
+
+    /**
+     * 在生效范围（starts_at–ends_at，SQL 已预筛）内，按重复模式判断此刻是否命中。
+     */
+    private function matchesRecurrence(OpsAlertSilence $silence, CarbonInterface $now): bool
+    {
+        $recurrence = (string) ($silence->recurrence ?? 'once');
+
+        if ($recurrence === 'once') {
+            return true; // 绝对窗口已由 SQL 预筛
+        }
+
+        if (! $this->timeInWindow($now, (string) $silence->start_time, (string) $silence->end_time)) {
+            return false;
+        }
+
+        if ($recurrence === 'weekly') {
+            $days = array_map('intval', (array) ($silence->days_of_week ?? []));
+
+            return in_array((int) $now->dayOfWeek, $days, true);
+        }
+
+        return true; // daily
+    }
+
+    /**
+     * 当前 H:i 是否落在 [start,end]（字典序）；start>end 视为跨午夜（t>=start 或 t<=end）。
+     */
+    private function timeInWindow(CarbonInterface $now, string $start, string $end): bool
+    {
+        if ($start === '' || $end === '') {
+            return false;
+        }
+
+        $t = $now->format('H:i');
+
+        return $start <= $end
+            ? ($t >= $start && $t <= $end)
+            : ($t >= $start || $t <= $end);
     }
 
     private function matches(OpsAlertSilence $silence, string $source, string $severity): bool
@@ -143,6 +222,10 @@ class AlertSilenceService
             'label' => $silence->label,
             'starts_at' => optional($silence->starts_at)->toDateTimeString(),
             'ends_at' => optional($silence->ends_at)->toDateTimeString(),
+            'recurrence' => $silence->recurrence ?? 'once',
+            'days_of_week' => array_map('intval', (array) ($silence->days_of_week ?? [])),
+            'start_time' => $silence->start_time,
+            'end_time' => $silence->end_time,
             'sources' => (array) ($silence->sources ?? []),
             'severities' => (array) ($silence->severities ?? []),
             'is_active' => (bool) $silence->is_active,
