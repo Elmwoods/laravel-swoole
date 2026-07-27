@@ -61,6 +61,7 @@ npm run build
 - 二十七阶段：安全总览仪表盘——`SecurityOverviewService` 聚合登录风控/失败登录+TopIP/活跃会话/2FA 覆盖率/受信任设备/开放安全告警/IP 封禁/通道健康/失败登录趋势/近期安全事件，`GET /api/ops/security/overview`（权限 `ops.security.view`），前端「安全总览」页统计卡 + 分项表 + echarts 趋势 + 事件时间线。纯只读聚合。
 - 二十八阶段：告警处理 SLA 统计——`AlertCenterService::slaSummary` 从 `ops_alert_events` 配对算 MTTA（created_at→acknowledged）/MTTR（created_at→resolved/auto_resolved/…），按来源/严重级分解 + 按天趋势 + 当前 open 积压分桶；`GET /api/ops/alerts/sla`（`ops.alerts.view`），前端「告警 SLA」页。纯只读聚合。
 - 二十九阶段：告警值班静默窗口——`ops_alert_silences`（时间段 + 可选来源/严重级），在 `AlertNotificationService::send()` 唯一 choke point 判静默，命中只入库/广播、不外发（不影响 sendTest/通道探测）；`/api/ops/alerts/silences` CRUD（`ops.alerts.manage`），前端「告警静默」页 + 告警中心生效提示。boot-safe。
+- 三十阶段：告警处理 SLA 达标告警——`ops:alerts:sla-scan` 每 5 分钟扫未闭环告警，按严重级 ack/resolve 时限判违约，命中升 `sla_breach` 治理告警（走 send() 遵守 phase-29 静默、排除 sla_breach/digest 防递归），原告警恢复后自动关闭；目标走 env（opt-in），SLA 页展示目标 + 当前违约数。
 
 候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、周期性静默窗口。
 

@@ -1,5 +1,13 @@
 <template>
     <div class="alert-sla" v-loading="loading">
+        <el-alert
+            v-if="(data?.open_breaches ?? 0) > 0"
+            type="error"
+            show-icon
+            :closable="false"
+            :title="`当前 ${data?.open_breaches} 条 SLA 违约告警未关闭（告警中心 source=sla_breach）。`"
+        />
+
         <div class="toolbar">
             <el-radio-group v-model="days" @change="load">
                 <el-radio-button :value="7">近 7 天</el-radio-button>
@@ -55,6 +63,21 @@
             <el-empty v-if="!trendHasData" description="暂无恢复数据" />
             <div v-show="trendHasData" ref="trendRef" class="trend-chart"></div>
         </el-card>
+
+        <el-card shadow="never">
+            <template #header>
+                SLA 目标（{{ data?.targets.enabled ? '已启用' : '未启用（OPS_ALERT_SLA_ENABLED）' }}）
+            </template>
+            <el-table :data="targetRows" border>
+                <el-table-column label="严重级" prop="label" width="120" />
+                <el-table-column label="确认时限（MTTA 目标）">
+                    <template #default="{ row }">{{ row.ack }} 分钟</template>
+                </el-table-column>
+                <el-table-column label="恢复时限（MTTR 目标）">
+                    <template #default="{ row }">{{ row.resolve }} 分钟</template>
+                </el-table-column>
+            </el-table>
+        </el-card>
     </div>
 </template>
 
@@ -84,6 +107,15 @@ const fmt = (seconds: number): string => {
 }
 
 const trendHasData = computed(() => (data.value?.trend.length ?? 0) > 0)
+
+const targetRows = computed(() => {
+    const t = data.value?.targets
+    return [
+        { label: '严重', ack: t?.ack_minutes.critical ?? '—', resolve: t?.resolve_minutes.critical ?? '—' },
+        { label: '警告', ack: t?.ack_minutes.warning ?? '—', resolve: t?.resolve_minutes.warning ?? '—' },
+        { label: '提示', ack: t?.ack_minutes.info ?? '—', resolve: t?.resolve_minutes.info ?? '—' },
+    ]
+})
 
 const summaryCards = computed(() => {
     const d = data.value

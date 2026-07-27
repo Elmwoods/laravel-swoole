@@ -105,4 +105,13 @@ class ScheduledCommandResilienceTest extends TestCase
 
         $this->artisan('ops:alerts:health-check')->assertExitCode(0);
     }
+
+    public function test_sla_scan_command_succeeds_even_when_scan_throws(): void
+    {
+        $this->mock(AlertCenterService::class, function ($mock): void {
+            $mock->shouldReceive('scanSlaBreaches')->once()->andThrow(new RuntimeException('db down'));
+        });
+
+        $this->artisan('ops:alerts:sla-scan')->assertExitCode(0);
+    }
 }

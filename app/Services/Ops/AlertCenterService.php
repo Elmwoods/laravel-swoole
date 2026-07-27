@@ -360,6 +360,12 @@ class AlertCenterService
             'by_severity' => $this->slaBySeverity($resolvePairs),
             'trend' => $this->slaTrend($resolvePairs),
             'open_aging' => $this->openAging(),
+            'targets' => [
+                'enabled' => (bool) config('ops.alerts.sla.enabled', false),
+                'ack_minutes' => $this->slaTargets('ack_minutes'),
+                'resolve_minutes' => $this->slaTargets('resolve_minutes'),
+            ],
+            'open_breaches' => OpsAlert::query()->where('source', 'sla_breach')->where('status', 'open')->count(),
         ];
     }
 
@@ -888,6 +894,157 @@ class AlertCenterService
         );
 
         broadcast(new AlertTriggered($alert));
+    }
+
+    /**
+     * 解析 SLA 时限 csv（顺序 critical,warning,info）为 per-severity 分钟 map。
+     *
+     * @return array{critical: int, warning: int, info: int}
+     */
+    public function slaTargets(string $key): array
+    {
+        $raw = (string) config("ops.alerts.sla.{$key}", '');
+        $parts = array_values(array_filter(array_map('trim', explode(',', $raw)), fn ($v): bool => $v !== ''));
+        $fallback = $key === 'ack_minutes' ? [10, 30, 120] : [60, 240, 1440];
+
+        return [
+            'critical' => max(1, (int) ($parts[0] ?? $fallback[0])),
+            'warning' => max(1, (int) ($parts[1] ?? $fallback[1])),
+            'info' => max(1, (int) ($parts[2] ?? $fallback[2])),
+        ];
+    }
+
+    /**
+     * 定时扫描未闭环告警，按严重级的确认/恢复时限判 SLA 违约，命中升 sla_breach 治理告警。
+     *
+     * 排除 sla_breach/digest 源（防自我递归 + 不对摘要计 SLA）；起点锚 created_at（稳定）。
+     */
+    public function scanSlaBreaches(bool $dryRun = false): Collection
+    {
+        if (! (bool) config('ops.alerts.sla.enabled', false)) {
+            return collect();
+        }
+
+        $ack = $this->slaTargets('ack_minutes');
+        $resolve = $this->slaTargets('resolve_minutes');
+        $now = now();
+
+        $alerts = OpsAlert::query()
+            ->whereIn('status', ['open', 'acknowledged'])
+            ->whereNotIn('source', ['sla_breach', 'digest'])
+            ->get();
+
+        $breached = collect();
+
+        foreach ($alerts as $alert) {
+            $severity = in_array($alert->severity, ['critical', 'warning', 'info'], true) ? $alert->severity : 'warning';
+            $ageMinutes = (int) (optional($alert->created_at)->diffInMinutes($now) ?? 0);
+
+            $kinds = [];
+            if ($alert->status === 'open' && $ageMinutes >= $ack[$severity]) {
+                $kinds[] = 'ack';
+            }
+            if ($ageMinutes >= $resolve[$severity]) {
+                $kinds[] = 'resolve';
+            }
+
+            if ($kinds === []) {
+                continue;
+            }
+
+            $breached->push($alert);
+
+            if (! $dryRun) {
+                $this->raiseSlaBreachAlert($alert, $kinds, $ageMinutes, $severity, $kinds === ['ack'] ? $ack[$severity] : $resolve[$severity]);
+            }
+        }
+
+        if (! $dryRun) {
+            $this->resolveClearedSlaBreaches();
+        }
+
+        return $breached;
+    }
+
+    /**
+     * 升起一条 SLA 违约治理告警（每个被违约的原告警一条，指纹去重 + 冷却）。source=sla_breach。
+     *
+     * @param  array<int, string>  $kinds
+     */
+    public function raiseSlaBreachAlert(OpsAlert $alert, array $kinds, int $ageMinutes, string $severity, int $targetMinutes): void
+    {
+        $kindText = in_array('ack', $kinds, true) && in_array('resolve', $kinds, true)
+            ? '未确认且未恢复'
+            : (in_array('ack', $kinds, true) ? '未确认' : '未恢复');
+
+        $message = "{$alert->source}/{$alert->title} 已 open {$ageMinutes} 分钟{$kindText}，超出 {$severity} SLA 目标（{$targetMinutes} 分钟）。";
+
+        $dto = new AlertDTO(
+            source: 'sla_breach',
+            severity: 'warning',
+            title: '告警处理 SLA 违约',
+            message: $this->safeInspectionText($message),
+            context: [
+                'target' => "sla_breach:{$alert->id}",
+                'original_id' => $alert->id,
+                'original_source' => $alert->source,
+                'kinds' => $kinds,
+                'age_minutes' => $ageMinutes,
+            ],
+        );
+
+        [$breach, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        if ($breach->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($breach);
+        }
+
+        $this->recordAlertEvent(
+            $breach,
+            $breach->wasRecentlyCreated ? 'sla_breach' : 'sla_breach_refired',
+            'ops-sla',
+            null,
+            null,
+            $breach->status,
+            ['original_id' => $alert->id, 'kinds' => $kinds],
+        );
+
+        broadcast(new AlertTriggered($breach));
+    }
+
+    /**
+     * 原告警已恢复后，关闭仍 open/acknowledged 的对应 sla_breach 治理告警。
+     */
+    public function resolveClearedSlaBreaches(): void
+    {
+        $breaches = OpsAlert::query()
+            ->where('source', 'sla_breach')
+            ->whereIn('status', ['open', 'acknowledged'])
+            ->get();
+
+        foreach ($breaches as $breach) {
+            $originalId = (int) data_get($breach->context, 'original_id', 0);
+            if ($originalId <= 0) {
+                continue;
+            }
+
+            $original = OpsAlert::query()->find($originalId);
+            if ($original !== null && $original->status !== 'resolved') {
+                continue; // 原告警仍未闭环，保留违约告警
+            }
+
+            $fromStatus = $breach->status;
+            $breach->forceFill([
+                'status' => 'resolved',
+                'acknowledged_at' => $breach->acknowledged_at ?: now(),
+                'acknowledged_by' => $breach->acknowledged_by ?: 'ops-sla',
+                'acknowledge_note' => '原告警已恢复，SLA 违约自动关闭',
+            ])->save();
+
+            $breach = $breach->refresh();
+            $this->recordAlertEvent($breach, 'sla_breach_cleared', 'ops-sla', '原告警已恢复，SLA 违约自动关闭', $fromStatus, $breach->status);
+            broadcast(new AlertTriggered($breach));
+        }
     }
 
     /**
