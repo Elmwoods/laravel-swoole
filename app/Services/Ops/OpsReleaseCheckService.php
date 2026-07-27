@@ -281,6 +281,7 @@ class OpsReleaseCheckService
             'docs/ops-center-phase-28.md',
             'docs/ops-center-phase-29.md',
             'docs/ops-center-phase-30.md',
+            'docs/ops-center-phase-31.md',
             'docs/ops-center-phase-32.md',
             'docs/ops-center-deploy-runbook.md',
         ])

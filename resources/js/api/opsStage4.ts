@@ -240,6 +240,22 @@ export interface AlertSlaResult {
 export const getAlertSla = (days = 30) =>
     request.get<ApiResponse<AlertSlaResult>>('/api/ops/alerts/sla', { params: { days } })
 
+export interface AlertPreset {
+    id: number
+    name: string
+    filters: Record<string, string>
+    created_at: string | null
+}
+
+export const getAlertPresets = () =>
+    request.get<ApiResponse<{ items: AlertPreset[] }>>('/api/ops/alerts/presets')
+
+export const saveAlertPreset = (payload: { name: string; filters: Record<string, unknown> }) =>
+    request.post<ApiResponse<{ preset: AlertPreset }>>('/api/ops/alerts/presets', payload)
+
+export const deleteAlertPreset = (id: number) =>
+    request.delete<ApiResponse<{ deleted: boolean }>>(`/api/ops/alerts/presets/${id}`)
+
 export const getAlertRules = () =>
     request.get<ApiResponse<AlertRuleListResult>>('/api/ops/alerts/rules')
 

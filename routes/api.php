@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\AlertPresetController;
 use App\Http\Controllers\Admin\Ops\AlertRuleController;
 use App\Http\Controllers\Admin\Ops\AlertSilenceController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
@@ -227,6 +228,11 @@ Route::prefix('/ops')
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_toggle']);
                 Route::delete('/silences/{silence}', [AlertSilenceController::class, 'destroy'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_delete']);
+                Route::get('/presets', [AlertPresetController::class, 'index']);
+                Route::post('/presets', [AlertPresetController::class, 'store'])
+                    ->middleware('admin.audit:ops.alerts,preset_create');
+                Route::delete('/presets/{preset}', [AlertPresetController::class, 'destroy'])
+                    ->middleware('admin.audit:ops.alerts,preset_delete');
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
