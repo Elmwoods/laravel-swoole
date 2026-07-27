@@ -62,8 +62,9 @@ npm run build
 - 二十八阶段：告警处理 SLA 统计——`AlertCenterService::slaSummary` 从 `ops_alert_events` 配对算 MTTA（created_at→acknowledged）/MTTR（created_at→resolved/auto_resolved/…），按来源/严重级分解 + 按天趋势 + 当前 open 积压分桶；`GET /api/ops/alerts/sla`（`ops.alerts.view`），前端「告警 SLA」页。纯只读聚合。
 - 二十九阶段：告警值班静默窗口——`ops_alert_silences`（时间段 + 可选来源/严重级），在 `AlertNotificationService::send()` 唯一 choke point 判静默，命中只入库/广播、不外发（不影响 sendTest/通道探测）；`/api/ops/alerts/silences` CRUD（`ops.alerts.manage`），前端「告警静默」页 + 告警中心生效提示。boot-safe。
 - 三十阶段：告警处理 SLA 达标告警——`ops:alerts:sla-scan` 每 5 分钟扫未闭环告警，按严重级 ack/resolve 时限判违约，命中升 `sla_breach` 治理告警（走 send() 遵守 phase-29 静默、排除 sla_breach/digest 防递归），原告警恢复后自动关闭；目标走 env（opt-in），SLA 页展示目标 + 当前违约数。
+- 三十二阶段：周期性告警静默窗口——`ops_alert_silences` 加 `recurrence`(once/daily/weekly)/`days_of_week`/`start_time`/`end_time`，`starts_at/ends_at` 复用为生效范围；`AlertSilenceService::matchesRecurrence` 在 SQL 预筛后叠加时段/星期判断（跨午夜 wrap），复用 phase-29 send() choke point；静默页支持每天/每周配置。
 
-候选后续增强：告警筛选预设（复用审计预设模式）、真实地理风控（GeoIP）、周期性静默窗口。
+候选后续增强：真实地理风控（GeoIP）、告警规则导入导出、通知通道分组路由。
 
 # 项目级 Codex 测试规范
 
