@@ -1,5 +1,14 @@
 <template>
     <section class="alerts-page">
+        <el-alert
+            v-if="activeSilenceCount > 0"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="silence-banner"
+            :title="`${activeSilenceCount} 条告警静默生效中：命中的告警暂不外发到通道（仍会入库并在此列出）。`"
+        />
+
         <div class="summary-grid">
             <el-card v-for="item in summaryCards" :key="item.label" shadow="never" class="summary-card">
                 <div class="summary-label">{{ item.label }}</div>
@@ -426,6 +435,7 @@ import {
     type AlertStatus,
     type OpsAlert,
 } from '@/api/opsStage4'
+import { getAlertSilences } from '@/api/opsAlertSilence'
 
 const loading = ref(false)
 const evaluating = ref(false)
@@ -437,6 +447,16 @@ const trendEmpty = ref(false)
 let trendChart: echarts.ECharts | null = null
 const demoLoading = ref(false)
 const notificationLoading = ref(false)
+const activeSilenceCount = ref(0)
+
+const loadSilences = async () => {
+    try {
+        const res = await getAlertSilences()
+        activeSilenceCount.value = res.data.data.active.length
+    } catch {
+        activeSilenceCount.value = 0
+    }
+}
 const runningHealthCheck = ref(false)
 const rulesLoading = ref(false)
 const rulesNotice = ref('')
@@ -1026,7 +1046,7 @@ const loadTrend = async () => {
 const handleTrendResize = () => trendChart?.resize()
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences()])
     startRealtime()
     window.addEventListener('resize', handleTrendResize)
 })

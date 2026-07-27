@@ -191,6 +191,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-silence',
+                name: 'AlertSilence',
+                component: () => import('../pages/ops/AlertSilence.vue'),
+                meta: {
+                    title: '告警静默',
+                    description: '维护窗口内暂停告警外发（仍入库、可在告警中心查看）',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -304,6 +314,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.logs.view', '/admin/ops/logs'],
         ['ops.alerts.view', '/admin/ops/alerts'],
         ['ops.alerts.view', '/admin/ops/alerts-sla'],
+        ['ops.alerts.view', '/admin/ops/alerts-silence'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

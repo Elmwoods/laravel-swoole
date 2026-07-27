@@ -17,6 +17,10 @@ use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
  */
 class AlertNotificationService
 {
+    public function __construct(
+        private readonly AlertSilenceService $silences,
+    ) {}
+
     /**
      * 每个通道判定 configured/missing 所需的凭据字段（config 键，相对 ops.alerts.<channel>）。
      */
@@ -77,6 +81,13 @@ class AlertNotificationService
      */
     public function send(OpsAlert $alert): array
     {
+        // 值班静默窗口：命中则只入库/广播（由调用方完成），不外发到任何通道。
+        if ($this->silences->isSilenced($alert)) {
+            return collect($this->channels())
+                ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'silenced']])
+                ->all();
+        }
+
         $result = [];
 
         foreach ($this->channels() as $channel) {

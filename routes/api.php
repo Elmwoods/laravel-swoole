@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
 use App\Http\Controllers\Admin\Ops\AlertRuleController;
+use App\Http\Controllers\Admin\Ops\AlertSilenceController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
@@ -219,6 +220,13 @@ Route::prefix('/ops')
                 Route::get('/evaluations/latest', [AlertController::class, 'latestEvaluation']);
                 Route::get('/trend', [AlertController::class, 'trend']);
                 Route::get('/sla', [AlertController::class, 'sla']);
+                Route::get('/silences', [AlertSilenceController::class, 'index']);
+                Route::post('/silences', [AlertSilenceController::class, 'store'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_create']);
+                Route::patch('/silences/{silence}', [AlertSilenceController::class, 'update'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_toggle']);
+                Route::delete('/silences/{silence}', [AlertSilenceController::class, 'destroy'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_delete']);
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
                     ->middleware(['admin.audit:ops.alerts,rule_update', 'admin.permission:ops.alerts.manage']);
