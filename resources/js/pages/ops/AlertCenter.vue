@@ -146,6 +146,20 @@
                             {{ channelLabel(ch) }}
                         </el-checkbox>
                     </el-form-item>
+                    <el-form-item label="消息模板">
+                        <el-input
+                            v-model="settingsDraft.message_template"
+                            type="textarea"
+                            :rows="4"
+                            :maxlength="2000"
+                            show-word-limit
+                            :disabled="settingsSaving"
+                            placeholder="留空=用内置多行格式。占位符：{title} {severity} {source} {status} {time} {message}"
+                        />
+                        <div class="muted inline-help">
+                            自定义文本通道（Telegram / 邮件 / 钉钉 / 飞书）通知文案；Webhook 仍为结构化 JSON。留空恢复默认。
+                        </div>
+                    </el-form-item>
                     <el-button type="primary" :loading="settingsSaving" @click="handleSaveSettings">
                         保存策略
                     </el-button>
@@ -187,9 +201,13 @@
                         <div class="panel-subtitle">系统白名单规则的阈值与启停状态</div>
                     </div>
 
-                    <el-button text :loading="rulesLoading" @click="loadAlertRules">
-                        刷新规则
-                    </el-button>
+                    <el-space>
+                        <el-button text @click="handleExportRules">导出规则</el-button>
+                        <el-button text :loading="importingRules" @click="handleImportRules">导入规则</el-button>
+                        <el-button text :loading="rulesLoading" @click="loadAlertRules">
+                            刷新规则
+                        </el-button>
+                    </el-space>
                 </div>
             </template>
 
@@ -317,6 +335,17 @@
                     />
                 </el-select>
 
+                <el-select v-model="assigneeFilter" clearable placeholder="指派人" class="assignee-select" @change="handleFilterChange">
+                    <el-option label="未指派" value="__unassigned__" />
+                    <el-option v-if="currentAdminName" :label="`指派给我（${currentAdminName}）`" :value="currentAdminName" />
+                    <el-option
+                        v-for="name in assignees.filter(n => n !== currentAdminName)"
+                        :key="name"
+                        :label="name"
+                        :value="name"
+                    />
+                </el-select>
+
                 <el-select v-model="selectedPresetId" clearable placeholder="筛选预设" class="preset-select" @change="applyPreset">
                     <el-option v-for="p in presets" :key="p.id" :label="p.name" :value="p.id" />
                 </el-select>
@@ -353,6 +382,13 @@
                     </template>
                 </el-table-column>
 
+                <el-table-column label="指派" width="130">
+                    <template #default="{ row }">
+                        <span v-if="row.assigned_to">{{ row.assigned_to }}</span>
+                        <span v-else class="muted">—</span>
+                    </template>
+                </el-table-column>
+
                 <el-table-column prop="hit_count" label="次数" width="90" />
                 <el-table-column prop="last_seen_at" label="最后出现" width="180" />
 
@@ -366,6 +402,15 @@
                                 @click="handleAssign(row)"
                             >
                                 指派
+                            </el-button>
+                            <el-button
+                                v-if="currentAdminName"
+                                text
+                                type="info"
+                                :loading="assigningId === row.id"
+                                @click="handleClaim(row)"
+                            >
+                                指派给我
                             </el-button>
                             <el-button
                                 v-if="row.status === 'open'"
@@ -418,7 +463,10 @@ import {
     createAlertDemoScenarios,
     deleteAlertPreset,
     evaluateAlerts,
+    exportAlertRules,
+    getAlertAssignees,
     getAlertPresets,
+    importAlertRules,
     getAlertSettings,
     getAlertTrend,
     getLatestAlertEvaluation,
@@ -444,8 +492,13 @@ import {
     type AlertSummary,
     type AlertStatus,
     type OpsAlert,
+    type AlertRuleExportItem,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
+import { useAdminAuthStore } from '@/stores/adminAuth'
+
+const adminAuth = useAdminAuthStore()
+const currentAdminName = computed(() => adminAuth.profile?.admin?.name ?? '')
 
 const loading = ref(false)
 const evaluating = ref(false)
@@ -468,6 +521,9 @@ const loadSilences = async () => {
     }
 }
 const runningHealthCheck = ref(false)
+const importingRules = ref(false)
+const assigneeFilter = ref('')
+const assignees = ref<string[]>([])
 const rulesLoading = ref(false)
 const rulesNotice = ref('')
 const evaluationLoading = ref(false)
@@ -688,6 +744,8 @@ const loadAlerts = async () => {
             status: status.value === 'all' ? undefined : status.value,
             severity: severity.value || undefined,
             source: source.value || undefined,
+            assigned: assigneeFilter.value === '__unassigned__' ? 'unassigned' : undefined,
+            assigned_to: assigneeFilter.value && assigneeFilter.value !== '__unassigned__' ? assigneeFilter.value : undefined,
             page: page.value,
             per_page: perPage.value,
         })
@@ -859,6 +917,79 @@ const replaceRule = (rule: AlertRule) => {
 }
 
 /**
+ * 导出全部规则的可调字段为 JSON 文件。
+ */
+const handleExportRules = async () => {
+    try {
+        const res = await exportAlertRules()
+        const blob = new Blob([JSON.stringify(res.data.data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `ops-alert-rules-${Date.now()}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+        ElMessage.success('已导出规则 JSON')
+    } catch {
+        ElMessage.error('规则导出失败')
+    }
+}
+
+/**
+ * 粘贴规则 JSON 导入（仅认白名单 key 的阈值/启停，非法项跳过并报告）。
+ */
+const handleImportRules = async () => {
+    let text = ''
+
+    try {
+        const { value } = await ElMessageBox.prompt(
+            '粘贴导出的规则 JSON（含 rules 数组，或直接是规则数组）',
+            '导入规则',
+            {
+                confirmButtonText: '导入',
+                cancelButtonText: '取消',
+                inputType: 'textarea',
+                inputPlaceholder: '{ "rules": [ { "key": "disk_usage", "warning_threshold": 85, "critical_threshold": 95, "is_active": true } ] }',
+            },
+        )
+        text = value
+    } catch {
+        return
+    }
+
+    let rules: AlertRuleExportItem[]
+
+    try {
+        const parsed = JSON.parse(text)
+        rules = Array.isArray(parsed) ? parsed : parsed.rules
+        if (!Array.isArray(rules)) {
+            throw new Error('missing rules array')
+        }
+    } catch {
+        ElMessage.error('JSON 解析失败，请检查格式')
+        return
+    }
+
+    importingRules.value = true
+
+    try {
+        const res = await importAlertRules(rules)
+        const { applied, total, skipped } = res.data.data
+        await Promise.all([loadAlertRules(), loadSummary()])
+
+        if (skipped.length > 0) {
+            ElMessage.warning(`导入完成：应用 ${applied}/${total}，跳过 ${skipped.length}（未知或越界的规则）`)
+        } else {
+            ElMessage.success(`导入完成：应用 ${applied}/${total} 条规则`)
+        }
+    } catch {
+        ElMessage.error('规则导入失败，请检查权限或数据结构')
+    } finally {
+        importingRules.value = false
+    }
+}
+
+/**
  * 筛选条件变化后回到第一页。
  */
 const handleFilterChange = async () => {
@@ -975,13 +1106,49 @@ const handleAssign = async (alert: OpsAlert) => {
         })
 
         ElMessage.success('告警已指派')
-        await loadAlerts()
+        await Promise.all([loadAlerts(), loadAssignees()])
     } catch (error) {
         if (error !== 'cancel') {
             ElMessage.error('告警指派失败')
         }
     } finally {
         assigningId.value = null
+    }
+}
+
+/**
+ * 把告警认领给当前登录管理员（指派给我）。
+ */
+const handleClaim = async (alert: OpsAlert) => {
+    if (!currentAdminName.value) {
+        return
+    }
+
+    assigningId.value = alert.id
+
+    try {
+        await assignAlert(alert.id, {
+            assigned_to: currentAdminName.value,
+            note: `认领：${currentAdminName.value}`,
+        })
+        ElMessage.success('已认领该告警')
+        await Promise.all([loadAlerts(), loadAssignees()])
+    } catch {
+        ElMessage.error('认领失败')
+    } finally {
+        assigningId.value = null
+    }
+}
+
+/**
+ * 加载已指派处理人列表（筛选下拉用）。
+ */
+const loadAssignees = async () => {
+    try {
+        const res = await getAlertAssignees()
+        assignees.value = res.data.data.items
+    } catch {
+        assignees.value = []
     }
 }
 
@@ -1113,7 +1280,7 @@ const loadTrend = async () => {
 const handleTrendResize = () => trendChart?.resize()
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences(), loadPresets()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences(), loadPresets(), loadAssignees()])
     startRealtime()
     window.addEventListener('resize', handleTrendResize)
 })

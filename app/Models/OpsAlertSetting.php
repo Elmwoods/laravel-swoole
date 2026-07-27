@@ -94,6 +94,7 @@ class OpsAlertSetting extends Model
             'auto_resolve_grace_minutes' => max(1, (int) config('ops.alerts.thresholds.auto_resolve_grace_minutes', 5)),
             'escalation_enabled' => (bool) config('ops.alerts.thresholds.escalation_enabled', true),
             'escalation_after_minutes' => max(1, (int) config('ops.alerts.thresholds.escalation_after_minutes', 30)),
+            'message_template' => (string) config('ops.alerts.message_template', ''),
             'severity_channels' => self::defaultSeverityChannels(),
         ];
 

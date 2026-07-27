@@ -240,6 +240,106 @@ class AlertRuleRegistryService
             ->get();
     }
 
+    /**
+     * 导出全部规则的用户可调字段（阈值 + 启停），供跨环境迁移 / 版本化备份。
+     */
+    public function export(): array
+    {
+        return [
+            'exported_at' => now()->toDateTimeString(),
+            'rules' => $this->all()
+                ->map(fn (OpsAlertRule $rule): array => [
+                    'key' => $rule->key,
+                    'name' => $rule->name,
+                    'warning_threshold' => $rule->warning_threshold,
+                    'critical_threshold' => $rule->critical_threshold,
+                    'is_active' => (bool) $rule->is_active,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * 导入规则的用户可调字段。仅认白名单 key、按每个 key 的 min/max 校验，
+     * 非法项逐条跳过并报告（不整单失败）。
+     *
+     * @return array{applied:int, total:int, skipped:array<int, array{key:mixed, reason:string}>}
+     */
+    public function import(array $rules): array
+    {
+        $this->syncDefaults();
+
+        $applied = 0;
+        $skipped = [];
+
+        foreach ($rules as $incoming) {
+            $key = is_array($incoming) ? ($incoming['key'] ?? null) : null;
+
+            if (! is_string($key) || ! isset(self::DEFINITIONS[$key])) {
+                $skipped[] = ['key' => $key, 'reason' => 'unknown_key'];
+
+                continue;
+            }
+
+            $definition = self::DEFINITIONS[$key];
+            $min = $definition['min'] ?? 0;
+            $max = $definition['max'] ?? 1000000;
+
+            $warning = $incoming['warning_threshold'] ?? null;
+            $criticalRaw = $incoming['critical_threshold'] ?? null;
+
+            if (! is_numeric($warning)) {
+                $skipped[] = ['key' => $key, 'reason' => 'invalid'];
+
+                continue;
+            }
+
+            $warning = (float) $warning;
+            $critical = $criticalRaw === null || $criticalRaw === '' ? null : (float) $criticalRaw;
+
+            if ($warning < $min || $warning > $max) {
+                $skipped[] = ['key' => $key, 'reason' => 'invalid'];
+
+                continue;
+            }
+
+            if ($critical !== null && ($critical < $min || $critical > $max)) {
+                $skipped[] = ['key' => $key, 'reason' => 'invalid'];
+
+                continue;
+            }
+
+            if ($critical !== null && $critical < $warning) {
+                $skipped[] = ['key' => $key, 'reason' => 'invalid'];
+
+                continue;
+            }
+
+            $rule = OpsAlertRule::query()->where('key', $key)->first();
+
+            if ($rule === null) {
+                $skipped[] = ['key' => $key, 'reason' => 'unknown_key'];
+
+                continue;
+            }
+
+            $rule->forceFill([
+                'warning_threshold' => $warning,
+                'critical_threshold' => $critical,
+                'is_active' => filter_var($incoming['is_active'] ?? true, FILTER_VALIDATE_BOOL),
+            ])->save();
+
+            $applied++;
+        }
+
+        return [
+            'applied' => $applied,
+            'total' => count($rules),
+            'skipped' => $skipped,
+        ];
+    }
+
     private function initialThresholds(string $key, array $definition): array
     {
         return match ($key) {

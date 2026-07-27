@@ -51,12 +51,30 @@ class AlertCenterService
             ->when(($filters['status'] ?? '') !== '', fn ($query) => $query->where('status', $filters['status']))
             ->when(($filters['severity'] ?? '') !== '', fn ($query) => $query->where('severity', $filters['severity']))
             ->when(($filters['source'] ?? '') !== '', fn ($query) => $query->where('source', $filters['source']))
+            ->when(($filters['assigned_to'] ?? '') !== '', fn ($query) => $query->where('assigned_to', $filters['assigned_to']))
+            ->when(($filters['assigned'] ?? '') === 'unassigned', fn ($query) => $query->whereNull('assigned_to'))
             ->orderByDesc('last_seen_at')
             ->orderByDesc('id')
             ->paginate(
                 perPage: max(5, min((int) ($filters['per_page'] ?? 20), 100)),
                 page: max(1, (int) ($filters['page'] ?? 1)),
             );
+    }
+
+    /**
+     * 已被指派过的处理人去重列表（供筛选下拉，不暴露完整管理员名册）。
+     *
+     * @return array<int, string>
+     */
+    public function assignees(): array
+    {
+        return OpsAlert::query()
+            ->whereNotNull('assigned_to')
+            ->where('assigned_to', '!=', '')
+            ->distinct()
+            ->orderBy('assigned_to')
+            ->pluck('assigned_to')
+            ->all();
     }
 
     /**
@@ -520,6 +538,12 @@ class AlertCenterService
 
         foreach ($keys as $key) {
             OpsAlertSetting::setValue($key, $payload[$key]);
+        }
+
+        // message_template 走独立可选守卫（不在全 required 的 $keys 循环内），
+        // 既保留旧设置 payload 的兼容性，又能持久化自定义模板。
+        if (array_key_exists('message_template', $payload)) {
+            OpsAlertSetting::setValue('message_template', (string) $payload['message_template']);
         }
 
         return $this->settings();
