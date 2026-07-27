@@ -122,3 +122,10 @@ Schedule::command('admin:ip-auto-ban')
 Schedule::command('ops:alerts:health-check')
     ->everyThirtyMinutes()
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟扫描未闭环告警，按严重级 SLA 时限判违约，命中升 sla_breach 告警。默认 opt-in 关闭。
+ */
+Schedule::command('ops:alerts:sla-scan')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

@@ -176,6 +176,15 @@ return [
             // 限定主动探测的通道（csv）；默认空 = 探测全部已启用通道。用于排除钉钉/飞书心跳。
             'probe_channels' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_ALERT_HEALTH_PROBE_CHANNELS', ''))))),
         ],
+
+        // 告警处理 SLA 达标监控：定时扫描未闭环告警，按严重级的确认/恢复时限判违约，命中升 sla_breach 告警。
+        // 目标走 env（部署期设，csv 顺序 critical,warning,info，分钟）；默认 opt-in 关闭。
+        'sla' => [
+            'enabled' => filter_var(env('OPS_ALERT_SLA_ENABLED', false), FILTER_VALIDATE_BOOL),
+            // csv 顺序 critical,warning,info；由 AlertCenterService::slaTargets 解析成 per-severity map。
+            'ack_minutes' => (string) env('OPS_ALERT_SLA_ACK_MINUTES', '10,30,120'),
+            'resolve_minutes' => (string) env('OPS_ALERT_SLA_RESOLVE_MINUTES', '60,240,1440'),
+        ],
     ],
 
     /*
