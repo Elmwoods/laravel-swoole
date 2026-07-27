@@ -72,6 +72,8 @@ export interface AlertQuery {
     status?: string
     severity?: string
     source?: string
+    assigned_to?: string
+    assigned?: string
     page?: number
     per_page?: number
 }
@@ -117,9 +119,10 @@ export interface AlertSettings {
     auto_resolve_grace_minutes: number
     escalation_enabled: boolean
     escalation_after_minutes: number
+    message_template?: string
     severity_channels: Record<AlertSeverity, Record<string, boolean>>
     // 各通道总开关 <channel>_enabled
-    [key: string]: number | boolean | Record<string, unknown>
+    [key: string]: number | boolean | string | Record<string, unknown> | undefined
 }
 
 export interface AlertEvaluationStatus {
@@ -264,6 +267,34 @@ export const updateAlertRule = (key: string, payload: AlertRuleUpdatePayload) =>
 
 export const toggleAlertRule = (key: string, is_active: boolean) =>
     request.post<ApiResponse<AlertRule>>(`/api/ops/alerts/rules/${encodeURIComponent(key)}/toggle`, { is_active })
+
+export interface AlertRuleExportItem {
+    key: string
+    name: string
+    warning_threshold: number
+    critical_threshold: number | null
+    is_active: boolean
+}
+
+export interface AlertRuleExport {
+    exported_at: string
+    rules: AlertRuleExportItem[]
+}
+
+export interface AlertRuleImportResult {
+    applied: number
+    total: number
+    skipped: Array<{ key: string | null; reason: string }>
+}
+
+export const exportAlertRules = () =>
+    request.get<ApiResponse<AlertRuleExport>>('/api/ops/alerts/rules/export')
+
+export const importAlertRules = (rules: AlertRuleExportItem[]) =>
+    request.post<ApiResponse<AlertRuleImportResult>>('/api/ops/alerts/rules/import', { rules })
+
+export const getAlertAssignees = () =>
+    request.get<ApiResponse<{ items: string[] }>>('/api/ops/alerts/assignees')
 
 export const getAlerts = (query: AlertQuery) =>
     request.get<ApiResponse<AlertListResult>>('/api/ops/alerts', { params: query })
