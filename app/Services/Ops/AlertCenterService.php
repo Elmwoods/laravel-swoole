@@ -360,6 +360,12 @@ class AlertCenterService
             'by_severity' => $this->slaBySeverity($resolvePairs),
             'trend' => $this->slaTrend($resolvePairs),
             'open_aging' => $this->openAging(),
+            'targets' => [
+                'enabled' => (bool) config('ops.alerts.sla.enabled', false),
+                'ack_minutes' => $this->slaTargets('ack_minutes'),
+                'resolve_minutes' => $this->slaTargets('resolve_minutes'),
+            ],
+            'open_breaches' => OpsAlert::query()->where('source', 'sla_breach')->where('status', 'open')->count(),
         ];
     }
 

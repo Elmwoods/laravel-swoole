@@ -229,6 +229,12 @@ export interface AlertSlaResult {
     by_severity: Record<'critical' | 'warning' | 'info', { mttr_avg_seconds: number; mttr_count: number }>
     trend: Array<{ date: string; mttr_avg_seconds: number; resolved_count: number }>
     open_aging: { under_1h: number; one_to_24h: number; over_24h: number }
+    targets: {
+        enabled: boolean
+        ack_minutes: { critical: number; warning: number; info: number }
+        resolve_minutes: { critical: number; warning: number; info: number }
+    }
+    open_breaches: number
 }
 
 export const getAlertSla = (days = 30) =>
