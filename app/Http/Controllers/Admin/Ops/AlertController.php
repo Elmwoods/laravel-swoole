@@ -58,6 +58,14 @@ class AlertController extends Controller
     }
 
     /**
+     * 已被指派过的处理人列表（供筛选下拉）。
+     */
+    public function assignees(): JsonResponse
+    {
+        return $this->success(['items' => $this->service->assignees()]);
+    }
+
+    /**
      * 通知通道配置状态。
      */
     public function notificationStatus(): JsonResponse
