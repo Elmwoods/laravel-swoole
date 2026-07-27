@@ -97,6 +97,10 @@ return [
         // 通知通道单一来源：新增通道只需在此登记，Service / Settings / 请求校验 / 前端都据此遍历。
         'channels' => ['telegram', 'mail', 'webhook', 'dingtalk', 'feishu'],
 
+        // 文本通道（telegram/mail/dingtalk/feishu）通知模板。留空=用内置多行格式。
+        // 占位符：{title} {severity} {source} {status} {time} {message}
+        'message_template' => (string) env('OPS_ALERT_MESSAGE_TEMPLATE', ''),
+
         'thresholds' => [
             'disk_usage_warning' => (int) env('OPS_ALERT_DISK_USAGE_WARNING', 85),
             'disk_usage_critical' => (int) env('OPS_ALERT_DISK_USAGE_CRITICAL', 95),

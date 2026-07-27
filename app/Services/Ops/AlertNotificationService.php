@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
+use Throwable;
 
 /**
  * 告警通知服务。
@@ -234,7 +235,7 @@ class AlertNotificationService
             ]);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->failure('telegram', $alert, $e);
         }
     }
@@ -260,7 +261,7 @@ class AlertNotificationService
             });
 
             return ['enabled' => true, 'sent' => true];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->failure('mail', $alert, $e);
         }
     }
@@ -293,7 +294,7 @@ class AlertNotificationService
             $response = $request->post($url);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->failure('webhook', $alert, $e);
         }
     }
@@ -329,7 +330,7 @@ class AlertNotificationService
             ]);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->failure('dingtalk', $alert, $e);
         }
     }
@@ -365,7 +366,7 @@ class AlertNotificationService
             $response = Http::timeout(5)->post($webhook, $payload);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->failure('feishu', $alert, $e);
         }
     }
@@ -384,7 +385,7 @@ class AlertNotificationService
             return $ok
                 ? ['healthy' => true, 'checked_via' => 'getMe']
                 : ['healthy' => false, 'reason' => 'telegram_getme_status_'.$response->status(), 'checked_via' => 'getMe'];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'getMe'];
         }
     }
@@ -405,7 +406,7 @@ class AlertNotificationService
             $transport->stop();
 
             return ['healthy' => true, 'checked_via' => 'smtp'];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'smtp'];
         }
     }
@@ -431,7 +432,7 @@ class AlertNotificationService
             return $response->successful()
                 ? ['healthy' => true, 'checked_via' => 'http_post']
                 : ['healthy' => false, 'reason' => 'webhook_status_'.$response->status(), 'checked_via' => 'http_post'];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'http_post'];
         }
     }
@@ -462,7 +463,7 @@ class AlertNotificationService
             return ($response->successful() && $errcode === 0)
                 ? ['healthy' => true, 'checked_via' => 'heartbeat']
                 : ['healthy' => false, 'reason' => 'dingtalk_errcode_'.$errcode, 'checked_via' => 'heartbeat'];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'heartbeat'];
         }
     }
@@ -492,7 +493,7 @@ class AlertNotificationService
             return ($response->successful() && $code === 0)
                 ? ['healthy' => true, 'checked_via' => 'heartbeat']
                 : ['healthy' => false, 'reason' => 'feishu_code_'.$code, 'checked_via' => 'heartbeat'];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return ['healthy' => false, 'reason' => $this->safeExceptionMessage($e), 'checked_via' => 'heartbeat'];
         }
     }
@@ -502,7 +503,7 @@ class AlertNotificationService
         return 'Ops Center 告警通道健康自检：连通正常，请忽略。';
     }
 
-    private function failure(string $channel, OpsAlert $alert, \Throwable $e): array
+    private function failure(string $channel, OpsAlert $alert, Throwable $e): array
     {
         Log::warning("Ops alert {$channel} notification failed", [
             'alert_id' => $alert->id,
@@ -533,6 +534,25 @@ class AlertNotificationService
      */
     private function formatMessage(OpsAlert $alert): string
     {
+        $template = '';
+
+        try {
+            $template = trim((string) OpsAlertSetting::value('message_template'));
+        } catch (Throwable) {
+            $template = '';
+        }
+
+        if ($template !== '') {
+            return strtr($template, [
+                '{title}' => (string) $alert->title,
+                '{severity}' => (string) $alert->severity,
+                '{source}' => (string) $alert->source,
+                '{status}' => (string) $alert->status,
+                '{time}' => optional($alert->last_seen_at)->toDateTimeString() ?? '',
+                '{message}' => (string) $alert->message,
+            ]);
+        }
+
         return implode(PHP_EOL, [
             "Ops Center 告警：{$alert->title}",
             "级别：{$alert->severity}",
@@ -570,12 +590,12 @@ class AlertNotificationService
     {
         try {
             return Schema::hasTable('ops_alert_settings');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
 
-    private function safeExceptionMessage(\Throwable $e): string
+    private function safeExceptionMessage(Throwable $e): string
     {
         $message = $e->getMessage();
         $message = preg_replace('/https:\/\/api\.telegram\.org\/bot[^\/\s]+/i', 'https://api.telegram.org/bot[FILTERED]', $message) ?? $message;

@@ -540,6 +540,12 @@ class AlertCenterService
             OpsAlertSetting::setValue($key, $payload[$key]);
         }
 
+        // message_template 走独立可选守卫（不在全 required 的 $keys 循环内），
+        // 既保留旧设置 payload 的兼容性，又能持久化自定义模板。
+        if (array_key_exists('message_template', $payload)) {
+            OpsAlertSetting::setValue('message_template', (string) $payload['message_template']);
+        }
+
         return $this->settings();
     }
 
