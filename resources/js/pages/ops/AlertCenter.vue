@@ -307,6 +307,12 @@
                         :value="item.source"
                     />
                 </el-select>
+
+                <el-select v-model="selectedPresetId" clearable placeholder="筛选预设" class="preset-select" @change="applyPreset">
+                    <el-option v-for="p in presets" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+                <el-button @click="handleSavePreset">保存筛选</el-button>
+                <el-button v-if="selectedPresetId" text type="danger" @click="handleDeletePreset">删除预设</el-button>
             </div>
 
             <el-table :data="alerts" border stripe v-loading="loading" empty-text="暂无告警">
@@ -401,7 +407,9 @@ import {
     acknowledgeAlert,
     assignAlert,
     createAlertDemoScenarios,
+    deleteAlertPreset,
     evaluateAlerts,
+    getAlertPresets,
     getAlertSettings,
     getAlertTrend,
     getLatestAlertEvaluation,
@@ -411,11 +419,13 @@ import {
     getAlertSummary,
     resolveAlert,
     runAlertHealthCheck,
+    saveAlertPreset,
     testAlertNotification,
     toggleAlertRule,
     updateAlertSettings,
     updateAlertRule,
     type AlertEvaluationStatus,
+    type AlertPreset,
     type AlertRule,
     type AlertRealtimePayload,
     type AlertNotificationStatus,
@@ -460,6 +470,8 @@ const ruleDrafts = ref<Record<string, {
 const status = ref<AlertStatus | 'all'>('open')
 const severity = ref('')
 const source = ref('')
+const presets = ref<AlertPreset[]>([])
+const selectedPresetId = ref<number | undefined>(undefined)
 const page = ref(1)
 const perPage = ref(20)
 const pagination = ref({
@@ -834,6 +846,61 @@ const handleFilterChange = async () => {
     await loadAlerts()
 }
 
+const loadPresets = async () => {
+    try {
+        const res = await getAlertPresets()
+        presets.value = res.data.data.items
+    } catch {
+        presets.value = []
+    }
+}
+
+const applyPreset = async (id: number | undefined) => {
+    const preset = presets.value.find(p => p.id === id)
+    if (!preset) return
+    status.value = (preset.filters.status as AlertStatus) ?? 'all'
+    severity.value = preset.filters.severity ?? ''
+    source.value = preset.filters.source ?? ''
+    await handleFilterChange()
+}
+
+const handleSavePreset = async () => {
+    try {
+        const { value } = await ElMessageBox.prompt('为当前筛选取个名字', '保存筛选预设', {
+            confirmButtonText: '保存',
+            cancelButtonText: '取消',
+            inputPattern: /\S+/,
+            inputErrorMessage: '名称不能为空',
+        })
+        const filters: Record<string, string> = {}
+        if (status.value && status.value !== 'all') filters.status = status.value
+        if (severity.value) filters.severity = severity.value
+        if (source.value) filters.source = source.value
+        await saveAlertPreset({ name: value.trim(), filters })
+        ElMessage.success('已保存预设')
+        await loadPresets()
+    } catch {
+        // 取消或校验失败
+    }
+}
+
+const handleDeletePreset = async () => {
+    if (!selectedPresetId.value) return
+    try {
+        await ElMessageBox.confirm('删除后不可恢复。', '删除预设', {
+            type: 'warning',
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+        })
+    } catch {
+        return
+    }
+    await deleteAlertPreset(selectedPresetId.value)
+    selectedPresetId.value = undefined
+    ElMessage.success('已删除')
+    await loadPresets()
+}
+
 /**
  * 每页条数变化后回到第一页。
  */
@@ -1026,7 +1093,7 @@ const loadTrend = async () => {
 const handleTrendResize = () => trendChart?.resize()
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadPresets()])
     startRealtime()
     window.addEventListener('resize', handleTrendResize)
 })
