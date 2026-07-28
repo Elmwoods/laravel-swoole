@@ -189,6 +189,17 @@ return [
             'ack_minutes' => (string) env('OPS_ALERT_SLA_ACK_MINUTES', '10,30,120'),
             'resolve_minutes' => (string) env('OPS_ALERT_SLA_RESOLVE_MINUTES', '60,240,1440'),
         ],
+
+        // 值班排班自动指派：开启后，规则引擎新建的告警自动指派给当前值班人（值班排班表按绝对时间段维护）。
+        // 默认 opt-in 关闭。
+        'on_call' => [
+            'enabled' => filter_var(env('OPS_ALERT_ON_CALL_ENABLED', false), FILTER_VALIDATE_BOOL),
+        ],
+
+        // 指派通知推送：告警被指派/认领时向被指派人推送一条通知（复用现有通道，severity=info 路由）。默认 opt-in 关闭。
+        'assignment_notify' => [
+            'enabled' => filter_var(env('OPS_ALERT_ASSIGNMENT_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOL),
+        ],
     ],
 
     /*

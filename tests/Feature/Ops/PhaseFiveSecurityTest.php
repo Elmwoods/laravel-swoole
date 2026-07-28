@@ -7,8 +7,9 @@ use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Models\OpsAlert;
-use App\Services\Admin\AdminPermissionRegistry;
+use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
+use App\Services\Admin\AdminPermissionRegistry;
 use App\Services\Admin\AdminTwoFactorService;
 use App\Services\Ops\Docker\DockerService;
 use App\Services\Ops\OctaneControlService;
@@ -38,8 +39,8 @@ class PhaseFiveSecurityTest extends TestCase
 
         $this->withHeader('User-Agent', 'Ops Browser/1.0 token=should-not-appear')
             ->postJson('/api/admin/auth/login', array_merge([
-            'email' => $admin->email,
-        ], $this->encryptedPasswordPayload('secret-password')))
+                'email' => $admin->email,
+            ], $this->encryptedPasswordPayload('secret-password')))
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.requires_two_factor_setup', true);
@@ -201,7 +202,7 @@ class PhaseFiveSecurityTest extends TestCase
         $email = Str::upper($admin->email);
 
         for ($attempt = 1; $attempt <= 5; $attempt++) {
-            app(\App\Services\Admin\AdminLoginThrottleService::class)->hit($email, '127.0.0.1');
+            app(AdminLoginThrottleService::class)->hit($email, '127.0.0.1');
         }
 
         $this->mock(AdminPasswordCryptoService::class, function ($mock): void {
@@ -507,10 +508,10 @@ class PhaseFiveSecurityTest extends TestCase
     public function test_super_admin_role_cannot_be_disabled_or_lose_permissions(): void
     {
         $admin = $this->createAdmin(['admin.roles.manage']);
-        app(\App\Services\Admin\AdminPermissionRegistry::class)->syncDefaults();
+        app(AdminPermissionRegistry::class)->syncDefaults();
         $superRole = AdminRole::query()->where('slug', 'super_admin')->firstOrFail();
         $permissionIds = AdminPermission::query()
-            ->whereIn('slug', \App\Services\Admin\AdminPermissionRegistry::slugs())
+            ->whereIn('slug', AdminPermissionRegistry::slugs())
             ->pluck('id')
             ->all();
 
@@ -981,6 +982,7 @@ class PhaseFiveSecurityTest extends TestCase
             ['POST', '/api/ops/alerts/evaluate', []],
             ['POST', "/api/ops/alerts/{$alert->id}/acknowledge", []],
             ['POST', "/api/ops/alerts/{$alert->id}/assign", []],
+            ['POST', '/api/ops/alerts/on-call', []],
             ['GET', '/api/ops/logs/laravel', []],
             ['GET', '/api/ops/test-broadcast', []],
         ];

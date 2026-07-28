@@ -40,6 +40,7 @@ class AlertCenterService
         private readonly MysqlService $mysqlService,
         private readonly OctaneControlService $octaneService,
         private readonly SupervisorService $supervisorService,
+        private readonly OnCallRotationService $onCall,
     ) {}
 
     /**
@@ -706,13 +707,21 @@ class AlertCenterService
 
     public function assign(OpsAlert $alert, array $payload): OpsAlert
     {
+        return $this->markAssigned($alert, $payload['assigned_to'], $payload['assigned_to'], $payload['note'] ?? null);
+    }
+
+    /**
+     * 设置告警的指派人并记录 assigned 事件（不含通知），供手动指派与值班自动指派共用。
+     */
+    private function markAssigned(OpsAlert $alert, string $person, string $actor, ?string $note): OpsAlert
+    {
         $alert->forceFill([
-            'assigned_to' => $payload['assigned_to'],
+            'assigned_to' => $person,
             'assigned_at' => now(),
         ])->save();
 
         $alert = $alert->refresh();
-        $this->recordAlertEvent($alert, 'assigned', $payload['assigned_to'], $payload['note'] ?? null, $alert->status, $alert->status);
+        $this->recordAlertEvent($alert, 'assigned', $actor, $note, $alert->status, $alert->status);
 
         return $alert;
     }
@@ -1248,6 +1257,15 @@ class AlertCenterService
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
+
+        // 值班自动指派：仅对刚新建、尚未指派的告警，且开启值班自动指派、当前有值班人时生效。
+        // 自动指派不发指派通知（告警本体已外发，避免双重刷屏）。
+        if ($alert->wasRecentlyCreated
+            && $alert->assigned_to === null
+            && (bool) config('ops.alerts.on_call.enabled', false)
+            && ($person = $this->onCall->currentOnCall()) !== null) {
+            $alert = $this->markAssigned($alert, $person, 'on-call-auto', '值班自动指派');
+        }
 
         return [$alert, $shouldRepeatNotification];
     }
