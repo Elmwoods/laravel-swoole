@@ -123,6 +123,16 @@ return [
             ['after_minutes' => (int) env('OPS_ALERT_ESCALATION_L3_MINUTES', 120), 'channels' => [], 'reassign_on_call' => false],
         ],
 
+        // 告警关联抑制（父子来源依赖，部署期设）：父来源有 open 告警时，抑制依赖它的子来源告警外发（仍入库、标 suppressed）。
+        'correlation' => [
+            'enabled' => filter_var(env('OPS_ALERT_CORRELATION_ENABLED', false), FILTER_VALIDATE_BOOL),
+            // child_source => [parent_sources...]；父来源 open 时子来源被抑制。
+            'dependencies' => [
+                'queue' => ['mysql', 'redis'],
+                'cache' => ['redis'],
+            ],
+        ],
+
         'telegram' => [
             'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL),
             'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'),

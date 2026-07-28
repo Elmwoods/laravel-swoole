@@ -43,6 +43,7 @@ class AlertCenterService
         private readonly SupervisorService $supervisorService,
         private readonly OnCallRotationService $onCall,
         private readonly AlertSilenceService $silences,
+        private readonly AlertCorrelationService $correlation,
     ) {}
 
     private const BATCH_CAP = 500;
@@ -929,6 +930,7 @@ class AlertCenterService
             'assigned_at' => optional($alert->assigned_at)->toDateTimeString(),
             'escalated_at' => optional($alert->escalated_at)->toDateTimeString(),
             'escalation_level' => (int) $alert->escalation_level,
+            'suppressed_at' => optional($alert->suppressed_at)->toDateTimeString(),
             'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
@@ -1417,6 +1419,9 @@ class AlertCenterService
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
+
+        // 关联抑制标记：父来源正在 firing 则标 suppressed_at（供 UI/审计），send() 亦会跳过外发。
+        $alert->forceFill(['suppressed_at' => $this->correlation->isSuppressed($alert) ? now() : null])->save();
 
         // 值班自动指派：仅对刚新建、尚未指派的告警，且开启值班自动指派、当前有值班人时生效。
         // 自动指派不发指派通知（告警本体已外发，避免双重刷屏）。

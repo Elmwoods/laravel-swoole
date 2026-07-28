@@ -20,6 +20,7 @@ class AlertNotificationService
 {
     public function __construct(
         private readonly AlertSilenceService $silences,
+        private readonly AlertCorrelationService $correlation,
     ) {}
 
     /**
@@ -91,6 +92,13 @@ class AlertNotificationService
         if ($this->silences->isSilenced($alert)) {
             return collect($targets)
                 ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'silenced']])
+                ->all();
+        }
+
+        // 关联抑制：父来源正在 firing 时，抑制子来源告警外发（仍入库/广播）。
+        if ($this->correlation->isSuppressed($alert)) {
+            return collect($targets)
+                ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'suppressed']])
                 ->all();
         }
 
