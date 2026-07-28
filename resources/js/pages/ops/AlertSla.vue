@@ -78,6 +78,49 @@
                 </el-table-column>
             </el-table>
         </el-card>
+
+        <el-card shadow="never">
+            <template #header>
+                SLA 达标率
+                <span class="muted">（窗口内在目标时限内完成的比例）</span>
+            </template>
+            <div class="compliance-grid">
+                <div class="compliance-col">
+                    <div class="compliance-title">
+                        确认达标率（ack）
+                        <el-tag v-if="ackOverall" size="small" :type="rateTag(ackOverall.rate)" effect="plain">
+                            总体 {{ ratePct(ackOverall.rate) }}（{{ ackOverall.within }}/{{ ackOverall.total }}）
+                        </el-tag>
+                    </div>
+                    <div v-for="row in ackComplianceRows" :key="row.key" class="compliance-row">
+                        <el-tag :type="row.tag" effect="plain" class="compliance-sev">{{ row.label }}</el-tag>
+                        <el-progress
+                            :percentage="row.rate ?? 0"
+                            :status="row.rate === null ? undefined : (row.rate >= 90 ? 'success' : row.rate >= 60 ? 'warning' : 'exception')"
+                            class="compliance-bar"
+                        />
+                        <span class="compliance-count">{{ row.rate === null ? '无数据' : `${row.within}/${row.total}` }}</span>
+                    </div>
+                </div>
+                <div class="compliance-col">
+                    <div class="compliance-title">
+                        恢复达标率（resolve）
+                        <el-tag v-if="resolveOverall" size="small" :type="rateTag(resolveOverall.rate)" effect="plain">
+                            总体 {{ ratePct(resolveOverall.rate) }}（{{ resolveOverall.within }}/{{ resolveOverall.total }}）
+                        </el-tag>
+                    </div>
+                    <div v-for="row in resolveComplianceRows" :key="row.key" class="compliance-row">
+                        <el-tag :type="row.tag" effect="plain" class="compliance-sev">{{ row.label }}</el-tag>
+                        <el-progress
+                            :percentage="row.rate ?? 0"
+                            :status="row.rate === null ? undefined : (row.rate >= 90 ? 'success' : row.rate >= 60 ? 'warning' : 'exception')"
+                            class="compliance-bar"
+                        />
+                        <span class="compliance-count">{{ row.rate === null ? '无数据' : `${row.within}/${row.total}` }}</span>
+                    </div>
+                </div>
+            </div>
+        </el-card>
     </div>
 </template>
 
@@ -137,6 +180,29 @@ const severityRows = computed(() => {
         { key: 'info', label: '提示', tag: 'info' as const, avg: bs?.info.mttr_avg_seconds ?? 0, count: bs?.info.mttr_count ?? 0 },
     ]
 })
+
+const SEV_META = [
+    { key: 'critical', label: '严重', tag: 'danger' as const },
+    { key: 'warning', label: '警告', tag: 'warning' as const },
+    { key: 'info', label: '提示', tag: 'info' as const },
+]
+
+const complianceRows = (kind: 'ack' | 'resolve') =>
+    SEV_META.map(m => {
+        const cell = data.value?.compliance?.[kind]?.[m.key as 'critical' | 'warning' | 'info']
+        return { ...m, within: cell?.within ?? 0, total: cell?.total ?? 0, rate: cell?.rate ?? null }
+    })
+
+const ackComplianceRows = computed(() => complianceRows('ack'))
+const resolveComplianceRows = computed(() => complianceRows('resolve'))
+const ackOverall = computed(() => data.value?.compliance?.ack?.overall ?? null)
+const resolveOverall = computed(() => data.value?.compliance?.resolve?.overall ?? null)
+
+const ratePct = (rate: number | null): string => (rate === null ? '无数据' : `${rate}%`)
+const rateTag = (rate: number | null): 'success' | 'warning' | 'danger' | 'info' => {
+    if (rate === null) return 'info'
+    return rate >= 90 ? 'success' : rate >= 60 ? 'warning' : 'danger'
+}
 
 const renderTrend = () => {
     if (!trendHasData.value || !trendRef.value) return
@@ -234,6 +300,45 @@ onBeforeUnmount(() => {
 .severity-row {
     display: grid;
     gap: 10px;
+}
+
+.compliance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+}
+
+.compliance-col {
+    display: grid;
+    gap: 10px;
+}
+
+.compliance-title {
+    align-items: center;
+    display: flex;
+    font-weight: 600;
+    gap: 8px;
+}
+
+.compliance-row {
+    align-items: center;
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    gap: 10px;
+}
+
+.compliance-sev {
+    justify-self: start;
+}
+
+.compliance-bar {
+    min-width: 0;
+}
+
+.compliance-count {
+    color: #94a3b8;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
 .severity-item {

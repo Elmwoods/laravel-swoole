@@ -201,6 +201,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-oncall',
+                name: 'OnCallSchedule',
+                component: () => import('../pages/ops/OnCallSchedule.vue'),
+                meta: {
+                    title: '值班排班',
+                    description: '按时间段维护值班人，开启后新告警自动指派给当前值班人',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -315,6 +325,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.alerts.view', '/admin/ops/alerts'],
         ['ops.alerts.view', '/admin/ops/alerts-sla'],
         ['ops.alerts.view', '/admin/ops/alerts-silence'],
+        ['ops.alerts.view', '/admin/ops/alerts-oncall'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

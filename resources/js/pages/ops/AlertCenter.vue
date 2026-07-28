@@ -160,6 +160,24 @@
                             自定义文本通道（Telegram / 邮件 / 钉钉 / 飞书）通知文案；Webhook 仍为结构化 JSON。留空恢复默认。
                         </div>
                     </el-form-item>
+                    <el-form-item label="每通道模板">
+                        <el-collapse class="channel-templates">
+                            <el-collapse-item v-for="ch in textChannelKeys" :key="ch" :name="ch" :title="`${channelLabel(ch)} 专属模板`">
+                                <el-input
+                                    v-model="settingsDraft[`message_template_${ch}`]"
+                                    type="textarea"
+                                    :rows="3"
+                                    :maxlength="2000"
+                                    show-word-limit
+                                    :disabled="settingsSaving"
+                                    placeholder="留空=回退上面的全局模板。占位符同上。"
+                                />
+                            </el-collapse-item>
+                        </el-collapse>
+                        <div class="muted inline-help">
+                            为单个通道单独定制文案；留空则回退全局模板、再回退内置。
+                        </div>
+                    </el-form-item>
                     <el-button type="primary" :loading="settingsSaving" @click="handleSaveSettings">
                         保存策略
                     </el-button>
@@ -627,6 +645,9 @@ const channelLabel = (name: string): string => CHANNEL_LABELS[name] ?? name
 const channelKeys = computed<string[]>(() =>
     Object.keys(notificationStatus.value).filter(key => key !== 'checked_at' && key !== 'settings'),
 )
+
+// 支持自定义模板的文本通道（去掉 webhook——结构化载荷不套模板）。
+const textChannelKeys = computed<string[]>(() => channelKeys.value.filter(name => name !== 'webhook'))
 
 const notificationChannels = computed(() =>
     channelKeys.value.map(name => ({
