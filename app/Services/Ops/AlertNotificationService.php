@@ -80,18 +80,23 @@ class AlertNotificationService
     /**
      * 发送告警通知（遍历所有通道）。
      */
-    public function send(OpsAlert $alert): array
+    public function send(OpsAlert $alert, ?array $channels = null): array
     {
+        // 可选 $channels：收窄到指定通道集（如升级级别专属通道）；null=全部启用通道。
+        $targets = $channels === null
+            ? $this->channels()
+            : array_values(array_intersect($this->channels(), $channels));
+
         // 值班静默窗口：命中则只入库/广播（由调用方完成），不外发到任何通道。
         if ($this->silences->isSilenced($alert)) {
-            return collect($this->channels())
+            return collect($targets)
                 ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'silenced']])
                 ->all();
         }
 
         $result = [];
 
-        foreach ($this->channels() as $channel) {
+        foreach ($targets as $channel) {
             $result[$channel] = $this->dispatch($channel, $alert);
         }
 

@@ -832,6 +832,7 @@ class AlertCenterService
             'assigned_to' => $alert->assigned_to,
             'assigned_at' => optional($alert->assigned_at)->toDateTimeString(),
             'escalated_at' => optional($alert->escalated_at)->toDateTimeString(),
+            'escalation_level' => (int) $alert->escalation_level,
             'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
@@ -1369,44 +1370,146 @@ class AlertCenterService
             return collect();
         }
 
-        $after = max(1, (int) OpsAlertSetting::value('escalation_after_minutes'));
-        $cutoff = now()->subMinutes($after);
+        $levels = $this->escalationLevels();
 
-        $alerts = OpsAlert::query()
-            ->where('status', 'open')
-            ->where('severity', 'critical')
-            ->where('created_at', '<=', $cutoff)
-            ->where(function ($query) use ($cutoff): void {
-                $query->whereNull('escalated_at')->orWhere('escalated_at', '<=', $cutoff);
-            })
-            ->get();
-
-        if ($dryRun) {
-            return $alerts;
+        if ($levels === []) {
+            return collect();
         }
 
-        return $alerts->map(function (OpsAlert $alert) use ($after): OpsAlert {
-            $unackedMinutes = optional($alert->created_at)->diffInMinutes(now()) ?? 0;
+        $now = now();
+        $firstAfter = $levels[0]['after_minutes'];
 
-            $alert->forceFill(['escalated_at' => now()])->save();
+        // 只取够老（已达 L1 阈值）的 open critical。
+        $candidates = OpsAlert::query()
+            ->where('status', 'open')
+            ->where('severity', 'critical')
+            ->where('created_at', '<=', $now->copy()->subMinutes($firstAfter))
+            ->get();
+
+        // 计算每条的目标级别与是否需要动作（进阶升级 or 到点重推）。
+        $due = $candidates
+            ->map(function (OpsAlert $alert) use ($levels, $now): ?array {
+                $age = (int) (optional($alert->created_at)->diffInMinutes($now) ?? 0);
+                $target = $this->targetEscalationLevel($levels, $age);
+
+                if ($target < 1) {
+                    return null;
+                }
+
+                $current = (int) $alert->escalation_level;
+                $interval = $levels[$target - 1]['after_minutes'];
+
+                // 进阶到更高级别，或已在该级但重推间隔已到。
+                if ($target > $current || $this->escalationReNotifyDue($alert, $interval, $now)) {
+                    return ['alert' => $alert, 'level' => $target, 'age' => $age];
+                }
+
+                return null;
+            })
+            ->filter()
+            ->values();
+
+        if ($dryRun) {
+            return $due->map(fn (array $row): OpsAlert => $row['alert'])->values();
+        }
+
+        return $due->map(function (array $row) use ($levels, $now): OpsAlert {
+            /** @var OpsAlert $alert */
+            $alert = $row['alert'];
+            $level = $row['level'];
+            $age = $row['age'];
+            $config = $levels[$level - 1];
+
+            $alert->forceFill(['escalated_at' => $now, 'escalation_level' => $level])->save();
             $alert = $alert->refresh();
 
-            $this->notification->send($alert);
+            // 该级要求改派 → 重指派给当前值班人（若有）。
+            if (! empty($config['reassign_on_call']) && ($person = $this->onCall->currentOnCall()) !== null) {
+                $alert = $this->markAssigned($alert, $person, 'ops-escalator', "L{$level} 升级改派");
+            }
+
+            // 该级指定通道（空=全部启用通道）。
+            $this->notification->send($alert, $config['channels'] ?: null);
 
             $this->recordAlertEvent(
                 $alert,
                 'escalated',
                 'ops-escalator',
-                "未确认超过 {$after} 分钟，已升级重推。",
+                "已升级至 L{$level}（未闭环约 {$age} 分钟）。",
                 $alert->status,
                 $alert->status,
-                ['unacked_minutes' => (int) $unackedMinutes, 'hit_count' => (int) $alert->hit_count],
+                ['level' => $level, 'unacked_minutes' => $age, 'hit_count' => (int) $alert->hit_count],
             );
 
             broadcast(new AlertTriggered($alert));
 
             return $alert;
         });
+    }
+
+    /**
+     * 解析多级升级配置（clamp + 按 after_minutes 升序）。回退：config 为空时用 escalation_after_minutes 设置构造单级。
+     *
+     * @return array<int, array{after_minutes: int, channels: array<int, string>, reassign_on_call: bool}>
+     */
+    private function escalationLevels(): array
+    {
+        $raw = (array) config('ops.alerts.escalation_levels', []);
+        $levels = [];
+
+        foreach ($raw as $level) {
+            $levels[] = [
+                'after_minutes' => max(1, (int) ($level['after_minutes'] ?? 0)),
+                'channels' => array_values(array_filter(
+                    (array) ($level['channels'] ?? []),
+                    fn ($c): bool => is_string($c) && $c !== '',
+                )),
+                'reassign_on_call' => (bool) ($level['reassign_on_call'] ?? false),
+            ];
+        }
+
+        if ($levels === []) {
+            $levels[] = [
+                'after_minutes' => max(1, (int) OpsAlertSetting::value('escalation_after_minutes')),
+                'channels' => [],
+                'reassign_on_call' => false,
+            ];
+        }
+
+        usort($levels, fn (array $a, array $b): int => $a['after_minutes'] <=> $b['after_minutes']);
+
+        return $levels;
+    }
+
+    /**
+     * 达到（age >= after_minutes）的最高级别序号（1-based）；levels 已升序。
+     *
+     * @param  array<int, array{after_minutes: int}>  $levels
+     */
+    private function targetEscalationLevel(array $levels, int $age): int
+    {
+        $target = 0;
+
+        foreach ($levels as $level) {
+            if ($age >= $level['after_minutes']) {
+                $target++;
+
+                continue;
+            }
+
+            break;
+        }
+
+        return $target;
+    }
+
+    private function escalationReNotifyDue(OpsAlert $alert, int $intervalMinutes, CarbonInterface $now): bool
+    {
+        if ($alert->escalated_at === null) {
+            return true;
+        }
+
+        return $alert->escalated_at->lte($now->copy()->subMinutes($intervalMinutes));
     }
 
     private function autoResolveRecoveredAlerts(array $detectedFingerprints): Collection
