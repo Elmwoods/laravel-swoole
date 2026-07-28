@@ -40,6 +40,7 @@ class AlertCenterService
         private readonly MysqlService $mysqlService,
         private readonly OctaneControlService $octaneService,
         private readonly SupervisorService $supervisorService,
+        private readonly OnCallRotationService $onCall,
     ) {}
 
     /**
@@ -383,8 +384,59 @@ class AlertCenterService
                 'ack_minutes' => $this->slaTargets('ack_minutes'),
                 'resolve_minutes' => $this->slaTargets('resolve_minutes'),
             ],
+            'compliance' => [
+                'ack' => $this->slaCompliance($ackPairs, 'ack_minutes'),
+                'resolve' => $this->slaCompliance($resolvePairs, 'resolve_minutes'),
+            ],
             'open_breaches' => OpsAlert::query()->where('source', 'sla_breach')->where('status', 'open')->count(),
         ];
+    }
+
+    /**
+     * SLA 达标率：按严重级统计实际时长 <= 该级目标（分钟*60 秒）的比例。
+     * rate = total>0 ? round(within/total*100) : null（无数据不计率）。
+     *
+     * @param  array<int, array{severity: string, seconds: int}>  $pairs
+     * @return array<string, array{within: int, total: int, rate: int|null}>
+     */
+    private function slaCompliance(array $pairs, string $targetKey): array
+    {
+        $targets = $this->slaTargets($targetKey);
+        $by = collect($pairs)->groupBy('severity');
+
+        $tally = function (Collection $group, int $targetSeconds): array {
+            $total = $group->count();
+            $within = $group->filter(fn (array $pair): bool => $pair['seconds'] <= $targetSeconds)->count();
+
+            return [
+                'within' => $within,
+                'total' => $total,
+                'rate' => $total > 0 ? (int) round($within / $total * 100) : null,
+            ];
+        };
+
+        $result = [];
+        $overall = collect();
+        $overallWithin = 0;
+
+        foreach (['critical', 'warning', 'info'] as $severity) {
+            $group = $by->get($severity, collect());
+            $targetSeconds = ($targets[$severity] ?? 1) * 60;
+            $stats = $tally($group, $targetSeconds);
+            $result[$severity] = $stats;
+
+            $overall = $overall->merge($group);
+            $overallWithin += $stats['within'];
+        }
+
+        $overallTotal = $overall->count();
+        $result['overall'] = [
+            'within' => $overallWithin,
+            'total' => $overallTotal,
+            'rate' => $overallTotal > 0 ? (int) round($overallWithin / $overallTotal * 100) : null,
+        ];
+
+        return $result;
     }
 
     /**
@@ -540,10 +592,17 @@ class AlertCenterService
             OpsAlertSetting::setValue($key, $payload[$key]);
         }
 
-        // message_template 走独立可选守卫（不在全 required 的 $keys 循环内），
+        // message_template（全局）+ 每通道模板走独立可选守卫（不在全 required 的 $keys 循环内），
         // 既保留旧设置 payload 的兼容性，又能持久化自定义模板。
         if (array_key_exists('message_template', $payload)) {
             OpsAlertSetting::setValue('message_template', (string) $payload['message_template']);
+        }
+
+        foreach (OpsAlertSetting::textChannels() as $channel) {
+            $key = "message_template_{$channel}";
+            if (array_key_exists($key, $payload)) {
+                OpsAlertSetting::setValue($key, (string) $payload[$key]);
+            }
         }
 
         return $this->settings();
@@ -706,13 +765,26 @@ class AlertCenterService
 
     public function assign(OpsAlert $alert, array $payload): OpsAlert
     {
+        $alert = $this->markAssigned($alert, $payload['assigned_to'], $payload['assigned_to'], $payload['note'] ?? null);
+
+        // 手动指派 → 推送指派通知（config 未开时该方法内部 no-op）。自动指派路径不发（见 storeAlert）。
+        $this->notification->sendAssignment($alert, $payload['assigned_to']);
+
+        return $alert;
+    }
+
+    /**
+     * 设置告警的指派人并记录 assigned 事件（不含通知），供手动指派与值班自动指派共用。
+     */
+    private function markAssigned(OpsAlert $alert, string $person, string $actor, ?string $note): OpsAlert
+    {
         $alert->forceFill([
-            'assigned_to' => $payload['assigned_to'],
+            'assigned_to' => $person,
             'assigned_at' => now(),
         ])->save();
 
         $alert = $alert->refresh();
-        $this->recordAlertEvent($alert, 'assigned', $payload['assigned_to'], $payload['note'] ?? null, $alert->status, $alert->status);
+        $this->recordAlertEvent($alert, 'assigned', $actor, $note, $alert->status, $alert->status);
 
         return $alert;
     }
@@ -1248,6 +1320,15 @@ class AlertCenterService
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
+
+        // 值班自动指派：仅对刚新建、尚未指派的告警，且开启值班自动指派、当前有值班人时生效。
+        // 自动指派不发指派通知（告警本体已外发，避免双重刷屏）。
+        if ($alert->wasRecentlyCreated
+            && $alert->assigned_to === null
+            && (bool) config('ops.alerts.on_call.enabled', false)
+            && ($person = $this->onCall->currentOnCall()) !== null) {
+            $alert = $this->markAssigned($alert, $person, 'on-call-auto', '值班自动指派');
+        }
 
         return [$alert, $shouldRepeatNotification];
     }

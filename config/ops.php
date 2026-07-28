@@ -119,11 +119,13 @@ return [
             'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL),
             'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'),
             'chat_id' => env('OPS_ALERT_TELEGRAM_CHAT_ID'),
+            'message_template' => (string) env('OPS_ALERT_TELEGRAM_MESSAGE_TEMPLATE', ''),
         ],
 
         'mail' => [
             'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
             'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))),
+            'message_template' => (string) env('OPS_ALERT_MAIL_MESSAGE_TEMPLATE', ''),
         ],
 
         'webhook' => [
@@ -136,12 +138,14 @@ return [
             'enabled' => filter_var(env('OPS_ALERT_DINGTALK_ENABLED', false), FILTER_VALIDATE_BOOL),
             'webhook' => env('OPS_ALERT_DINGTALK_WEBHOOK'),
             'secret' => env('OPS_ALERT_DINGTALK_SECRET'),
+            'message_template' => (string) env('OPS_ALERT_DINGTALK_MESSAGE_TEMPLATE', ''),
         ],
 
         'feishu' => [
             'enabled' => filter_var(env('OPS_ALERT_FEISHU_ENABLED', false), FILTER_VALIDATE_BOOL),
             'webhook' => env('OPS_ALERT_FEISHU_WEBHOOK'),
             'secret' => env('OPS_ALERT_FEISHU_SECRET'),
+            'message_template' => (string) env('OPS_ALERT_FEISHU_MESSAGE_TEMPLATE', ''),
         ],
 
         'demo' => [
@@ -188,6 +192,17 @@ return [
             // csv 顺序 critical,warning,info；由 AlertCenterService::slaTargets 解析成 per-severity map。
             'ack_minutes' => (string) env('OPS_ALERT_SLA_ACK_MINUTES', '10,30,120'),
             'resolve_minutes' => (string) env('OPS_ALERT_SLA_RESOLVE_MINUTES', '60,240,1440'),
+        ],
+
+        // 值班排班自动指派：开启后，规则引擎新建的告警自动指派给当前值班人（值班排班表按绝对时间段维护）。
+        // 默认 opt-in 关闭。
+        'on_call' => [
+            'enabled' => filter_var(env('OPS_ALERT_ON_CALL_ENABLED', false), FILTER_VALIDATE_BOOL),
+        ],
+
+        // 指派通知推送：告警被指派/认领时向被指派人推送一条通知（复用现有通道，severity=info 路由）。默认 opt-in 关闭。
+        'assignment_notify' => [
+            'enabled' => filter_var(env('OPS_ALERT_ASSIGNMENT_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOL),
         ],
     ],
 

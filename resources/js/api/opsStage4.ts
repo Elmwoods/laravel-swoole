@@ -120,6 +120,10 @@ export interface AlertSettings {
     escalation_enabled: boolean
     escalation_after_minutes: number
     message_template?: string
+    message_template_telegram?: string
+    message_template_mail?: string
+    message_template_dingtalk?: string
+    message_template_feishu?: string
     severity_channels: Record<AlertSeverity, Record<string, boolean>>
     // 各通道总开关 <channel>_enabled
     [key: string]: number | boolean | string | Record<string, unknown> | undefined
@@ -237,8 +241,20 @@ export interface AlertSlaResult {
         ack_minutes: { critical: number; warning: number; info: number }
         resolve_minutes: { critical: number; warning: number; info: number }
     }
+    compliance: {
+        ack: SlaComplianceBySeverity
+        resolve: SlaComplianceBySeverity
+    }
     open_breaches: number
 }
+
+export interface SlaComplianceCell {
+    within: number
+    total: number
+    rate: number | null
+}
+
+export type SlaComplianceBySeverity = Record<'critical' | 'warning' | 'info' | 'overall', SlaComplianceCell>
 
 export const getAlertSla = (days = 30) =>
     request.get<ApiResponse<AlertSlaResult>>('/api/ops/alerts/sla', { params: { days } })
@@ -320,3 +336,25 @@ export const assignAlert = (id: number, payload: { assigned_to: string; note?: s
 
 export const resolveAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/resolve`, payload)
+
+export interface OnCallShift {
+    id: number
+    assignee: string
+    label: string | null
+    starts_at: string | null
+    ends_at: string | null
+    is_active: boolean
+    current: boolean
+}
+
+export const getOnCall = () =>
+    request.get<ApiResponse<{ items: OnCallShift[]; current: string | null }>>('/api/ops/alerts/on-call')
+
+export const createOnCallShift = (payload: { assignee: string; label?: string | null; starts_at: string; ends_at: string }) =>
+    request.post<ApiResponse<{ shift: { id: number } }>>('/api/ops/alerts/on-call', payload)
+
+export const toggleOnCallShift = (id: number, is_active: boolean) =>
+    request.patch<ApiResponse<{ updated: boolean }>>(`/api/ops/alerts/on-call/${id}`, { is_active })
+
+export const deleteOnCallShift = (id: number) =>
+    request.delete<ApiResponse<{ deleted: boolean }>>(`/api/ops/alerts/on-call/${id}`)

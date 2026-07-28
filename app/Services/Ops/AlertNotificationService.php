@@ -126,6 +126,35 @@ class AlertNotificationService
         return $result;
     }
 
+    /**
+     * 告警被指派/认领时向被指派人推送一条通知（复用内存态 OpsAlert + dispatch，severity=info 走矩阵 info 行）。
+     * config 未开时 no-op。不落库。
+     */
+    public function sendAssignment(OpsAlert $alert, string $assignee): array
+    {
+        if (! (bool) config('ops.alerts.assignment_notify.enabled', false)) {
+            return [];
+        }
+
+        $notice = new OpsAlert([
+            'source' => 'alert-assignment',
+            'severity' => 'info',
+            'title' => '告警已指派',
+            'message' => "「{$alert->title}」（来源 {$alert->source}）已指派给 {$assignee}",
+            'status' => (string) $alert->status,
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        $result = [];
+
+        foreach ($this->channels() as $channel) {
+            $result[$channel] = $this->dispatch($channel, $notice);
+        }
+
+        return $result;
+    }
+
     private function dispatch(string $channel, OpsAlert $alert): array
     {
         return match ($channel) {
@@ -230,7 +259,7 @@ class AlertNotificationService
         try {
             $response = Http::timeout(5)->post("https://api.telegram.org/bot{$token}/sendMessage", [
                 'chat_id' => $chatId,
-                'text' => $this->formatMessage($alert),
+                'text' => $this->formatMessage($alert, 'telegram'),
                 'disable_web_page_preview' => true,
             ]);
 
@@ -256,7 +285,7 @@ class AlertNotificationService
         }
 
         try {
-            Mail::raw($this->formatMessage($alert), function ($message) use ($alert, $to): void {
+            Mail::raw($this->formatMessage($alert, 'mail'), function ($message) use ($alert, $to): void {
                 $message->to($to)->subject("[Ops Center][{$alert->severity}] {$alert->title}");
             });
 
@@ -326,7 +355,7 @@ class AlertNotificationService
         try {
             $response = Http::timeout(5)->post($url, [
                 'msgtype' => 'text',
-                'text' => ['content' => $this->formatMessage($alert)],
+                'text' => ['content' => $this->formatMessage($alert, 'dingtalk')],
             ]);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
@@ -353,7 +382,7 @@ class AlertNotificationService
         $secret = (string) config('ops.alerts.feishu.secret', '');
         $payload = [
             'msg_type' => 'text',
-            'content' => ['text' => $this->formatMessage($alert)],
+            'content' => ['text' => $this->formatMessage($alert, 'feishu')],
         ];
 
         if ($secret !== '') {
@@ -532,12 +561,19 @@ class AlertNotificationService
     /**
      * 通知文本格式。
      */
-    private function formatMessage(OpsAlert $alert): string
+    private function formatMessage(OpsAlert $alert, string $channel = ''): string
     {
         $template = '';
 
         try {
-            $template = trim((string) OpsAlertSetting::value('message_template'));
+            // 回退链：该通道专属模板 → 全局模板 → 内置。
+            if ($channel !== '') {
+                $template = trim((string) OpsAlertSetting::value("message_template_{$channel}"));
+            }
+
+            if ($template === '') {
+                $template = trim((string) OpsAlertSetting::value('message_template'));
+            }
         } catch (Throwable) {
             $template = '';
         }

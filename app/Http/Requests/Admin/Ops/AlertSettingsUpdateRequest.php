@@ -30,6 +30,11 @@ class AlertSettingsUpdateRequest extends FormRequest
             $rules["{$channel}_enabled"] = ['required', 'boolean'];
         }
 
+        // 每通道独立模板（仅文本通道，webhook 除外）——可选，回退全局。
+        foreach (array_diff($channels, ['webhook']) as $channel) {
+            $rules["message_template_{$channel}"] = ['nullable', 'string', 'max:2000'];
+        }
+
         foreach ($severities as $severity) {
             $rules["severity_channels.{$severity}"] = ['required', 'array'];
 

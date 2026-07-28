@@ -39,6 +39,19 @@ class OpsAlertSetting extends Model
         return $matrix;
     }
 
+    /**
+     * 支持自定义模板的文本通道（全部通道去掉 webhook——webhook 走结构化载荷）。
+     *
+     * @return array<int, string>
+     */
+    public static function textChannels(): array
+    {
+        return array_values(array_diff(
+            (array) config('ops.alerts.channels', ['telegram', 'mail']),
+            ['webhook'],
+        ));
+    }
+
     public function valueFor(string $key): mixed
     {
         return self::value($key);
@@ -100,6 +113,11 @@ class OpsAlertSetting extends Model
 
         foreach ((array) config('ops.alerts.channels', ['telegram', 'mail']) as $channel) {
             $defaults["{$channel}_enabled"] = true;
+        }
+
+        // 每通道独立模板（仅文本通道，webhook 走结构化载荷不套模板）。留空=回退全局 message_template。
+        foreach (self::textChannels() as $channel) {
+            $defaults["message_template_{$channel}"] = (string) config("ops.alerts.{$channel}.message_template", '');
         }
 
         return $defaults;
