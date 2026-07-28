@@ -126,6 +126,35 @@ class AlertNotificationService
         return $result;
     }
 
+    /**
+     * 告警被指派/认领时向被指派人推送一条通知（复用内存态 OpsAlert + dispatch，severity=info 走矩阵 info 行）。
+     * config 未开时 no-op。不落库。
+     */
+    public function sendAssignment(OpsAlert $alert, string $assignee): array
+    {
+        if (! (bool) config('ops.alerts.assignment_notify.enabled', false)) {
+            return [];
+        }
+
+        $notice = new OpsAlert([
+            'source' => 'alert-assignment',
+            'severity' => 'info',
+            'title' => '告警已指派',
+            'message' => "「{$alert->title}」（来源 {$alert->source}）已指派给 {$assignee}",
+            'status' => (string) $alert->status,
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        $result = [];
+
+        foreach ($this->channels() as $channel) {
+            $result[$channel] = $this->dispatch($channel, $notice);
+        }
+
+        return $result;
+    }
+
     private function dispatch(string $channel, OpsAlert $alert): array
     {
         return match ($channel) {

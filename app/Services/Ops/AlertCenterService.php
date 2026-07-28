@@ -707,7 +707,12 @@ class AlertCenterService
 
     public function assign(OpsAlert $alert, array $payload): OpsAlert
     {
-        return $this->markAssigned($alert, $payload['assigned_to'], $payload['assigned_to'], $payload['note'] ?? null);
+        $alert = $this->markAssigned($alert, $payload['assigned_to'], $payload['assigned_to'], $payload['note'] ?? null);
+
+        // 手动指派 → 推送指派通知（config 未开时该方法内部 no-op）。自动指派路径不发（见 storeAlert）。
+        $this->notification->sendAssignment($alert, $payload['assigned_to']);
+
+        return $alert;
     }
 
     /**
