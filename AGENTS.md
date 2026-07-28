@@ -66,8 +66,9 @@ npm run build
 - 三十二阶段：周期性告警静默窗口——`ops_alert_silences` 加 `recurrence`(once/daily/weekly)/`days_of_week`/`start_time`/`end_time`，`starts_at/ends_at` 复用为生效范围；`AlertSilenceService::matchesRecurrence` 在 SQL 预筛后叠加时段/星期判断（跨午夜 wrap），复用 phase-29 send() choke point；静默页支持每天/每周配置。
 - 三十三阶段：告警运营三合一——(A) 规则 JSON 导入导出（`AlertRuleRegistryService::export/import`，白名单 13 key、按 min/max 逐条校验、非法跳过并报告；`rules/export` + `rules/import` 端点，导入挂审计）；(B) 指派值班（`AlertIndexRequest`/`paginate` 加 `assigned_to`/`assigned=unassigned` 过滤 + `alerts/assignees` 去重列表端点 + 前端「指派给我」认领）；(C) 通知模板自定义（`OpsAlertSetting.message_template` + `formatMessage` 用 `strtr` 渲染 `{title}{severity}{source}{status}{time}{message}`，仅文本通道，webhook 保持结构化，空=内置，boot-safe）。
 - 三十四阶段：告警值班运营四合一——(1) 值班排班自动指派（`ops_on_call_shifts` 绝对时间段表 + `OnCallRotationService::currentOnCall` + `storeAlert` 对新告警自动 `markAssigned` 给当前值班人，opt-in）；(2) 指派通知推送（`AlertNotificationService::sendAssignment` 内存态 info 告警经现有通道，`assign()` 手动指派触发，opt-in）；(3) 每通道独立模板（`formatMessage($alert,$channel)` 回退链 per-channel→全局→内置，`OpsAlertSetting::textChannels()` 四处同步，webhook 除外）；(4) SLA 达标率（`slaCompliance` 按严重级统计 ack/resolve 在目标时限内完成比例，`slaSummary.compliance` + `AlertSla.vue` el-progress）。
+- 三十五阶段：告警值班进阶四合一——(1) 周期性值班轮转（`ops_on_call_shifts` 加 recurrence/days_of_week/start_time/end_time，`OnCallRotationService::matchesRecurrence` + `currentOnCall` 保序选唯一值班人，镜像 phase-32）；(2) 多级升级链（`ops_alerts.escalation_level` + config `alerts.escalation_levels` 有序数组 + `escalateStaleAlerts` 逐级升级/每级通道/`reassign_on_call` 改派值班人 + `AlertNotificationService::send($alert,?$channels)` 收窄通道）；(3) 告警分组聚合（`AlertCenterService::groupedOpen($by)` 只读 rollup + `GET /alerts/groups`，不改去重）；(4) 值班仪表盘（`OnCallDashboardService::overview` 聚合当前值班/未来班次/我的待处理/SLA 快照 + `GET /alerts/on-call/dashboard` + `OnCallDashboard.vue`）。
 
-候选后续增强：真实地理风控（GeoIP）、值班周期性轮转（daily/weekly）、通知通道分组路由。
+候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警分组的持久化与 group 级 ack。
 
 # 项目级 Codex 测试规范
 
