@@ -216,6 +216,7 @@ Route::prefix('/ops')
                 Route::get('/', [AlertController::class, 'index']);
                 Route::get('/summary', [AlertController::class, 'summary']);
                 Route::get('/assignees', [AlertController::class, 'assignees']);
+                Route::get('/groups', [AlertController::class, 'groups']);
                 Route::get('/notification-status', [AlertController::class, 'notificationStatus']);
                 Route::get('/settings', [AlertController::class, 'settings']);
                 Route::put('/settings', [AlertController::class, 'updateSettings'])

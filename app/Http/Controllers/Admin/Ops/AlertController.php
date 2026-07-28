@@ -66,6 +66,20 @@ class AlertController extends Controller
     }
 
     /**
+     * open 告警分组聚合（by source|severity|assigned_to）。
+     */
+    public function groups(Request $request): JsonResponse
+    {
+        $by = (string) $request->query('by', 'source');
+        $by = in_array($by, ['source', 'severity', 'assigned_to'], true) ? $by : 'source';
+
+        return $this->success([
+            'by' => $by,
+            'groups' => $this->service->groupedOpen($by),
+        ]);
+    }
+
+    /**
      * 通知通道配置状态。
      */
     public function notificationStatus(): JsonResponse

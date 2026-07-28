@@ -63,6 +63,42 @@ class AlertCenterService
     }
 
     /**
+     * open 告警按指定维度分组聚合（只读，不改去重）。供分组视图降噪 / 关联。
+     *
+     * @param  string  $by  source|severity|assigned_to（非法回退 source）
+     * @return array<int, array<string, mixed>>
+     */
+    public function groupedOpen(string $by = 'source'): array
+    {
+        $by = in_array($by, ['source', 'severity', 'assigned_to'], true) ? $by : 'source';
+
+        return OpsAlert::query()
+            ->where('status', 'open')
+            ->orderByDesc('last_seen_at')
+            ->get(['source', 'severity', 'title', 'assigned_to', 'last_seen_at'])
+            ->groupBy(fn (OpsAlert $alert): string => (string) ($alert->{$by} ?? '') !== ''
+                ? (string) $alert->{$by}
+                : ($by === 'assigned_to' ? '__unassigned__' : '未知'))
+            ->map(function (Collection $group, string $key) use ($by): array {
+                return [
+                    'group' => $key,
+                    'by' => $by,
+                    'total' => $group->count(),
+                    'critical' => $group->where('severity', 'critical')->count(),
+                    'warning' => $group->where('severity', 'warning')->count(),
+                    'info' => $group->where('severity', 'info')->count(),
+                    'assigned' => $group->filter(fn (OpsAlert $a): bool => (string) ($a->assigned_to ?? '') !== '')->count(),
+                    'unassigned' => $group->filter(fn (OpsAlert $a): bool => (string) ($a->assigned_to ?? '') === '')->count(),
+                    'last_seen_at' => optional($group->max('last_seen_at'))->toDateTimeString(),
+                    'samples' => $group->take(3)->pluck('title')->values()->all(),
+                ];
+            })
+            ->sortByDesc('total')
+            ->values()
+            ->all();
+    }
+
+    /**
      * 已被指派过的处理人去重列表（供筛选下拉，不暴露完整管理员名册）。
      *
      * @return array<int, string>
