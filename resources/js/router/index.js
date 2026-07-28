@@ -221,6 +221,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-heatmap',
+                name: 'AlertHeatmap',
+                component: () => import('../pages/ops/AlertHeatmap.vue'),
+                meta: {
+                    title: '告警热力图',
+                    description: '按小时×星期的告警频率热力图、最吵来源与趋势',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -337,6 +347,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.alerts.view', '/admin/ops/alerts-silence'],
         ['ops.alerts.view', '/admin/ops/alerts-oncall'],
         ['ops.alerts.view', '/admin/ops/alerts-oncall-dashboard'],
+        ['ops.alerts.view', '/admin/ops/alerts-heatmap'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

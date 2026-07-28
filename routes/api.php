@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\AlertNoteController;
 use App\Http\Controllers\Admin\Ops\AlertPresetController;
 use App\Http\Controllers\Admin\Ops\AlertRuleController;
 use App\Http\Controllers\Admin\Ops\AlertSilenceController;
@@ -232,6 +233,12 @@ Route::prefix('/ops')
                 Route::get('/trend', [AlertController::class, 'trend']);
                 Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/report', [AlertController::class, 'report']);
+                Route::get('/heatmap', [AlertController::class, 'heatmap']);
+                Route::get('/{alert}/notes', [AlertNoteController::class, 'index']);
+                Route::post('/{alert}/notes', [AlertNoteController::class, 'store'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,note_create']);
+                Route::delete('/{alert}/notes/{note}', [AlertNoteController::class, 'destroy'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,note_delete']);
                 Route::get('/silences', [AlertSilenceController::class, 'index']);
                 Route::post('/silences', [AlertSilenceController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_create']);

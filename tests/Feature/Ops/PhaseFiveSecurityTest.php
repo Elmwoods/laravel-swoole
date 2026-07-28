@@ -985,6 +985,7 @@ class PhaseFiveSecurityTest extends TestCase
             ['POST', '/api/ops/alerts/batch/acknowledge', []],
             ['POST', '/api/ops/alerts/batch/assign', []],
             ['POST', '/api/ops/alerts/batch/silence', []],
+            ['POST', "/api/ops/alerts/{$alert->id}/notes", []],
             ['POST', '/api/ops/alerts/on-call', []],
             ['GET', '/api/ops/logs/laravel', []],
             ['GET', '/api/ops/test-broadcast', []],

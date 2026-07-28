@@ -102,6 +102,15 @@ class AlertNotificationService
                 ->all();
         }
 
+        // 抖动抑制：flapping 冷却期内只入库/广播，不外发（行内读取 flapping_until，无需查库）。
+        if ((bool) config('ops.alerts.flapping.enabled', false)
+            && $alert->flapping_until !== null
+            && $alert->flapping_until->isFuture()) {
+            return collect($targets)
+                ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'flapping']])
+                ->all();
+        }
+
         $result = [];
 
         foreach ($targets as $channel) {

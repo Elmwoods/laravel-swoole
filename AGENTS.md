@@ -70,7 +70,9 @@ npm run build
 
 - 三十六阶段：告警值班成熟度四合一——(1) 分组级批量操作（`AlertCenterService::batchByGroup`(ack/assign,cap500)/`batchSilenceGroup` + `POST /alerts/batch/{acknowledge,assign,silence}`，复用单条原语）；(2) 告警关联抑制（config `alerts.correlation.dependencies` 父子拓扑 + `AlertCorrelationService::isSuppressed` + `send()` 抑制 gate + `ops_alerts.suppressed_at` 标记）；(3) 值班上岗提醒（`ops_on_call_shifts.reminded_at` + `OnCallRotationService::sendDueReminders` 仅 once 班次 + `AlertNotificationService::sendOnCallReminder` + `ops:on-call:remind` everyFiveMinutes）；(4) 告警统计周报（`AlertCenterService::weeklyReportSummary/render/send` 组合 digest+SLA+值班 + `GET /alerts/report` + `ops:alerts:weekly-report` weeklyOn）。全部 opt-in。
 
-候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联的 DB 可视化拓扑编辑、周报导出（PDF/Excel）。
+- 三十七阶段：告警运营洞察四合一——(1) 抖动检测（`ops_alerts.flap_count/flapping_until` + `storeAlert` 检测 `resolved→open` reopen + `registerReopen` 统计窗口内 `reopened` 事件超阈值标 flapping + `send()` 第三道 gate reason=flapping）；(2) 处理备注协作（`ops_alert_notes` 表 + `OpsAlertNoteService` 仅作者可删 + `AlertNoteController` author 用真实 admin + `/{alert}/notes` 三路由）；(3) 处理预案（config `alerts.runbooks` source=>{url,steps} + `runbookFor` + serialize）；(4) 告警热力图（`heatmapSummary` PHP 7×24 分桶 + `GET /alerts/heatmap` + `AlertHeatmap.vue` echarts heatmap）。前端首次加告警详情抽屉（时间线+预案+备注）。
+
+候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联/预案的 DB 可视化编辑、周报/热力图导出。
 
 # 项目级 Codex 测试规范
 
