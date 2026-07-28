@@ -286,6 +286,7 @@ class OpsReleaseCheckService
             'docs/ops-center-phase-33.md',
             'docs/ops-center-phase-34.md',
             'docs/ops-center-phase-35.md',
+            'docs/ops-center-phase-36.md',
             'docs/ops-center-deploy-runbook.md',
         ])
             ->map(fn (string $path): array => $this->check('发布文档', $path, is_file(base_path($path)), 'warn', is_file(base_path($path)) ? "{$path} 存在。" : "{$path} 缺失。", '补齐发布验收和回滚说明。'))

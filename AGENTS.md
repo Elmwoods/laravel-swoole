@@ -68,7 +68,9 @@ npm run build
 - 三十四阶段：告警值班运营四合一——(1) 值班排班自动指派（`ops_on_call_shifts` 绝对时间段表 + `OnCallRotationService::currentOnCall` + `storeAlert` 对新告警自动 `markAssigned` 给当前值班人，opt-in）；(2) 指派通知推送（`AlertNotificationService::sendAssignment` 内存态 info 告警经现有通道，`assign()` 手动指派触发，opt-in）；(3) 每通道独立模板（`formatMessage($alert,$channel)` 回退链 per-channel→全局→内置，`OpsAlertSetting::textChannels()` 四处同步，webhook 除外）；(4) SLA 达标率（`slaCompliance` 按严重级统计 ack/resolve 在目标时限内完成比例，`slaSummary.compliance` + `AlertSla.vue` el-progress）。
 - 三十五阶段：告警值班进阶四合一——(1) 周期性值班轮转（`ops_on_call_shifts` 加 recurrence/days_of_week/start_time/end_time，`OnCallRotationService::matchesRecurrence` + `currentOnCall` 保序选唯一值班人，镜像 phase-32）；(2) 多级升级链（`ops_alerts.escalation_level` + config `alerts.escalation_levels` 有序数组 + `escalateStaleAlerts` 逐级升级/每级通道/`reassign_on_call` 改派值班人 + `AlertNotificationService::send($alert,?$channels)` 收窄通道）；(3) 告警分组聚合（`AlertCenterService::groupedOpen($by)` 只读 rollup + `GET /alerts/groups`，不改去重）；(4) 值班仪表盘（`OnCallDashboardService::overview` 聚合当前值班/未来班次/我的待处理/SLA 快照 + `GET /alerts/on-call/dashboard` + `OnCallDashboard.vue`）。
 
-候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警分组的持久化与 group 级 ack。
+- 三十六阶段：告警值班成熟度四合一——(1) 分组级批量操作（`AlertCenterService::batchByGroup`(ack/assign,cap500)/`batchSilenceGroup` + `POST /alerts/batch/{acknowledge,assign,silence}`，复用单条原语）；(2) 告警关联抑制（config `alerts.correlation.dependencies` 父子拓扑 + `AlertCorrelationService::isSuppressed` + `send()` 抑制 gate + `ops_alerts.suppressed_at` 标记）；(3) 值班上岗提醒（`ops_on_call_shifts.reminded_at` + `OnCallRotationService::sendDueReminders` 仅 once 班次 + `AlertNotificationService::sendOnCallReminder` + `ops:on-call:remind` everyFiveMinutes）；(4) 告警统计周报（`AlertCenterService::weeklyReportSummary/render/send` 组合 digest+SLA+值班 + `GET /alerts/report` + `ops:alerts:weekly-report` weeklyOn）。全部 opt-in。
+
+候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联的 DB 可视化拓扑编辑、周报导出（PDF/Excel）。
 
 # 项目级 Codex 测试规范
 
