@@ -1011,6 +1011,9 @@ class AlertCenterService
             'escalated_at' => optional($alert->escalated_at)->toDateTimeString(),
             'escalation_level' => (int) $alert->escalation_level,
             'suppressed_at' => optional($alert->suppressed_at)->toDateTimeString(),
+            'flap_count' => (int) $alert->flap_count,
+            'flapping_until' => optional($alert->flapping_until)->toDateTimeString(),
+            'runbook' => $this->runbookFor($alert->source),
             'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
@@ -1493,12 +1496,18 @@ class AlertCenterService
             'fingerprint' => $data['fingerprint'],
         ]);
         $shouldRepeatNotification = $alert->exists && $this->shouldRepeatNotification($alert);
+        // reopen 信号：已恢复的告警重新触发（fill 前捕获原始状态）。
+        $wasReopen = $alert->exists && $alert->getOriginal('status') === 'resolved';
 
         $alert->fill($data);
         $alert->status = 'open';
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
+
+        if ($wasReopen) {
+            $this->registerReopen($alert);
+        }
 
         // 关联抑制标记：父来源正在 firing 则标 suppressed_at（供 UI/审计），send() 亦会跳过外发。
         $alert->forceFill(['suppressed_at' => $this->correlation->isSuppressed($alert) ? now() : null])->save();
@@ -1513,6 +1522,64 @@ class AlertCenterService
         }
 
         return [$alert, $shouldRepeatNotification];
+    }
+
+    /**
+     * 记录一次告警重开（resolved→open），统计窗口内重开次数，超阈值则标记 flapping（冷却期抑制外发）。
+     */
+    public function registerReopen(OpsAlert $alert): void
+    {
+        $this->recordAlertEvent($alert, 'reopened', 'ops-flap-detector', '告警恢复后重新触发', 'resolved', $alert->status);
+
+        $window = max(1, (int) config('ops.alerts.flapping.window_minutes', 30));
+        $threshold = max(1, (int) config('ops.alerts.flapping.threshold', 3));
+        $cooldown = max(1, (int) config('ops.alerts.flapping.cooldown_minutes', 30));
+
+        $count = OpsAlertEvent::query()
+            ->where('alert_id', $alert->id)
+            ->where('action', 'reopened')
+            ->where('created_at', '>=', now()->subMinutes($window))
+            ->count();
+
+        $flappingUntil = ((bool) config('ops.alerts.flapping.enabled', false) && $count >= $threshold)
+            ? now()->addMinutes($cooldown)
+            : $alert->flapping_until;
+
+        $alert->forceFill([
+            'flap_count' => $count,
+            'flapping_until' => $flappingUntil,
+        ])->save();
+    }
+
+    /**
+     * 解析某来源的处理预案（config alerts.runbooks[source]）。无则 null。
+     *
+     * @return array{url: ?string, steps: array<int, string>}|null
+     */
+    private function runbookFor(?string $source): ?array
+    {
+        if ($source === null || $source === '') {
+            return null;
+        }
+
+        $runbook = config("ops.alerts.runbooks.{$source}");
+
+        if (! is_array($runbook)) {
+            return null;
+        }
+
+        $steps = array_values(array_filter(
+            (array) ($runbook['steps'] ?? []),
+            fn ($s): bool => is_string($s) && $s !== '',
+        ));
+
+        $url = isset($runbook['url']) && is_string($runbook['url']) && $runbook['url'] !== '' ? $runbook['url'] : null;
+
+        if ($url === null && $steps === []) {
+            return null;
+        }
+
+        return ['url' => $url, 'steps' => $steps];
     }
 
     /**

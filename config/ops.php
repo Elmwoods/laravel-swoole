@@ -137,6 +137,19 @@ return [
             'lead_minutes' => max(1, (int) env('OPS_ALERT_ON_CALL_REMINDER_LEAD_MINUTES', 15)),
         ],
 
+        // 告警抖动检测（opt-in）：窗口内反复 resolve→open 超阈值 → 标 flapping 并在冷却期抑制外发（仍入库）。
+        'flapping' => [
+            'enabled' => filter_var(env('OPS_ALERT_FLAPPING_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'window_minutes' => max(1, (int) env('OPS_ALERT_FLAPPING_WINDOW_MINUTES', 30)),
+            'threshold' => max(1, (int) env('OPS_ALERT_FLAPPING_THRESHOLD', 3)),
+            'cooldown_minutes' => max(1, (int) env('OPS_ALERT_FLAPPING_COOLDOWN_MINUTES', 30)),
+        ],
+
+        // 告警处理预案（source => {url, steps}，部署期设）：告警详情展示该来源的处理指引。
+        'runbooks' => [
+            // 'disk' => ['url' => 'https://runbook.example.com/disk', 'steps' => ['清理日志', '扩容磁盘']],
+        ],
+
         // 告警关联抑制（父子来源依赖，部署期设）：父来源有 open 告警时，抑制依赖它的子来源告警外发（仍入库、标 suppressed）。
         'correlation' => [
             'enabled' => filter_var(env('OPS_ALERT_CORRELATION_ENABLED', false), FILTER_VALIDATE_BOOL),

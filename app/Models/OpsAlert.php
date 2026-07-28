@@ -21,6 +21,7 @@ class OpsAlert extends Model
         'context',
         'status',
         'hit_count',
+        'flap_count',
         'last_seen_at',
         'acknowledged_at',
         'acknowledged_by',
@@ -30,6 +31,7 @@ class OpsAlert extends Model
         'escalated_at',
         'escalation_level',
         'suppressed_at',
+        'flapping_until',
     ];
 
     protected function casts(): array
@@ -42,6 +44,8 @@ class OpsAlert extends Model
             'escalated_at' => 'datetime',
             'escalation_level' => 'integer',
             'suppressed_at' => 'datetime',
+            'flap_count' => 'integer',
+            'flapping_until' => 'datetime',
         ];
     }
 }
