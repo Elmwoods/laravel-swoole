@@ -211,6 +211,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-oncall-dashboard',
+                name: 'OnCallDashboard',
+                component: () => import('../pages/ops/OnCallDashboard.vue'),
+                meta: {
+                    title: '值班仪表盘',
+                    description: '当前值班、未来班次、待处理告警与 SLA 快照一屏总览',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -326,6 +336,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.alerts.view', '/admin/ops/alerts-sla'],
         ['ops.alerts.view', '/admin/ops/alerts-silence'],
         ['ops.alerts.view', '/admin/ops/alerts-oncall'],
+        ['ops.alerts.view', '/admin/ops/alerts-oncall-dashboard'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

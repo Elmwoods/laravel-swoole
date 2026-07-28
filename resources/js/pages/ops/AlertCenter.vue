@@ -310,6 +310,41 @@
             </el-table>
         </el-card>
 
+        <el-card shadow="never" class="group-card">
+            <template #header>
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">告警分组</div>
+                        <div class="panel-subtitle">按维度聚合 open 告警，降噪与关联</div>
+                    </div>
+                    <el-segmented v-model="groupBy" :options="groupByOptions" @change="loadGroups" />
+                </div>
+            </template>
+
+            <el-table :data="alertGroups" border stripe v-loading="groupsLoading" empty-text="暂无 open 告警">
+                <el-table-column label="分组" min-width="160">
+                    <template #default="{ row }">{{ row.group === '__unassigned__' ? '未指派' : row.group }}</template>
+                </el-table-column>
+                <el-table-column label="总数" width="90" prop="total" />
+                <el-table-column label="严重级" width="220">
+                    <template #default="{ row }">
+                        <el-tag v-if="row.critical" type="danger" size="small" effect="light" class="group-tag">严重 {{ row.critical }}</el-tag>
+                        <el-tag v-if="row.warning" type="warning" size="small" effect="light" class="group-tag">警告 {{ row.warning }}</el-tag>
+                        <el-tag v-if="row.info" type="info" size="small" effect="light" class="group-tag">提示 {{ row.info }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="指派" width="130">
+                    <template #default="{ row }">{{ row.assigned }} / 未 {{ row.unassigned }}</template>
+                </el-table-column>
+                <el-table-column label="样本" min-width="240">
+                    <template #default="{ row }">
+                        <div v-for="(s, i) in row.samples" :key="i" class="alert-message">{{ s }}</div>
+                    </template>
+                </el-table-column>
+                <el-table-column label="最近出现" width="180" prop="last_seen_at" />
+            </el-table>
+        </el-card>
+
         <el-card shadow="never" class="alert-panel">
             <template #header>
                 <div class="panel-header">
@@ -395,7 +430,7 @@
                             {{ statusLabel(row.status) }}
                         </el-tag>
                         <el-tag v-if="row.escalated_at" type="danger" size="small" effect="dark" class="escalated-tag">
-                            已升级
+                            已升级{{ row.escalation_level ? ` L${row.escalation_level}` : '' }}
                         </el-tag>
                     </template>
                 </el-table-column>
@@ -483,6 +518,7 @@ import {
     evaluateAlerts,
     exportAlertRules,
     getAlertAssignees,
+    getAlertGroups,
     getAlertPresets,
     importAlertRules,
     getAlertSettings,
@@ -511,6 +547,7 @@ import {
     type AlertStatus,
     type OpsAlert,
     type AlertRuleExportItem,
+    type AlertGroup,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -542,6 +579,14 @@ const runningHealthCheck = ref(false)
 const importingRules = ref(false)
 const assigneeFilter = ref('')
 const assignees = ref<string[]>([])
+const groupBy = ref<'source' | 'severity' | 'assigned_to'>('source')
+const groupsLoading = ref(false)
+const alertGroups = ref<AlertGroup[]>([])
+const groupByOptions = [
+    { label: '按来源', value: 'source' },
+    { label: '按严重级', value: 'severity' },
+    { label: '按指派人', value: 'assigned_to' },
+]
 const rulesLoading = ref(false)
 const rulesNotice = ref('')
 const evaluationLoading = ref(false)
@@ -1174,6 +1219,21 @@ const loadAssignees = async () => {
 }
 
 /**
+ * 加载告警分组聚合。
+ */
+const loadGroups = async () => {
+    groupsLoading.value = true
+    try {
+        const res = await getAlertGroups(groupBy.value)
+        alertGroups.value = res.data.data.groups
+    } catch {
+        alertGroups.value = []
+    } finally {
+        groupsLoading.value = false
+    }
+}
+
+/**
  * 标记告警已恢复。
  */
 const handleResolve = async (alert: OpsAlert) => {
@@ -1301,7 +1361,7 @@ const loadTrend = async () => {
 const handleTrendResize = () => trendChart?.resize()
 
 onMounted(async () => {
-    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences(), loadPresets(), loadAssignees()])
+    await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences(), loadPresets(), loadAssignees(), loadGroups()])
     startRealtime()
     window.addEventListener('resize', handleTrendResize)
 })
