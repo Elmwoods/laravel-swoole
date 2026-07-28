@@ -30,6 +30,9 @@ export interface OpsAlert {
     escalated_at: string | null
     escalation_level: number
     suppressed_at: string | null
+    flap_count: number
+    flapping_until: string | null
+    runbook: { url: string | null; steps: string[] } | null
     timeline: AlertTimelineItem[]
     created_at: string | null
     updated_at: string | null
@@ -413,6 +416,36 @@ export interface AlertReport {
 
 export const getAlertReport = (days = 7) =>
     request.get<ApiResponse<AlertReport>>('/api/ops/alerts/report', { params: { days } })
+
+export interface AlertNoteItem {
+    id: number
+    author: string
+    admin_user_id: number | null
+    body: string
+    created_at: string | null
+}
+
+export const getAlertNotes = (id: number) =>
+    request.get<ApiResponse<{ items: AlertNoteItem[] }>>(`/api/ops/alerts/${id}/notes`)
+
+export const addAlertNote = (id: number, payload: { body: string }) =>
+    request.post<ApiResponse<{ note: AlertNoteItem }>>(`/api/ops/alerts/${id}/notes`, payload)
+
+export const deleteAlertNote = (id: number, noteId: number) =>
+    request.delete<ApiResponse<{ deleted: boolean }>>(`/api/ops/alerts/${id}/notes/${noteId}`)
+
+export interface AlertHeatmapResult {
+    days: number
+    window_days: number
+    generated_at: string
+    weighted: boolean
+    buckets: Array<{ dow: number; hour: number; count: number }>
+    sources: Array<{ source: string; total: number }>
+    trend: Array<{ date: string; count: number }>
+}
+
+export const getAlertHeatmap = (days = 30) =>
+    request.get<ApiResponse<AlertHeatmapResult>>('/api/ops/alerts/heatmap', { params: { days } })
 
 export interface OnCallDashboard {
     generated_at: string

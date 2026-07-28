@@ -445,6 +445,9 @@
                         <el-tag v-if="row.suppressed_at" type="info" size="small" effect="plain" class="escalated-tag">
                             被抑制
                         </el-tag>
+                        <el-tag v-if="isFlapping(row)" type="warning" size="small" effect="dark" class="escalated-tag">
+                            抖动中
+                        </el-tag>
                     </template>
                 </el-table-column>
 
@@ -460,8 +463,10 @@
 
                 <el-table-column label="操作" width="250" fixed="right">
                     <template #default="{ row }">
-                        <div v-if="row.status !== 'resolved'" class="action-buttons">
+                        <div class="action-buttons">
+                            <el-button text @click="openDetail(row)">详情</el-button>
                             <el-button
+                                v-if="row.status !== 'resolved'"
                                 text
                                 type="info"
                                 :loading="assigningId === row.id"
@@ -470,7 +475,7 @@
                                 指派
                             </el-button>
                             <el-button
-                                v-if="currentAdminName"
+                                v-if="currentAdminName && row.status !== 'resolved'"
                                 text
                                 type="info"
                                 :loading="assigningId === row.id"
@@ -488,6 +493,7 @@
                                 确认
                             </el-button>
                             <el-button
+                                v-if="row.status !== 'resolved'"
                                 text
                                 type="success"
                                 :loading="resolvingId === row.id"
@@ -496,7 +502,6 @@
                                 恢复
                             </el-button>
                         </div>
-                        <span v-else class="muted">已恢复</span>
                     </template>
                 </el-table-column>
             </el-table>
@@ -514,6 +519,61 @@
                 />
             </div>
         </el-card>
+
+        <el-drawer v-model="detailVisible" title="告警详情" size="520px">
+            <div v-if="detailAlert" class="detail-body">
+                <el-descriptions :column="1" border size="small">
+                    <el-descriptions-item label="标题">{{ detailAlert.title }}</el-descriptions-item>
+                    <el-descriptions-item label="来源">{{ detailAlert.source }}</el-descriptions-item>
+                    <el-descriptions-item label="级别">{{ detailAlert.severity }}</el-descriptions-item>
+                    <el-descriptions-item label="状态">{{ statusLabel(detailAlert.status) }}</el-descriptions-item>
+                    <el-descriptions-item label="说明">{{ detailAlert.message }}</el-descriptions-item>
+                    <el-descriptions-item v-if="detailAlert.assigned_to" label="指派">{{ detailAlert.assigned_to }}</el-descriptions-item>
+                    <el-descriptions-item v-if="detailAlert.flap_count" label="抖动次数">{{ detailAlert.flap_count }}</el-descriptions-item>
+                </el-descriptions>
+
+                <template v-if="detailAlert.runbook">
+                    <div class="detail-section-title">处理预案</div>
+                    <a v-if="detailAlert.runbook.url" :href="detailAlert.runbook.url" target="_blank" rel="noopener" class="runbook-link">{{ detailAlert.runbook.url }}</a>
+                    <ol class="runbook-steps">
+                        <li v-for="(step, i) in detailAlert.runbook.steps" :key="i">{{ step }}</li>
+                    </ol>
+                </template>
+
+                <div class="detail-section-title">时间线</div>
+                <el-timeline v-if="detailAlert.timeline.length">
+                    <el-timeline-item
+                        v-for="ev in detailAlert.timeline"
+                        :key="ev.id"
+                        :timestamp="ev.created_at || ''"
+                    >
+                        {{ ev.action }}<span v-if="ev.actor"> · {{ ev.actor }}</span><span v-if="ev.note"> — {{ ev.note }}</span>
+                    </el-timeline-item>
+                </el-timeline>
+                <el-empty v-else description="暂无事件" :image-size="60" />
+
+                <div class="detail-section-title">处理备注</div>
+                <div v-if="canManage" class="note-add">
+                    <el-input v-model="noteBody" type="textarea" :rows="2" :maxlength="2000" placeholder="记录排查过程 / 结论" />
+                    <el-button type="primary" :loading="noteSaving" :disabled="!noteBody.trim()" @click="submitNote">添加备注</el-button>
+                </div>
+                <div v-for="n in alertNotes" :key="n.id" class="note-item">
+                    <div class="note-meta">
+                        <span class="note-author">{{ n.author }}</span>
+                        <span class="muted">{{ n.created_at }}</span>
+                        <el-button
+                            v-if="n.admin_user_id === adminAuth.profile?.admin?.id"
+                            text
+                            type="danger"
+                            size="small"
+                            @click="removeNote(n.id)"
+                        >删除</el-button>
+                    </div>
+                    <div class="note-body">{{ n.body }}</div>
+                </div>
+                <el-empty v-if="!alertNotes.length" description="暂无备注" :image-size="60" />
+            </div>
+        </el-drawer>
 
         <el-dialog v-model="reportVisible" title="告警统计周报" width="560px">
             <div v-if="report" class="report-body">
@@ -542,10 +602,13 @@ import {
     createAlertDemoScenarios,
     deleteAlertPreset,
     evaluateAlerts,
+    addAlertNote,
     batchAcknowledgeGroup,
     batchAssignGroup,
     batchSilenceGroup,
+    deleteAlertNote,
     exportAlertRules,
+    getAlertNotes,
     getAlertAssignees,
     getAlertGroups,
     getAlertPresets,
@@ -579,6 +642,7 @@ import {
     type AlertRuleExportItem,
     type AlertGroup,
     type AlertReport,
+    type AlertNoteItem,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -588,6 +652,52 @@ const currentAdminName = computed(() => adminAuth.profile?.admin?.name ?? '')
 const canManage = computed(() => adminAuth.hasPermission('ops.alerts.manage'))
 const reportVisible = ref(false)
 const report = ref<AlertReport | null>(null)
+const detailVisible = ref(false)
+const detailAlert = ref<OpsAlert | null>(null)
+const alertNotes = ref<AlertNoteItem[]>([])
+const noteBody = ref('')
+const noteSaving = ref(false)
+
+const isFlapping = (row: OpsAlert) => !!row.flapping_until && new Date(row.flapping_until).getTime() > Date.now()
+
+const openDetail = async (row: OpsAlert) => {
+    detailAlert.value = row
+    detailVisible.value = true
+    noteBody.value = ''
+    alertNotes.value = []
+    try {
+        const res = await getAlertNotes(row.id)
+        alertNotes.value = res.data.data.items
+    } catch {
+        alertNotes.value = []
+    }
+}
+
+const submitNote = async () => {
+    if (!detailAlert.value || !noteBody.value.trim()) return
+    noteSaving.value = true
+    try {
+        await addAlertNote(detailAlert.value.id, { body: noteBody.value.trim() })
+        noteBody.value = ''
+        const res = await getAlertNotes(detailAlert.value.id)
+        alertNotes.value = res.data.data.items
+        ElMessage.success('已添加备注')
+    } catch {
+        ElMessage.error('添加备注失败')
+    } finally {
+        noteSaving.value = false
+    }
+}
+
+const removeNote = async (noteId: number) => {
+    if (!detailAlert.value) return
+    try {
+        await deleteAlertNote(detailAlert.value.id, noteId)
+        alertNotes.value = alertNotes.value.filter(n => n.id !== noteId)
+    } catch {
+        ElMessage.error('删除备注失败')
+    }
+}
 
 const loading = ref(false)
 const evaluating = ref(false)
