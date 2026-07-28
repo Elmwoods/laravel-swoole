@@ -259,7 +259,7 @@ class AlertNotificationService
         try {
             $response = Http::timeout(5)->post("https://api.telegram.org/bot{$token}/sendMessage", [
                 'chat_id' => $chatId,
-                'text' => $this->formatMessage($alert),
+                'text' => $this->formatMessage($alert, 'telegram'),
                 'disable_web_page_preview' => true,
             ]);
 
@@ -285,7 +285,7 @@ class AlertNotificationService
         }
 
         try {
-            Mail::raw($this->formatMessage($alert), function ($message) use ($alert, $to): void {
+            Mail::raw($this->formatMessage($alert, 'mail'), function ($message) use ($alert, $to): void {
                 $message->to($to)->subject("[Ops Center][{$alert->severity}] {$alert->title}");
             });
 
@@ -355,7 +355,7 @@ class AlertNotificationService
         try {
             $response = Http::timeout(5)->post($url, [
                 'msgtype' => 'text',
-                'text' => ['content' => $this->formatMessage($alert)],
+                'text' => ['content' => $this->formatMessage($alert, 'dingtalk')],
             ]);
 
             return ['enabled' => true, 'sent' => $response->successful(), 'status' => $response->status()];
@@ -382,7 +382,7 @@ class AlertNotificationService
         $secret = (string) config('ops.alerts.feishu.secret', '');
         $payload = [
             'msg_type' => 'text',
-            'content' => ['text' => $this->formatMessage($alert)],
+            'content' => ['text' => $this->formatMessage($alert, 'feishu')],
         ];
 
         if ($secret !== '') {
@@ -561,12 +561,19 @@ class AlertNotificationService
     /**
      * 通知文本格式。
      */
-    private function formatMessage(OpsAlert $alert): string
+    private function formatMessage(OpsAlert $alert, string $channel = ''): string
     {
         $template = '';
 
         try {
-            $template = trim((string) OpsAlertSetting::value('message_template'));
+            // 回退链：该通道专属模板 → 全局模板 → 内置。
+            if ($channel !== '') {
+                $template = trim((string) OpsAlertSetting::value("message_template_{$channel}"));
+            }
+
+            if ($template === '') {
+                $template = trim((string) OpsAlertSetting::value('message_template'));
+            }
         } catch (Throwable) {
             $template = '';
         }

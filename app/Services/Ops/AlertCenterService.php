@@ -541,10 +541,17 @@ class AlertCenterService
             OpsAlertSetting::setValue($key, $payload[$key]);
         }
 
-        // message_template 走独立可选守卫（不在全 required 的 $keys 循环内），
+        // message_template（全局）+ 每通道模板走独立可选守卫（不在全 required 的 $keys 循环内），
         // 既保留旧设置 payload 的兼容性，又能持久化自定义模板。
         if (array_key_exists('message_template', $payload)) {
             OpsAlertSetting::setValue('message_template', (string) $payload['message_template']);
+        }
+
+        foreach (OpsAlertSetting::textChannels() as $channel) {
+            $key = "message_template_{$channel}";
+            if (array_key_exists($key, $payload)) {
+                OpsAlertSetting::setValue($key, (string) $payload[$key]);
+            }
         }
 
         return $this->settings();

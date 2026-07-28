@@ -119,11 +119,13 @@ return [
             'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL),
             'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'),
             'chat_id' => env('OPS_ALERT_TELEGRAM_CHAT_ID'),
+            'message_template' => (string) env('OPS_ALERT_TELEGRAM_MESSAGE_TEMPLATE', ''),
         ],
 
         'mail' => [
             'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
             'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))),
+            'message_template' => (string) env('OPS_ALERT_MAIL_MESSAGE_TEMPLATE', ''),
         ],
 
         'webhook' => [
@@ -136,12 +138,14 @@ return [
             'enabled' => filter_var(env('OPS_ALERT_DINGTALK_ENABLED', false), FILTER_VALIDATE_BOOL),
             'webhook' => env('OPS_ALERT_DINGTALK_WEBHOOK'),
             'secret' => env('OPS_ALERT_DINGTALK_SECRET'),
+            'message_template' => (string) env('OPS_ALERT_DINGTALK_MESSAGE_TEMPLATE', ''),
         ],
 
         'feishu' => [
             'enabled' => filter_var(env('OPS_ALERT_FEISHU_ENABLED', false), FILTER_VALIDATE_BOOL),
             'webhook' => env('OPS_ALERT_FEISHU_WEBHOOK'),
             'secret' => env('OPS_ALERT_FEISHU_SECRET'),
+            'message_template' => (string) env('OPS_ALERT_FEISHU_MESSAGE_TEMPLATE', ''),
         ],
 
         'demo' => [
