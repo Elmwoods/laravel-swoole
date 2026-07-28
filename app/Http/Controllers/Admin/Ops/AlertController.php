@@ -173,6 +173,20 @@ class AlertController extends Controller
     }
 
     /**
+     * 告警热力图（小时×星期频率 + 最吵来源 + 趋势）。
+     */
+    public function heatmap(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 30)));
+        $weighted = $request->boolean('weighted');
+
+        return $this->success([
+            'days' => $days,
+            ...$this->service->heatmapSummary($days, $weighted),
+        ]);
+    }
+
+    /**
      * 告警统计周报（告警 + SLA + 值班）。
      */
     public function report(Request $request): JsonResponse

@@ -306,6 +306,69 @@ class AlertCenterService
     }
 
     /**
+     * 告警热力图：按 小时(0-23)×星期(0-6) 分桶的告警频率 + 最吵来源 + 按天趋势。纯只读，PHP 分桶（DB 可移植）。
+     */
+    public function heatmapSummary(int $days, bool $weighted = false): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->subDays($days);
+
+        $alerts = OpsAlert::query()
+            ->where('created_at', '>=', $since)
+            ->get(['created_at', 'source', 'hit_count']);
+
+        // 7×24 零矩阵（dow 0=周日..6=周六）。
+        $matrix = [];
+        foreach (range(0, 6) as $dow) {
+            foreach (range(0, 23) as $hour) {
+                $matrix[$dow][$hour] = 0;
+            }
+        }
+
+        $trend = [];
+
+        foreach ($alerts as $alert) {
+            if ($alert->created_at === null) {
+                continue;
+            }
+
+            $dow = (int) $alert->created_at->dayOfWeek;
+            $hour = (int) $alert->created_at->hour;
+            $weight = $weighted ? max(1, (int) $alert->hit_count) : 1;
+            $matrix[$dow][$hour] += $weight;
+
+            $date = $alert->created_at->toDateString();
+            $trend[$date] = ($trend[$date] ?? 0) + $weight;
+        }
+
+        $buckets = [];
+        foreach ($matrix as $dow => $hours) {
+            foreach ($hours as $hour => $count) {
+                $buckets[] = ['dow' => $dow, 'hour' => $hour, 'count' => $count];
+            }
+        }
+
+        ksort($trend);
+
+        return [
+            'window_days' => $days,
+            'generated_at' => now()->toDateTimeString(),
+            'weighted' => $weighted,
+            'buckets' => $buckets,
+            'sources' => OpsAlert::query()
+                ->where('created_at', '>=', $since)
+                ->select('source', DB::raw('count(*) as total'))
+                ->groupBy('source')
+                ->orderByDesc('total')
+                ->limit(5)
+                ->get()
+                ->map(fn (object $row): array => ['source' => (string) $row->source, 'total' => (int) $row->total])
+                ->all(),
+            'trend' => collect($trend)->map(fn (int $count, string $date): array => ['date' => $date, 'count' => $count])->values()->all(),
+        ];
+    }
+
+    /**
      * 告警统计周报聚合：告警摘要 + SLA 快照 + 值班，供定时推送 / GET 端点。
      */
     public function weeklyReportSummary(int $days): array
