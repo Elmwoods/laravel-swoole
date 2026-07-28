@@ -28,6 +28,7 @@ export interface OpsAlert {
     assigned_to: string | null
     assigned_at: string | null
     escalated_at: string | null
+    escalation_level: number
     timeline: AlertTimelineItem[]
     created_at: string | null
     updated_at: string | null
@@ -337,20 +338,37 @@ export const assignAlert = (id: number, payload: { assigned_to: string; note?: s
 export const resolveAlert = (id: number, payload: { acknowledged_by?: string; note?: string }) =>
     request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/resolve`, payload)
 
+export type OnCallRecurrence = 'once' | 'daily' | 'weekly'
+
 export interface OnCallShift {
     id: number
     assignee: string
     label: string | null
     starts_at: string | null
     ends_at: string | null
+    recurrence: OnCallRecurrence
+    days_of_week: number[]
+    start_time: string | null
+    end_time: string | null
     is_active: boolean
     current: boolean
+}
+
+export interface OnCallShiftPayload {
+    assignee: string
+    label?: string | null
+    starts_at: string
+    ends_at: string
+    recurrence?: OnCallRecurrence
+    days_of_week?: number[]
+    start_time?: string | null
+    end_time?: string | null
 }
 
 export const getOnCall = () =>
     request.get<ApiResponse<{ items: OnCallShift[]; current: string | null }>>('/api/ops/alerts/on-call')
 
-export const createOnCallShift = (payload: { assignee: string; label?: string | null; starts_at: string; ends_at: string }) =>
+export const createOnCallShift = (payload: OnCallShiftPayload) =>
     request.post<ApiResponse<{ shift: { id: number } }>>('/api/ops/alerts/on-call', payload)
 
 export const toggleOnCallShift = (id: number, is_active: boolean) =>
@@ -358,3 +376,37 @@ export const toggleOnCallShift = (id: number, is_active: boolean) =>
 
 export const deleteOnCallShift = (id: number) =>
     request.delete<ApiResponse<{ deleted: boolean }>>(`/api/ops/alerts/on-call/${id}`)
+
+export interface AlertGroup {
+    group: string
+    by: string
+    total: number
+    critical: number
+    warning: number
+    info: number
+    assigned: number
+    unassigned: number
+    last_seen_at: string | null
+    samples: string[]
+}
+
+export const getAlertGroups = (by: 'source' | 'severity' | 'assigned_to' = 'source') =>
+    request.get<ApiResponse<{ by: string; groups: AlertGroup[] }>>('/api/ops/alerts/groups', { params: { by } })
+
+export interface OnCallDashboard {
+    generated_at: string
+    current_on_call: string | null
+    upcoming_shifts: Array<{ id: number; assignee: string; label: string | null; starts_at: string | null; ends_at: string | null; recurrence: string }>
+    my_open_alerts: { assignee: string | null; total: number; critical: number; warning: number; info: number }
+    unassigned_open: number
+    sla: {
+        window_days: number
+        open_aging: { under_1h: number; one_to_24h: number; over_24h: number }
+        ack_rate: number | null
+        resolve_rate: number | null
+        open_breaches: number
+    }
+}
+
+export const getOnCallDashboard = (days = 7) =>
+    request.get<ApiResponse<OnCallDashboard>>('/api/ops/alerts/on-call/dashboard', { params: { days } })

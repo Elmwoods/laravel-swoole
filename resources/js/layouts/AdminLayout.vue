@@ -127,6 +127,11 @@
                     <span>值班排班</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts-oncall-dashboard">
+                    <el-icon><Odometer /></el-icon>
+                    <span>值班仪表盘</span>
+                </el-menu-item>
+
                 <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
@@ -206,6 +211,7 @@ import {
     Lock,
     Monitor,
     MuteNotification,
+    Odometer,
     Operation,
     Tickets,
     Timer,

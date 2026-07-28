@@ -115,6 +115,14 @@ return [
             'escalation_after_minutes' => (int) env('OPS_ALERT_ESCALATION_AFTER_MINUTES', 30),
         ],
 
+        // 多级升级链（L1→L2→L3，部署期设，同 SLA 目标口径）：open critical 告警随时长逐级升级，
+        // 每级可指定 channels（空=全部启用通道）与是否改派给当前值班人。after_minutes 为距 created_at 的绝对时长。
+        'escalation_levels' => [
+            ['after_minutes' => (int) env('OPS_ALERT_ESCALATION_L1_MINUTES', 30), 'channels' => [], 'reassign_on_call' => false],
+            ['after_minutes' => (int) env('OPS_ALERT_ESCALATION_L2_MINUTES', 60), 'channels' => [], 'reassign_on_call' => true],
+            ['after_minutes' => (int) env('OPS_ALERT_ESCALATION_L3_MINUTES', 120), 'channels' => [], 'reassign_on_call' => false],
+        ],
+
         'telegram' => [
             'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL),
             'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'),

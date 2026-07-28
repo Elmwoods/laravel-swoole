@@ -12,6 +12,10 @@ class OpsOnCallShift extends Model
         'label',
         'starts_at',
         'ends_at',
+        'recurrence',
+        'days_of_week',
+        'start_time',
+        'end_time',
         'is_active',
         'created_by',
     ];
@@ -21,6 +25,7 @@ class OpsOnCallShift extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'days_of_week' => 'array',
             'is_active' => 'boolean',
         ];
     }

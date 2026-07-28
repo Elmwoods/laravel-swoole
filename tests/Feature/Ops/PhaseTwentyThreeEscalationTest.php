@@ -18,6 +18,10 @@ class PhaseTwentyThreeEscalationTest extends TestCase
 
         config()->set('ops.alerts.thresholds.escalation_enabled', true);
         config()->set('ops.alerts.thresholds.escalation_after_minutes', 30);
+        // 单级配置：保持 phase-23 的单级升级 + 30 分钟重推间隔语义（多级见 PhaseThirtyFiveMultiEscalationTest）。
+        config()->set('ops.alerts.escalation_levels', [
+            ['after_minutes' => 30, 'channels' => [], 'reassign_on_call' => false],
+        ]);
 
         Http::preventStrayRequests();
     }
@@ -112,6 +116,8 @@ class PhaseTwentyThreeEscalationTest extends TestCase
             'hit_count' => 1,
             'last_seen_at' => now(),
             'escalated_at' => $escalatedAgoMinutes !== null ? now()->subMinutes($escalatedAgoMinutes) : null,
+            // 已升级过的告警其级别为 1（否则进阶逻辑会无视重推间隔直接升级）。
+            'escalation_level' => $escalatedAgoMinutes !== null ? 1 : 0,
         ]);
 
         $alert->forceFill(['created_at' => now()->subMinutes($ageMinutes)])->save();

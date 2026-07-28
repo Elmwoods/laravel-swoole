@@ -31,7 +31,7 @@
                 <template #default="{ row }">{{ row.label || '—' }}</template>
             </el-table-column>
             <el-table-column label="时间段" width="360">
-                <template #default="{ row }">{{ row.starts_at }} ~ {{ row.ends_at }}</template>
+                <template #default="{ row }">{{ windowText(row) }}</template>
             </el-table-column>
             <el-table-column label="生效" width="90">
                 <template #default="{ row }">
@@ -57,7 +57,14 @@
                 <el-form-item label="备注" prop="label">
                     <el-input v-model="form.label" placeholder="可选，如 夜班 / 周末班" maxlength="120" />
                 </el-form-item>
-                <el-form-item label="时间段" prop="range">
+                <el-form-item label="重复方式">
+                    <el-radio-group v-model="form.recurrence">
+                        <el-radio-button value="once">一次性</el-radio-button>
+                        <el-radio-button value="daily">每天</el-radio-button>
+                        <el-radio-button value="weekly">每周</el-radio-button>
+                    </el-radio-group>
+                </el-form-item>
+                <el-form-item :label="form.recurrence === 'once' ? '时间段' : '生效范围'" prop="range">
                     <el-date-picker
                         v-model="form.range"
                         type="datetimerange"
@@ -67,6 +74,18 @@
                         style="width: 100%"
                     />
                 </el-form-item>
+                <template v-if="form.recurrence !== 'once'">
+                    <el-form-item label="每天时段" prop="times">
+                        <el-time-picker v-model="form.startTime" value-format="HH:mm" format="HH:mm" placeholder="开始时刻" />
+                        <span class="sep">至</span>
+                        <el-time-picker v-model="form.endTime" value-format="HH:mm" format="HH:mm" placeholder="结束时刻" />
+                    </el-form-item>
+                    <el-form-item v-if="form.recurrence === 'weekly'" label="星期" prop="daysOfWeek">
+                        <el-select v-model="form.daysOfWeek" multiple placeholder="选择星期" style="width: 100%">
+                            <el-option v-for="d in WEEKDAYS" :key="d.value" :label="d.label" :value="d.value" />
+                        </el-select>
+                    </el-form-item>
+                </template>
             </el-form>
             <template #footer>
                 <el-button :disabled="saving" @click="dialogVisible = false">取消</el-button>
@@ -84,12 +103,25 @@ import {
     deleteOnCallShift,
     getOnCall,
     toggleOnCallShift,
+    type OnCallRecurrence,
     type OnCallShift,
 } from '@/api/opsStage4'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const auth = useAdminAuthStore()
 const canManage = computed(() => auth.hasPermission('ops.alerts.manage'))
+
+// Carbon dayOfWeek：0=周日…6=周六。
+const WEEKDAYS = [
+    { label: '周日', value: 0 },
+    { label: '周一', value: 1 },
+    { label: '周二', value: 2 },
+    { label: '周三', value: 3 },
+    { label: '周四', value: 4 },
+    { label: '周五', value: 5 },
+    { label: '周六', value: 6 },
+]
+const dayLabel = (n: number) => WEEKDAYS.find(d => d.value === n)?.label ?? String(n)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -98,15 +130,47 @@ const items = ref<OnCallShift[]>([])
 const current = ref<string | null>(null)
 
 const formRef = ref<FormInstance>()
-const form = reactive<{ assignee: string; label: string; range: string[] }>({
+const form = reactive<{
+    assignee: string
+    label: string
+    range: string[]
+    recurrence: OnCallRecurrence
+    startTime: string
+    endTime: string
+    daysOfWeek: number[]
+}>({
     assignee: '',
     label: '',
     range: [],
+    recurrence: 'once',
+    startTime: '',
+    endTime: '',
+    daysOfWeek: [],
 })
 
 const rules: FormRules = {
     assignee: [{ required: true, message: '请填写值班人', trigger: 'blur' }],
     range: [{ required: true, message: '请选择时间段', trigger: 'change', type: 'array', len: 2 }],
+    times: [{
+        validator: (_r, _v, cb) => {
+            if (form.recurrence !== 'once' && (!form.startTime || !form.endTime)) cb(new Error('请选择每天时段'))
+            else cb()
+        },
+        trigger: 'change',
+    }],
+    daysOfWeek: [{
+        validator: (_r, _v, cb) => {
+            if (form.recurrence === 'weekly' && form.daysOfWeek.length === 0) cb(new Error('请选择至少一天'))
+            else cb()
+        },
+        trigger: 'change',
+    }],
+}
+
+const windowText = (row: OnCallShift): string => {
+    if (row.recurrence === 'daily') return `每天 ${row.start_time}–${row.end_time}`
+    if (row.recurrence === 'weekly') return `每周${(row.days_of_week || []).map(dayLabel).join('/')} ${row.start_time}–${row.end_time}`
+    return `${row.starts_at} ~ ${row.ends_at}`
 }
 
 const load = async () => {
@@ -121,7 +185,7 @@ const load = async () => {
 }
 
 const openCreate = () => {
-    Object.assign(form, { assignee: '', label: '', range: [] })
+    Object.assign(form, { assignee: '', label: '', range: [], recurrence: 'once', startTime: '', endTime: '', daysOfWeek: [] })
     formRef.value?.clearValidate()
     dialogVisible.value = true
 }
@@ -138,6 +202,10 @@ const submit = async () => {
             label: form.label.trim() || null,
             starts_at: form.range[0],
             ends_at: form.range[1],
+            recurrence: form.recurrence,
+            start_time: form.recurrence === 'once' ? null : form.startTime,
+            end_time: form.recurrence === 'once' ? null : form.endTime,
+            days_of_week: form.recurrence === 'weekly' ? form.daysOfWeek : [],
         })
         ElMessage.success('已创建班次')
         dialogVisible.value = false
@@ -185,5 +253,10 @@ onMounted(load)
 
 .cell-tag {
     margin-left: 6px;
+}
+
+.sep {
+    margin: 0 8px;
+    color: #64748b;
 }
 </style>

@@ -28,6 +28,7 @@ class OpsAlert extends Model
         'assigned_to',
         'assigned_at',
         'escalated_at',
+        'escalation_level',
     ];
 
     protected function casts(): array
@@ -38,6 +39,7 @@ class OpsAlert extends Model
             'acknowledged_at' => 'datetime',
             'assigned_at' => 'datetime',
             'escalated_at' => 'datetime',
+            'escalation_level' => 'integer',
         ];
     }
 }
