@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Ops;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Ops\AlertAcknowledgeRequest;
 use App\Http\Requests\Admin\Ops\AlertAssignRequest;
+use App\Http\Requests\Admin\Ops\AlertBatchRequest;
 use App\Http\Requests\Admin\Ops\AlertIndexRequest;
 use App\Http\Requests\Admin\Ops\AlertNotificationTestRequest;
 use App\Http\Requests\Admin\Ops\AlertSettingsUpdateRequest;
@@ -63,6 +64,49 @@ class AlertController extends Controller
     public function assignees(): JsonResponse
     {
         return $this->success(['items' => $this->service->assignees()]);
+    }
+
+    /**
+     * 批量确认某分组的 open 告警。
+     */
+    public function batchAcknowledge(AlertBatchRequest $request): JsonResponse
+    {
+        return $this->success($this->service->batchByGroup(
+            $request->validated('by'),
+            $request->validated('group'),
+            'acknowledge',
+            ['note' => $request->validated('note')],
+        ));
+    }
+
+    /**
+     * 批量指派某分组的 open 告警。
+     */
+    public function batchAssign(AlertBatchRequest $request): JsonResponse
+    {
+        abort_if($request->validated('assigned_to') === null, 422, '批量指派需要 assigned_to。');
+
+        return $this->success($this->service->batchByGroup(
+            $request->validated('by'),
+            $request->validated('group'),
+            'assign',
+            ['assigned_to' => $request->validated('assigned_to'), 'note' => $request->validated('note')],
+        ));
+    }
+
+    /**
+     * 为某分组创建静默窗口。
+     */
+    public function batchSilence(AlertBatchRequest $request): JsonResponse
+    {
+        $silence = $this->service->batchSilenceGroup(
+            $request->validated('by'),
+            $request->validated('group'),
+            (int) ($request->validated('minutes') ?? 60),
+            $request->user('admin'),
+        );
+
+        return $this->success(['silence_id' => $silence->id, 'ends_at' => optional($silence->ends_at)->toDateTimeString()]);
     }
 
     /**
@@ -126,6 +170,16 @@ class AlertController extends Controller
             'days' => $days,
             ...$this->service->slaSummary($days),
         ]);
+    }
+
+    /**
+     * 告警统计周报（告警 + SLA + 值班）。
+     */
+    public function report(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', (int) config('ops.alerts.weekly_report.window_days', 7))));
+
+        return $this->success($this->service->weeklyReportSummary($days));
     }
 
     /**

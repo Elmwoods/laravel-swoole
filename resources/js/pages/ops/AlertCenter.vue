@@ -317,7 +317,10 @@
                         <div class="panel-title">告警分组</div>
                         <div class="panel-subtitle">按维度聚合 open 告警，降噪与关联</div>
                     </div>
-                    <el-segmented v-model="groupBy" :options="groupByOptions" @change="loadGroups" />
+                    <div class="group-actions">
+                        <el-segmented v-model="groupBy" :options="groupByOptions" @change="loadGroups" />
+                        <el-button text @click="openReport">统计周报</el-button>
+                    </div>
                 </div>
             </template>
 
@@ -342,6 +345,13 @@
                     </template>
                 </el-table-column>
                 <el-table-column label="最近出现" width="180" prop="last_seen_at" />
+                <el-table-column v-if="canManage && groupBy !== 'assigned_to'" label="批量" width="220" fixed="right">
+                    <template #default="{ row }">
+                        <el-button text type="primary" @click="batchAck(row)">确认整组</el-button>
+                        <el-button text type="info" @click="batchAssign(row)">指派</el-button>
+                        <el-button text type="warning" @click="batchSilence(row)">静默</el-button>
+                    </template>
+                </el-table-column>
             </el-table>
         </el-card>
 
@@ -432,6 +442,9 @@
                         <el-tag v-if="row.escalated_at" type="danger" size="small" effect="dark" class="escalated-tag">
                             已升级{{ row.escalation_level ? ` L${row.escalation_level}` : '' }}
                         </el-tag>
+                        <el-tag v-if="row.suppressed_at" type="info" size="small" effect="plain" class="escalated-tag">
+                            被抑制
+                        </el-tag>
                     </template>
                 </el-table-column>
 
@@ -501,6 +514,19 @@
                 />
             </div>
         </el-card>
+
+        <el-dialog v-model="reportVisible" title="告警统计周报" width="560px">
+            <div v-if="report" class="report-body">
+                <p>窗口：近 {{ report.window_days }} 天（{{ report.generated_at }}）</p>
+                <p>告警共 {{ report.alerts.total }} 条 —— 严重 {{ report.alerts.by_severity.critical }} / 警告 {{ report.alerts.by_severity.warning }} / 提示 {{ report.alerts.by_severity.info }}</p>
+                <p>MTTA {{ Math.round(report.sla.mtta_avg_seconds / 60) }} 分 / MTTR {{ Math.round(report.sla.mttr_avg_seconds / 60) }} 分</p>
+                <p>达标率：确认 {{ report.sla.ack_rate ?? '无' }}% / 恢复 {{ report.sla.resolve_rate ?? '无' }}%；当前违约 {{ report.sla.open_breaches }}</p>
+                <p>积压：&lt;1h {{ report.sla.open_aging.under_1h }} / 1–24h {{ report.sla.open_aging.one_to_24h }} / &gt;24h {{ report.sla.open_aging.over_24h }}</p>
+                <p>当前值班：{{ report.on_call.current || '无' }}</p>
+                <p>Top 来源：<span v-for="s in report.alerts.sources" :key="s.source" class="report-src">{{ s.source }} {{ s.total }}</span></p>
+            </div>
+            <el-empty v-else description="暂无数据" />
+        </el-dialog>
     </section>
 </template>
 
@@ -516,10 +542,14 @@ import {
     createAlertDemoScenarios,
     deleteAlertPreset,
     evaluateAlerts,
+    batchAcknowledgeGroup,
+    batchAssignGroup,
+    batchSilenceGroup,
     exportAlertRules,
     getAlertAssignees,
     getAlertGroups,
     getAlertPresets,
+    getAlertReport,
     importAlertRules,
     getAlertSettings,
     getAlertTrend,
@@ -548,12 +578,16 @@ import {
     type OpsAlert,
     type AlertRuleExportItem,
     type AlertGroup,
+    type AlertReport,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const adminAuth = useAdminAuthStore()
 const currentAdminName = computed(() => adminAuth.profile?.admin?.name ?? '')
+const canManage = computed(() => adminAuth.hasPermission('ops.alerts.manage'))
+const reportVisible = ref(false)
+const report = ref<AlertReport | null>(null)
 
 const loading = ref(false)
 const evaluating = ref(false)
@@ -1230,6 +1264,62 @@ const loadGroups = async () => {
         alertGroups.value = []
     } finally {
         groupsLoading.value = false
+    }
+}
+
+const groupLabel = (row: AlertGroup) => (row.group === '__unassigned__' ? '未指派' : row.group)
+
+const batchAck = async (row: AlertGroup) => {
+    try {
+        await ElMessageBox.confirm(`确认整组「${groupLabel(row)}」的 ${row.total} 条告警？`, '批量确认', { type: 'warning' })
+    } catch {
+        return
+    }
+    try {
+        const res = await batchAcknowledgeGroup({ by: row.by, group: row.group })
+        ElMessage.success(`已确认 ${res.data.data.affected} 条`)
+        await Promise.all([loadGroups(), loadAlerts(), loadSummary()])
+    } catch {
+        ElMessage.error('批量确认失败')
+    }
+}
+
+const batchAssign = async (row: AlertGroup) => {
+    try {
+        const { value } = await ElMessageBox.prompt(`把「${groupLabel(row)}」整组指派给谁？`, '批量指派', {
+            inputPattern: /^[\p{L}\p{N}@._\-\s]+$/u,
+            inputErrorMessage: '负责人只能包含文字、数字、空格、@ . _ -',
+        })
+        const res = await batchAssignGroup({ by: row.by, group: row.group, assigned_to: value })
+        ElMessage.success(`已指派 ${res.data.data.affected} 条给 ${value}`)
+        await Promise.all([loadGroups(), loadAlerts(), loadAssignees()])
+    } catch (e) {
+        if (e !== 'cancel') ElMessage.error('批量指派失败')
+    }
+}
+
+const batchSilence = async (row: AlertGroup) => {
+    try {
+        const { value } = await ElMessageBox.prompt(`静默「${groupLabel(row)}」多少分钟？`, '批量静默', {
+            inputValue: '60',
+            inputPattern: /^\d+$/,
+            inputErrorMessage: '请输入分钟数',
+        })
+        await batchSilenceGroup({ by: row.by, group: row.group, minutes: Number(value) })
+        ElMessage.success(`已静默 ${groupLabel(row)} ${value} 分钟`)
+        await loadSilences()
+    } catch (e) {
+        if (e !== 'cancel') ElMessage.error('批量静默失败')
+    }
+}
+
+const openReport = async () => {
+    reportVisible.value = true
+    try {
+        const res = await getAlertReport(7)
+        report.value = res.data.data
+    } catch {
+        report.value = null
     }
 }
 

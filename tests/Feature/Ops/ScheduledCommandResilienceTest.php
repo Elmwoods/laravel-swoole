@@ -8,6 +8,7 @@ use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\AlertChannelHealthService;
 use App\Services\Ops\AuditAnomalyScanService;
 use App\Services\Ops\Log\OpsLogErrorWatcherService;
+use App\Services\Ops\OnCallRotationService;
 use App\Services\Ops\OpsInspectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
@@ -113,5 +114,23 @@ class ScheduledCommandResilienceTest extends TestCase
         });
 
         $this->artisan('ops:alerts:sla-scan')->assertExitCode(0);
+    }
+
+    public function test_on_call_remind_command_succeeds_even_when_service_throws(): void
+    {
+        $this->mock(OnCallRotationService::class, function ($mock): void {
+            $mock->shouldReceive('sendDueReminders')->once()->andThrow(new RuntimeException('db down'));
+        });
+
+        $this->artisan('ops:on-call:remind')->assertExitCode(0);
+    }
+
+    public function test_weekly_report_command_succeeds_even_when_send_throws(): void
+    {
+        $this->mock(AlertCenterService::class, function ($mock): void {
+            $mock->shouldReceive('sendWeeklyReport')->once()->andThrow(new RuntimeException('db down'));
+        });
+
+        $this->artisan('ops:alerts:weekly-report')->assertExitCode(0);
     }
 }

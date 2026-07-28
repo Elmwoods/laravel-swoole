@@ -18,6 +18,52 @@ class OnCallRotationService
 {
     private const RECURRENCES = ['once', 'daily', 'weekly'];
 
+    public function __construct(
+        private readonly AlertNotificationService $notification,
+    ) {}
+
+    /**
+     * 向即将上岗（lead_minutes 内开始）的一次性班次值班人推送提醒，去重（reminded_at）。返回推送条数。
+     */
+    public function sendDueReminders(): int
+    {
+        try {
+            if (! (bool) config('ops.alerts.on_call_reminder.enabled', false)) {
+                return 0;
+            }
+
+            if (! Schema::hasTable('ops_on_call_shifts')) {
+                return 0;
+            }
+
+            $lead = max(1, (int) config('ops.alerts.on_call_reminder.lead_minutes', 15));
+            $now = now();
+
+            // 仅 once 绝对班次（recurring 无法用单 reminded_at 按次去重）。
+            $shifts = OpsOnCallShift::query()
+                ->where('is_active', true)
+                ->where('recurrence', 'once')
+                ->whereNull('reminded_at')
+                ->whereBetween('starts_at', [$now, $now->copy()->addMinutes($lead)])
+                ->get();
+
+            $sent = 0;
+
+            foreach ($shifts as $shift) {
+                $this->notification->sendOnCallReminder(
+                    (string) $shift->assignee,
+                    optional($shift->starts_at)->toDateTimeString() ?? '',
+                );
+                $shift->forceFill(['reminded_at' => now()])->save();
+                $sent++;
+            }
+
+            return $sent;
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
     /**
      * 当前值班人（此刻生效、最近开始且命中重复模式的班次）；无则 null。
      */

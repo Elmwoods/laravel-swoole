@@ -10,6 +10,7 @@ use App\Models\OpsAlert;
 use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertEvent;
 use App\Models\OpsAlertSetting;
+use App\Models\OpsAlertSilence;
 use App\Models\OpsChannelHealth;
 use App\Models\OpsInspection;
 use App\Services\Ops\Docker\DockerService;
@@ -41,7 +42,67 @@ class AlertCenterService
         private readonly OctaneControlService $octaneService,
         private readonly SupervisorService $supervisorService,
         private readonly OnCallRotationService $onCall,
+        private readonly AlertSilenceService $silences,
+        private readonly AlertCorrelationService $correlation,
     ) {}
+
+    private const BATCH_CAP = 500;
+
+    /**
+     * 对某分组（by=source|severity）的 open 告警批量执行 acknowledge|assign。
+     *
+     * @return array{op:string, by:string, group:string, affected:int, capped:bool}
+     */
+    public function batchByGroup(string $by, string $group, string $op, array $payload = []): array
+    {
+        if (! in_array($by, ['source', 'severity'], true)) {
+            throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
+        }
+
+        if (! in_array($op, ['acknowledge', 'assign'], true)) {
+            throw new \InvalidArgumentException('批量操作仅支持 acknowledge 或 assign。');
+        }
+
+        $query = OpsAlert::query()->where('status', 'open')->where($by, $group);
+        $total = (clone $query)->count();
+        $alerts = $query->orderBy('id')->limit(self::BATCH_CAP)->get();
+
+        foreach ($alerts as $alert) {
+            if ($op === 'acknowledge') {
+                $this->acknowledge($alert, $payload);
+            } else {
+                $this->assign($alert, $payload);
+            }
+        }
+
+        return [
+            'op' => $op,
+            'by' => $by,
+            'group' => $group,
+            'affected' => $alerts->count(),
+            'capped' => $total > self::BATCH_CAP,
+        ];
+    }
+
+    /**
+     * 为某分组创建一条静默窗口（复用 phase-29 静默 create）。
+     */
+    public function batchSilenceGroup(string $by, string $group, int $minutes, ?AdminUser $actor = null): OpsAlertSilence
+    {
+        if (! in_array($by, ['source', 'severity'], true)) {
+            throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
+        }
+
+        $minutes = max(1, min(1440, $minutes));
+
+        return $this->silences->create([
+            'label' => "批量静默 {$group}",
+            'starts_at' => now()->toDateTimeString(),
+            'ends_at' => now()->addMinutes($minutes)->toDateTimeString(),
+            'sources' => $by === 'source' ? [$group] : [],
+            'severities' => $by === 'severity' ? [$group] : [],
+        ], $actor);
+    }
 
     /**
      * 告警列表。
@@ -240,6 +301,86 @@ class AlertCenterService
         return [
             'sent' => true,
             'summary' => $summary,
+            'channels' => $this->notification->send($alert),
+        ];
+    }
+
+    /**
+     * 告警统计周报聚合：告警摘要 + SLA 快照 + 值班，供定时推送 / GET 端点。
+     */
+    public function weeklyReportSummary(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $digest = $this->digestSummary(min(168, $days * 24));
+        $sla = $this->slaSummary($days);
+
+        return [
+            'window_days' => $days,
+            'generated_at' => now()->toDateTimeString(),
+            'alerts' => [
+                'total' => $digest['total'],
+                'by_severity' => $digest['by_severity'],
+                'by_status' => $digest['by_status'],
+                'sources' => $digest['sources'],
+            ],
+            'sla' => [
+                'mtta_avg_seconds' => $sla['mtta']['avg_seconds'] ?? 0,
+                'mttr_avg_seconds' => $sla['mttr']['avg_seconds'] ?? 0,
+                'ack_rate' => $sla['compliance']['ack']['overall']['rate'] ?? null,
+                'resolve_rate' => $sla['compliance']['resolve']['overall']['rate'] ?? null,
+                'open_aging' => $sla['open_aging'] ?? ['under_1h' => 0, 'one_to_24h' => 0, 'over_24h' => 0],
+                'open_breaches' => $sla['open_breaches'] ?? 0,
+            ],
+            'on_call' => [
+                'current' => $this->onCall->currentOnCall(),
+            ],
+        ];
+    }
+
+    public function renderWeeklyReport(array $report): string
+    {
+        $a = $report['alerts'];
+        $sev = $a['by_severity'];
+        $sla = $report['sla'];
+        $sources = collect($a['sources'])->map(fn (array $r): string => "{$r['source']} {$r['total']}")->implode(' / ');
+
+        $lines = [
+            "Ops Center 告警周报（近 {$report['window_days']} 天，{$report['generated_at']}）",
+            "告警共 {$a['total']} 条（严重 {$sev['critical']} / 警告 {$sev['warning']} / 提示 {$sev['info']}）",
+            'Top 来源：'.($sources !== '' ? $sources : '无'),
+            'SLA：MTTA '.round(($sla['mtta_avg_seconds'] ?? 0) / 60).' 分 / MTTR '.round(($sla['mttr_avg_seconds'] ?? 0) / 60).' 分',
+            '达标率：确认 '.($sla['ack_rate'] ?? '无').'% / 恢复 '.($sla['resolve_rate'] ?? '无').'%；当前违约 '.$sla['open_breaches'],
+            '当前值班：'.($report['on_call']['current'] ?? '无'),
+        ];
+
+        return $this->safeInspectionText(implode(PHP_EOL, $lines));
+    }
+
+    public function sendWeeklyReport(int $days): array
+    {
+        if (! (bool) config('ops.alerts.weekly_report.enabled', false)) {
+            return ['sent' => false, 'reason' => 'disabled'];
+        }
+
+        $report = $this->weeklyReportSummary($days);
+
+        if ($report['alerts']['total'] === 0 && ! (bool) config('ops.alerts.weekly_report.send_when_empty', false)) {
+            return ['sent' => false, 'reason' => 'empty', 'report' => $report];
+        }
+
+        $alert = new OpsAlert([
+            'source' => 'weekly-report',
+            'severity' => (string) config('ops.alerts.weekly_report.severity', 'info'),
+            'title' => 'Ops Center 告警周报',
+            'message' => $this->renderWeeklyReport($report),
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        return [
+            'sent' => true,
+            'report' => $report,
             'channels' => $this->notification->send($alert),
         ];
     }
@@ -869,6 +1010,7 @@ class AlertCenterService
             'assigned_at' => optional($alert->assigned_at)->toDateTimeString(),
             'escalated_at' => optional($alert->escalated_at)->toDateTimeString(),
             'escalation_level' => (int) $alert->escalation_level,
+            'suppressed_at' => optional($alert->suppressed_at)->toDateTimeString(),
             'timeline' => $this->timeline($alert),
             'created_at' => optional($alert->created_at)->toDateTimeString(),
             'updated_at' => optional($alert->updated_at)->toDateTimeString(),
@@ -1357,6 +1499,9 @@ class AlertCenterService
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
         $alert->save();
+
+        // 关联抑制标记：父来源正在 firing 则标 suppressed_at（供 UI/审计），send() 亦会跳过外发。
+        $alert->forceFill(['suppressed_at' => $this->correlation->isSuppressed($alert) ? now() : null])->save();
 
         // 值班自动指派：仅对刚新建、尚未指派的告警，且开启值班自动指派、当前有值班人时生效。
         // 自动指派不发指派通知（告警本体已外发，避免双重刷屏）。

@@ -20,6 +20,7 @@ class AlertNotificationService
 {
     public function __construct(
         private readonly AlertSilenceService $silences,
+        private readonly AlertCorrelationService $correlation,
     ) {}
 
     /**
@@ -94,6 +95,13 @@ class AlertNotificationService
                 ->all();
         }
 
+        // 关联抑制：父来源正在 firing 时，抑制子来源告警外发（仍入库/广播）。
+        if ($this->correlation->isSuppressed($alert)) {
+            return collect($targets)
+                ->mapWithKeys(fn (string $channel): array => [$channel => ['enabled' => true, 'sent' => false, 'reason' => 'suppressed']])
+                ->all();
+        }
+
         $result = [];
 
         foreach ($targets as $channel) {
@@ -147,6 +155,34 @@ class AlertNotificationService
             'title' => '告警已指派',
             'message' => "「{$alert->title}」（来源 {$alert->source}）已指派给 {$assignee}",
             'status' => (string) $alert->status,
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        $result = [];
+
+        foreach ($this->channels() as $channel) {
+            $result[$channel] = $this->dispatch($channel, $notice);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 值班上岗提醒推送（config 未开时 no-op，不落库）。
+     */
+    public function sendOnCallReminder(string $assignee, string $startsAt): array
+    {
+        if (! (bool) config('ops.alerts.on_call_reminder.enabled', false)) {
+            return [];
+        }
+
+        $notice = new OpsAlert([
+            'source' => 'on-call-reminder',
+            'severity' => 'info',
+            'title' => '值班上岗提醒',
+            'message' => "{$assignee}，你将于 {$startsAt} 上岗值班，请做好交接准备。",
+            'status' => 'open',
             'hit_count' => 1,
             'last_seen_at' => now(),
         ]);

@@ -29,6 +29,7 @@ export interface OpsAlert {
     assigned_at: string | null
     escalated_at: string | null
     escalation_level: number
+    suppressed_at: string | null
     timeline: AlertTimelineItem[]
     created_at: string | null
     updated_at: string | null
@@ -392,6 +393,26 @@ export interface AlertGroup {
 
 export const getAlertGroups = (by: 'source' | 'severity' | 'assigned_to' = 'source') =>
     request.get<ApiResponse<{ by: string; groups: AlertGroup[] }>>('/api/ops/alerts/groups', { params: { by } })
+
+export const batchAcknowledgeGroup = (payload: { by: string; group: string; note?: string }) =>
+    request.post<ApiResponse<{ affected: number; capped: boolean }>>('/api/ops/alerts/batch/acknowledge', payload)
+
+export const batchAssignGroup = (payload: { by: string; group: string; assigned_to: string; note?: string }) =>
+    request.post<ApiResponse<{ affected: number; capped: boolean }>>('/api/ops/alerts/batch/assign', payload)
+
+export const batchSilenceGroup = (payload: { by: string; group: string; minutes?: number }) =>
+    request.post<ApiResponse<{ silence_id: number; ends_at: string | null }>>('/api/ops/alerts/batch/silence', payload)
+
+export interface AlertReport {
+    window_days: number
+    generated_at: string
+    alerts: { total: number; by_severity: Record<'critical' | 'warning' | 'info', number>; by_status: Record<string, number>; sources: Array<{ source: string; total: number }> }
+    sla: { mtta_avg_seconds: number; mttr_avg_seconds: number; ack_rate: number | null; resolve_rate: number | null; open_aging: { under_1h: number; one_to_24h: number; over_24h: number }; open_breaches: number }
+    on_call: { current: string | null }
+}
+
+export const getAlertReport = (days = 7) =>
+    request.get<ApiResponse<AlertReport>>('/api/ops/alerts/report', { params: { days } })
 
 export interface OnCallDashboard {
     generated_at: string

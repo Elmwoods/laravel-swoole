@@ -17,6 +17,7 @@ class OpsOnCallShift extends Model
         'start_time',
         'end_time',
         'is_active',
+        'reminded_at',
         'created_by',
     ];
 
@@ -27,6 +28,7 @@ class OpsOnCallShift extends Model
             'ends_at' => 'datetime',
             'days_of_week' => 'array',
             'is_active' => 'boolean',
+            'reminded_at' => 'datetime',
         ];
     }
 
