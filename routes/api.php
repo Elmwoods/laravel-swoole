@@ -218,6 +218,12 @@ Route::prefix('/ops')
                 Route::get('/summary', [AlertController::class, 'summary']);
                 Route::get('/assignees', [AlertController::class, 'assignees']);
                 Route::get('/groups', [AlertController::class, 'groups']);
+                Route::post('/batch/acknowledge', [AlertController::class, 'batchAcknowledge'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,batch_acknowledge']);
+                Route::post('/batch/assign', [AlertController::class, 'batchAssign'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,batch_assign']);
+                Route::post('/batch/silence', [AlertController::class, 'batchSilence'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,batch_silence']);
                 Route::get('/notification-status', [AlertController::class, 'notificationStatus']);
                 Route::get('/settings', [AlertController::class, 'settings']);
                 Route::put('/settings', [AlertController::class, 'updateSettings'])

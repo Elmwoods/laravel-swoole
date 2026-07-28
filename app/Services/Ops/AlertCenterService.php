@@ -10,6 +10,7 @@ use App\Models\OpsAlert;
 use App\Models\OpsAlertEvaluation;
 use App\Models\OpsAlertEvent;
 use App\Models\OpsAlertSetting;
+use App\Models\OpsAlertSilence;
 use App\Models\OpsChannelHealth;
 use App\Models\OpsInspection;
 use App\Services\Ops\Docker\DockerService;
@@ -41,7 +42,66 @@ class AlertCenterService
         private readonly OctaneControlService $octaneService,
         private readonly SupervisorService $supervisorService,
         private readonly OnCallRotationService $onCall,
+        private readonly AlertSilenceService $silences,
     ) {}
+
+    private const BATCH_CAP = 500;
+
+    /**
+     * 对某分组（by=source|severity）的 open 告警批量执行 acknowledge|assign。
+     *
+     * @return array{op:string, by:string, group:string, affected:int, capped:bool}
+     */
+    public function batchByGroup(string $by, string $group, string $op, array $payload = []): array
+    {
+        if (! in_array($by, ['source', 'severity'], true)) {
+            throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
+        }
+
+        if (! in_array($op, ['acknowledge', 'assign'], true)) {
+            throw new \InvalidArgumentException('批量操作仅支持 acknowledge 或 assign。');
+        }
+
+        $query = OpsAlert::query()->where('status', 'open')->where($by, $group);
+        $total = (clone $query)->count();
+        $alerts = $query->orderBy('id')->limit(self::BATCH_CAP)->get();
+
+        foreach ($alerts as $alert) {
+            if ($op === 'acknowledge') {
+                $this->acknowledge($alert, $payload);
+            } else {
+                $this->assign($alert, $payload);
+            }
+        }
+
+        return [
+            'op' => $op,
+            'by' => $by,
+            'group' => $group,
+            'affected' => $alerts->count(),
+            'capped' => $total > self::BATCH_CAP,
+        ];
+    }
+
+    /**
+     * 为某分组创建一条静默窗口（复用 phase-29 静默 create）。
+     */
+    public function batchSilenceGroup(string $by, string $group, int $minutes, ?AdminUser $actor = null): OpsAlertSilence
+    {
+        if (! in_array($by, ['source', 'severity'], true)) {
+            throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
+        }
+
+        $minutes = max(1, min(1440, $minutes));
+
+        return $this->silences->create([
+            'label' => "批量静默 {$group}",
+            'starts_at' => now()->toDateTimeString(),
+            'ends_at' => now()->addMinutes($minutes)->toDateTimeString(),
+            'sources' => $by === 'source' ? [$group] : [],
+            'severities' => $by === 'severity' ? [$group] : [],
+        ], $actor);
+    }
 
     /**
      * 告警列表。
