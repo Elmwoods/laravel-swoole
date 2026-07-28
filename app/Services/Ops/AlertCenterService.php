@@ -384,8 +384,59 @@ class AlertCenterService
                 'ack_minutes' => $this->slaTargets('ack_minutes'),
                 'resolve_minutes' => $this->slaTargets('resolve_minutes'),
             ],
+            'compliance' => [
+                'ack' => $this->slaCompliance($ackPairs, 'ack_minutes'),
+                'resolve' => $this->slaCompliance($resolvePairs, 'resolve_minutes'),
+            ],
             'open_breaches' => OpsAlert::query()->where('source', 'sla_breach')->where('status', 'open')->count(),
         ];
+    }
+
+    /**
+     * SLA 达标率：按严重级统计实际时长 <= 该级目标（分钟*60 秒）的比例。
+     * rate = total>0 ? round(within/total*100) : null（无数据不计率）。
+     *
+     * @param  array<int, array{severity: string, seconds: int}>  $pairs
+     * @return array<string, array{within: int, total: int, rate: int|null}>
+     */
+    private function slaCompliance(array $pairs, string $targetKey): array
+    {
+        $targets = $this->slaTargets($targetKey);
+        $by = collect($pairs)->groupBy('severity');
+
+        $tally = function (Collection $group, int $targetSeconds): array {
+            $total = $group->count();
+            $within = $group->filter(fn (array $pair): bool => $pair['seconds'] <= $targetSeconds)->count();
+
+            return [
+                'within' => $within,
+                'total' => $total,
+                'rate' => $total > 0 ? (int) round($within / $total * 100) : null,
+            ];
+        };
+
+        $result = [];
+        $overall = collect();
+        $overallWithin = 0;
+
+        foreach (['critical', 'warning', 'info'] as $severity) {
+            $group = $by->get($severity, collect());
+            $targetSeconds = ($targets[$severity] ?? 1) * 60;
+            $stats = $tally($group, $targetSeconds);
+            $result[$severity] = $stats;
+
+            $overall = $overall->merge($group);
+            $overallWithin += $stats['within'];
+        }
+
+        $overallTotal = $overall->count();
+        $result['overall'] = [
+            'within' => $overallWithin,
+            'total' => $overallTotal,
+            'rate' => $overallTotal > 0 ? (int) round($overallWithin / $overallTotal * 100) : null,
+        ];
+
+        return $result;
     }
 
     /**
