@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\Ops\Log\LogController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
 use App\Http\Controllers\Admin\Ops\OctaneController;
 use App\Http\Controllers\Admin\Ops\OnCallController;
+use App\Http\Controllers\Admin\Ops\OnCallDashboardController;
 use App\Http\Controllers\Admin\Ops\OpsInspectionController;
 use App\Http\Controllers\Admin\Ops\OpsReleaseCheckController;
 use App\Http\Controllers\Admin\Ops\QueueController;
@@ -231,6 +232,8 @@ Route::prefix('/ops')
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_toggle']);
                 Route::delete('/silences/{silence}', [AlertSilenceController::class, 'destroy'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_delete']);
+                Route::get('/on-call/dashboard', [OnCallDashboardController::class, 'overview'])
+                    ->middleware('admin.permission:ops.alerts.view');
                 Route::get('/on-call', [OnCallController::class, 'index']);
                 Route::post('/on-call', [OnCallController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,on_call_create']);
