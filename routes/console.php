@@ -129,3 +129,17 @@ Schedule::command('ops:alerts:health-check')
 Schedule::command('ops:alerts:sla-scan')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+/**
+ * 每 5 分钟提醒即将上岗的值班人（班次开始前 lead_minutes 内）。默认 opt-in 关闭。
+ */
+Schedule::command('ops:on-call:remind')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+/**
+ * 每周一 09:00 推送告警统计周报（告警 + SLA + 值班）。默认 opt-in 关闭。
+ */
+Schedule::command('ops:alerts:weekly-report')
+    ->weeklyOn(1, '09:00')
+    ->withoutOverlapping();

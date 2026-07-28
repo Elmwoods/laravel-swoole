@@ -231,6 +231,7 @@ Route::prefix('/ops')
                 Route::get('/evaluations/latest', [AlertController::class, 'latestEvaluation']);
                 Route::get('/trend', [AlertController::class, 'trend']);
                 Route::get('/sla', [AlertController::class, 'sla']);
+                Route::get('/report', [AlertController::class, 'report']);
                 Route::get('/silences', [AlertSilenceController::class, 'index']);
                 Route::post('/silences', [AlertSilenceController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,silence_create']);

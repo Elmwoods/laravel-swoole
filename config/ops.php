@@ -123,6 +123,20 @@ return [
             ['after_minutes' => (int) env('OPS_ALERT_ESCALATION_L3_MINUTES', 120), 'channels' => [], 'reassign_on_call' => false],
         ],
 
+        // 告警统计周报（opt-in）：定时聚合告警 + SLA + 值班，经通道推送 + GET /alerts/report 按需查看。
+        'weekly_report' => [
+            'enabled' => filter_var(env('OPS_ALERT_WEEKLY_REPORT_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'window_days' => max(1, min(90, (int) env('OPS_ALERT_WEEKLY_REPORT_WINDOW_DAYS', 7))),
+            'severity' => env('OPS_ALERT_WEEKLY_REPORT_SEVERITY', 'info'),
+            'send_when_empty' => filter_var(env('OPS_ALERT_WEEKLY_REPORT_SEND_WHEN_EMPTY', false), FILTER_VALIDATE_BOOL),
+        ],
+
+        // 值班上岗提醒（opt-in）：班次开始前 lead_minutes 向即将上岗的值班人推送提醒（仅 once 绝对班次）。
+        'on_call_reminder' => [
+            'enabled' => filter_var(env('OPS_ALERT_ON_CALL_REMINDER_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'lead_minutes' => max(1, (int) env('OPS_ALERT_ON_CALL_REMINDER_LEAD_MINUTES', 15)),
+        ],
+
         // 告警关联抑制（父子来源依赖，部署期设）：父来源有 open 告警时，抑制依赖它的子来源告警外发（仍入库、标 suppressed）。
         'correlation' => [
             'enabled' => filter_var(env('OPS_ALERT_CORRELATION_ENABLED', false), FILTER_VALIDATE_BOOL),

@@ -173,6 +173,16 @@ class AlertController extends Controller
     }
 
     /**
+     * 告警统计周报（告警 + SLA + 值班）。
+     */
+    public function report(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', (int) config('ops.alerts.weekly_report.window_days', 7))));
+
+        return $this->success($this->service->weeklyReportSummary($days));
+    }
+
+    /**
      * 手动触发一次告警评估。
      */
     public function evaluate(): JsonResponse

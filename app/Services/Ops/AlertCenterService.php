@@ -306,6 +306,86 @@ class AlertCenterService
     }
 
     /**
+     * 告警统计周报聚合：告警摘要 + SLA 快照 + 值班，供定时推送 / GET 端点。
+     */
+    public function weeklyReportSummary(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $digest = $this->digestSummary(min(168, $days * 24));
+        $sla = $this->slaSummary($days);
+
+        return [
+            'window_days' => $days,
+            'generated_at' => now()->toDateTimeString(),
+            'alerts' => [
+                'total' => $digest['total'],
+                'by_severity' => $digest['by_severity'],
+                'by_status' => $digest['by_status'],
+                'sources' => $digest['sources'],
+            ],
+            'sla' => [
+                'mtta_avg_seconds' => $sla['mtta']['avg_seconds'] ?? 0,
+                'mttr_avg_seconds' => $sla['mttr']['avg_seconds'] ?? 0,
+                'ack_rate' => $sla['compliance']['ack']['overall']['rate'] ?? null,
+                'resolve_rate' => $sla['compliance']['resolve']['overall']['rate'] ?? null,
+                'open_aging' => $sla['open_aging'] ?? ['under_1h' => 0, 'one_to_24h' => 0, 'over_24h' => 0],
+                'open_breaches' => $sla['open_breaches'] ?? 0,
+            ],
+            'on_call' => [
+                'current' => $this->onCall->currentOnCall(),
+            ],
+        ];
+    }
+
+    public function renderWeeklyReport(array $report): string
+    {
+        $a = $report['alerts'];
+        $sev = $a['by_severity'];
+        $sla = $report['sla'];
+        $sources = collect($a['sources'])->map(fn (array $r): string => "{$r['source']} {$r['total']}")->implode(' / ');
+
+        $lines = [
+            "Ops Center 告警周报（近 {$report['window_days']} 天，{$report['generated_at']}）",
+            "告警共 {$a['total']} 条（严重 {$sev['critical']} / 警告 {$sev['warning']} / 提示 {$sev['info']}）",
+            'Top 来源：'.($sources !== '' ? $sources : '无'),
+            'SLA：MTTA '.round(($sla['mtta_avg_seconds'] ?? 0) / 60).' 分 / MTTR '.round(($sla['mttr_avg_seconds'] ?? 0) / 60).' 分',
+            '达标率：确认 '.($sla['ack_rate'] ?? '无').'% / 恢复 '.($sla['resolve_rate'] ?? '无').'%；当前违约 '.$sla['open_breaches'],
+            '当前值班：'.($report['on_call']['current'] ?? '无'),
+        ];
+
+        return $this->safeInspectionText(implode(PHP_EOL, $lines));
+    }
+
+    public function sendWeeklyReport(int $days): array
+    {
+        if (! (bool) config('ops.alerts.weekly_report.enabled', false)) {
+            return ['sent' => false, 'reason' => 'disabled'];
+        }
+
+        $report = $this->weeklyReportSummary($days);
+
+        if ($report['alerts']['total'] === 0 && ! (bool) config('ops.alerts.weekly_report.send_when_empty', false)) {
+            return ['sent' => false, 'reason' => 'empty', 'report' => $report];
+        }
+
+        $alert = new OpsAlert([
+            'source' => 'weekly-report',
+            'severity' => (string) config('ops.alerts.weekly_report.severity', 'info'),
+            'title' => 'Ops Center 告警周报',
+            'message' => $this->renderWeeklyReport($report),
+            'status' => 'open',
+            'hit_count' => 1,
+            'last_seen_at' => now(),
+        ]);
+
+        return [
+            'sent' => true,
+            'report' => $report,
+            'channels' => $this->notification->send($alert),
+        ];
+    }
+
+    /**
      * 通知通道配置状态。
      */
     public function notificationStatus(): array
