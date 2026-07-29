@@ -19,6 +19,7 @@ export interface OpsAlert {
     title: string
     message: string
     context: Record<string, unknown>
+    tags: string[]
     status: AlertStatus
     hit_count: number
     last_seen_at: string | null
@@ -79,6 +80,7 @@ export interface AlertQuery {
     source?: string
     assigned_to?: string
     assigned?: string
+    tag?: string
     page?: number
     per_page?: number
 }
@@ -446,6 +448,39 @@ export interface AlertHeatmapResult {
 
 export const getAlertHeatmap = (days = 30) =>
     request.get<ApiResponse<AlertHeatmapResult>>('/api/ops/alerts/heatmap', { params: { days } })
+
+export const setAlertTags = (id: number, tags: string[]) =>
+    request.post<ApiResponse<OpsAlert>>(`/api/ops/alerts/${id}/tags`, { tags })
+
+export interface SimilarAlert {
+    id: number
+    title: string
+    severity: AlertSeverity
+    status: AlertStatus
+    last_seen_at: string | null
+    acknowledged_by: string | null
+    acknowledge_note: string | null
+    resolved_at: string | null
+    notes: AlertNoteItem[]
+}
+
+export const getSimilarAlerts = (id: number) =>
+    request.get<ApiResponse<{ items: SimilarAlert[] }>>(`/api/ops/alerts/${id}/similar`)
+
+export interface ShiftHandover {
+    id: number
+    from_assignee: string | null
+    to_assignee: string
+    note: string | null
+    open_alert_count: number
+    created_at: string | null
+}
+
+export const getHandovers = () =>
+    request.get<ApiResponse<{ items: ShiftHandover[] }>>('/api/ops/alerts/handovers')
+
+export const createHandover = (payload: { from_assignee?: string | null; to_assignee?: string | null; note?: string | null }) =>
+    request.post<ApiResponse<{ handover: { id: number; to_assignee: string; open_alert_count: number } }>>('/api/ops/alerts/handovers', payload)
 
 export interface OnCallDashboard {
     generated_at: string

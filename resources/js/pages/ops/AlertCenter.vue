@@ -409,6 +409,8 @@
                     />
                 </el-select>
 
+                <el-input v-model="tagFilter" clearable placeholder="标签" class="tag-filter" @change="handleFilterChange" @clear="handleFilterChange" />
+
                 <el-select v-model="selectedPresetId" clearable placeholder="筛选预设" class="preset-select" @change="applyPreset">
                     <el-option v-for="p in presets" :key="p.id" :label="p.name" :value="p.id" />
                 </el-select>
@@ -431,6 +433,9 @@
                     <template #default="{ row }">
                         <div class="alert-title">{{ row.title }}</div>
                         <div class="alert-message">{{ row.message }}</div>
+                        <div v-if="row.tags && row.tags.length" class="alert-tags">
+                            <el-tag v-for="t in row.tags" :key="t" size="small" effect="plain" class="alert-tag">{{ t }}</el-tag>
+                        </div>
                     </template>
                 </el-table-column>
 
@@ -540,6 +545,32 @@
                     </ol>
                 </template>
 
+                <div class="detail-section-title">标签</div>
+                <el-select
+                    v-model="detailTags"
+                    multiple
+                    filterable
+                    allow-create
+                    default-first-option
+                    :disabled="!canManage"
+                    placeholder="如 team:dba env:prod"
+                    style="width: 100%"
+                    @change="saveTags"
+                >
+                    <el-option v-for="t in detailTags" :key="t" :label="t" :value="t" />
+                </el-select>
+
+                <div class="detail-section-title">相似告警（同源已恢复）</div>
+                <el-empty v-if="!similar.length" description="暂无相似告警" :image-size="60" />
+                <div v-for="s in similar" :key="s.id" class="similar-item">
+                    <div class="similar-head">
+                        <span class="alert-title">{{ s.title }}</span>
+                        <span class="muted">{{ s.resolved_at }}</span>
+                    </div>
+                    <div v-if="s.acknowledge_note" class="muted">恢复备注：{{ s.acknowledge_note }}</div>
+                    <div v-for="n in s.notes" :key="n.id" class="muted">· {{ n.author }}：{{ n.body }}</div>
+                </div>
+
                 <div class="detail-section-title">时间线</div>
                 <el-timeline v-if="detailAlert.timeline.length">
                     <el-timeline-item
@@ -609,6 +640,8 @@ import {
     deleteAlertNote,
     exportAlertRules,
     getAlertNotes,
+    getSimilarAlerts,
+    setAlertTags,
     getAlertAssignees,
     getAlertGroups,
     getAlertPresets,
@@ -643,6 +676,7 @@ import {
     type AlertGroup,
     type AlertReport,
     type AlertNoteItem,
+    type SimilarAlert,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -657,6 +691,8 @@ const detailAlert = ref<OpsAlert | null>(null)
 const alertNotes = ref<AlertNoteItem[]>([])
 const noteBody = ref('')
 const noteSaving = ref(false)
+const detailTags = ref<string[]>([])
+const similar = ref<SimilarAlert[]>([])
 
 const isFlapping = (row: OpsAlert) => !!row.flapping_until && new Date(row.flapping_until).getTime() > Date.now()
 
@@ -665,11 +701,27 @@ const openDetail = async (row: OpsAlert) => {
     detailVisible.value = true
     noteBody.value = ''
     alertNotes.value = []
+    detailTags.value = [...(row.tags || [])]
+    similar.value = []
     try {
-        const res = await getAlertNotes(row.id)
-        alertNotes.value = res.data.data.items
+        const [notesRes, similarRes] = await Promise.all([getAlertNotes(row.id), getSimilarAlerts(row.id)])
+        alertNotes.value = notesRes.data.data.items
+        similar.value = similarRes.data.data.items
     } catch {
-        alertNotes.value = []
+        // 保持空
+    }
+}
+
+const saveTags = async () => {
+    if (!detailAlert.value || !canManage.value) return
+    try {
+        const res = await setAlertTags(detailAlert.value.id, detailTags.value)
+        detailTags.value = res.data.data.tags
+        detailAlert.value.tags = res.data.data.tags
+        ElMessage.success('标签已更新')
+        await loadAlerts()
+    } catch {
+        ElMessage.error('标签更新失败')
     }
 }
 
@@ -723,6 +775,7 @@ const runningHealthCheck = ref(false)
 const importingRules = ref(false)
 const assigneeFilter = ref('')
 const assignees = ref<string[]>([])
+const tagFilter = ref('')
 const groupBy = ref<'source' | 'severity' | 'assigned_to'>('source')
 const groupsLoading = ref(false)
 const alertGroups = ref<AlertGroup[]>([])
@@ -956,6 +1009,7 @@ const loadAlerts = async () => {
             source: source.value || undefined,
             assigned: assigneeFilter.value === '__unassigned__' ? 'unassigned' : undefined,
             assigned_to: assigneeFilter.value && assigneeFilter.value !== '__unassigned__' ? assigneeFilter.value : undefined,
+            tag: tagFilter.value.trim() || undefined,
             page: page.value,
             per_page: perPage.value,
         })

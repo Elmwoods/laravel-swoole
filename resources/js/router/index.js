@@ -231,6 +231,16 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-handover',
+                name: 'ShiftHandover',
+                component: () => import('../pages/ops/ShiftHandover.vue'),
+                meta: {
+                    title: '值班交接',
+                    description: '值班切换的交接记录（交出/接手 + 备注 + open 快照）',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -348,6 +358,7 @@ const firstAllowedPath = (permissions) => {
         ['ops.alerts.view', '/admin/ops/alerts-oncall'],
         ['ops.alerts.view', '/admin/ops/alerts-oncall-dashboard'],
         ['ops.alerts.view', '/admin/ops/alerts-heatmap'],
+        ['ops.alerts.view', '/admin/ops/alerts-handover'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],
