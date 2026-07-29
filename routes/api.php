@@ -237,6 +237,7 @@ Route::prefix('/ops')
                 Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/report', [AlertController::class, 'report']);
                 Route::get('/heatmap', [AlertController::class, 'heatmap']);
+                Route::get('/workload', [AlertController::class, 'workload']);
                 Route::get('/handovers', [ShiftHandoverController::class, 'index']);
                 Route::post('/handovers', [ShiftHandoverController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,handover_create']);

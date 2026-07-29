@@ -747,6 +747,104 @@ class AlertCenterService
     }
 
     /**
+     * 按处理人聚合工作量：确认/恢复的告警数 + 平均响应时长。排除系统合成 actor（ops- 前缀 / on-call-auto）。
+     */
+    public function workloadSummary(int $days): array
+    {
+        $days = max(1, min(90, $days));
+        $since = now()->subDays($days);
+
+        $ack = $this->workloadPairs(['acknowledged'], $since);
+        $resolve = $this->workloadPairs(['resolved', 'auto_resolved', 'channel_health_recovered', 'inspection_recovered'], $since);
+
+        $people = [];
+        $touch = function (string $actor) use (&$people): void {
+            if (! isset($people[$actor])) {
+                $people[$actor] = ['ack' => [], 'resolve' => []];
+            }
+        };
+
+        foreach ($ack as $p) {
+            if ($this->isSystemActor($p['actor'])) {
+                continue;
+            }
+            $touch($p['actor']);
+            $people[$p['actor']]['ack'][] = $p['seconds'];
+        }
+        foreach ($resolve as $p) {
+            if ($this->isSystemActor($p['actor'])) {
+                continue;
+            }
+            $touch($p['actor']);
+            $people[$p['actor']]['resolve'][] = $p['seconds'];
+        }
+
+        $rows = [];
+        foreach ($people as $person => $buckets) {
+            $ackStats = $this->durationStats($buckets['ack']);
+            $resolveStats = $this->durationStats($buckets['resolve']);
+            $rows[] = [
+                'person' => $person,
+                'acknowledged_count' => $ackStats['count'],
+                'avg_ack_seconds' => $ackStats['avg_seconds'],
+                'resolved_count' => $resolveStats['count'],
+                'avg_resolve_seconds' => $resolveStats['avg_seconds'],
+                'assigned_count' => OpsAlert::query()
+                    ->where('assigned_to', $person)
+                    ->where('created_at', '>=', $since)
+                    ->count(),
+            ];
+        }
+
+        usort($rows, fn (array $a, array $b): int => $b['resolved_count'] <=> $a['resolved_count']);
+
+        return [
+            'window_days' => $days,
+            'generated_at' => now()->toDateTimeString(),
+            'people' => $rows,
+        ];
+    }
+
+    private function isSystemActor(?string $actor): bool
+    {
+        $actor = (string) $actor;
+
+        return $actor === '' || $actor === 'on-call-auto' || str_starts_with($actor, 'ops-') || $actor === 'external';
+    }
+
+    /**
+     * slaPairs 的带 actor 版本（供 workload 按人归因）。
+     */
+    private function workloadPairs(array $actions, CarbonInterface $since): array
+    {
+        $rows = DB::table('ops_alert_events as e')
+            ->join('ops_alerts as a', 'a.id', '=', 'e.alert_id')
+            ->whereIn('e.action', $actions)
+            ->where('e.created_at', '>=', $since)
+            ->orderBy('e.created_at')
+            ->get(['e.alert_id', 'e.actor', 'a.assigned_to', 'a.created_at as born', 'e.created_at as at']);
+
+        $pairs = [];
+
+        foreach ($rows as $row) {
+            $id = (int) $row->alert_id;
+
+            if (isset($pairs[$id])) {
+                continue;
+            }
+
+            $pairs[$id] = [
+                'alert_id' => $id,
+                'actor' => (string) ($row->actor ?? ''),
+                'assigned_to' => $row->assigned_to,
+                'seconds' => max(0, strtotime((string) $row->at) - strtotime((string) $row->born)),
+            ];
+        }
+
+        return array_values($pairs);
+    }
+
+    /**
      * @param  array<int, int>  $seconds
      * @return array{count: int, avg_seconds: int, max_seconds: int}
      */

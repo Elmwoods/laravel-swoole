@@ -188,6 +188,19 @@ class AlertController extends Controller
     }
 
     /**
+     * 值班绩效统计（按处理人：确认/恢复数 + 平均响应时长）。
+     */
+    public function workload(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 30)));
+
+        return $this->success([
+            'days' => $days,
+            ...$this->service->workloadSummary($days),
+        ]);
+    }
+
+    /**
      * 告警统计周报（告警 + SLA + 值班）。
      */
     public function report(Request $request): JsonResponse
