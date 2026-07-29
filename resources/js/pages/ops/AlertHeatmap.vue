@@ -56,11 +56,19 @@ const renderHeat = () => {
     if (!heatChart) heatChart = echarts.init(heatRef.value)
     const max = Math.max(1, ...data.value.buckets.map(b => b.count))
     heatChart.setOption({
-        tooltip: { position: 'top' },
-        grid: { top: 10, left: 48, right: 16, bottom: 60, containLabel: true },
-        xAxis: { type: 'category', data: Array.from({ length: 24 }, (_, h) => `${h}`), splitArea: { show: true } },
+        tooltip: {
+            position: 'top',
+            formatter: (p: any) => `${WEEKDAYS[p.value[1]]} ${p.value[0]}:00 — ${p.value[2]} 条`,
+        },
+        grid: { top: 16, left: 56, right: 24, bottom: 76, containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: Array.from({ length: 24 }, (_, h) => `${h}`),
+            splitArea: { show: true },
+            axisLabel: { interval: 0, fontSize: 11 },
+        },
         yAxis: { type: 'category', data: WEEKDAYS, splitArea: { show: true } },
-        visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 10 },
+        visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 4, itemWidth: 14, itemHeight: 90 },
         series: [{
             type: 'heatmap',
             data: data.value.buckets.map(b => [b.hour, b.dow, b.count]),
@@ -138,7 +146,7 @@ onBeforeUnmount(() => {
 }
 
 .heat-chart {
-    height: 320px;
+    height: 380px;
     width: 100%;
 }
 
