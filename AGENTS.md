@@ -74,7 +74,9 @@ npm run build
 
 - 三十八阶段：告警运营集成四合一——(1) 告警标签（`ops_alerts.tags` json + config `alerts.auto_tags` 自动打标 + `setTags` 手动 + `paginate` whereJsonContains 筛选 + `POST /{alert}/tags`）；(2) 相似告警（`similarAlerts` 同源已恢复 + phase37 备注 + `GET /{alert}/similar`）；(3) 值班交接班（`ops_shift_handovers` 表 + `ShiftHandoverService` from/to + open 快照 + `GET/POST /handovers`）；(4) Prometheus 指标导出（`OpsMetricsExporter` + `MetricsController` token 守卫原始 text/plain + `GET /api/ops/metrics` 组外注册，opt-in）。
 
-候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联/预案/标签的 DB 可视化编辑、指标历史存储。
+- 三十九阶段：告警生态四合一——(1) 入站 Webhook 告警（config `alerts.ingest` token + `AlertCenterService::ingestExternal` 照 raiseAuditAnomalyAlert + `AlertIngestController` token 守卫 + `POST /api/ingest/alerts` 组外注册避开审计-POST 规则）；(2) 规则变更历史（`ops_alert_rule_changes` 字段级 diff + `AlertRuleChangeService` hook update/toggle/import + `GET /rules/changes`，与 admin.audit 并存）；(3) 值班绩效（`workloadSummary` 按事件 actor 聚合排除系统 actor + `GET /alerts/workload` + `Workload.vue`）；(4) 依赖拓扑（`AlertCorrelationService::topology` nodes/edges + firing/suppressed + `GET /alerts/topology` + `AlertTopology.vue` echarts graph）。
+
+候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、指标/绩效历史存储、入站告警的签名校验。
 
 # 项目级 Codex 测试规范
 

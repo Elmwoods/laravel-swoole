@@ -241,6 +241,26 @@ const routes = [
                 },
             },
             {
+                path: 'alerts-workload',
+                name: 'Workload',
+                component: () => import('../pages/ops/Workload.vue'),
+                meta: {
+                    title: '值班绩效',
+                    description: '按处理人的确认/恢复告警数与平均响应时长',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
+                path: 'alerts-topology',
+                name: 'AlertTopology',
+                component: () => import('../pages/ops/AlertTopology.vue'),
+                meta: {
+                    title: '依赖拓扑',
+                    description: '服务来源父子依赖图 + 各节点 firing/suppressed 状态',
+                    permission: 'ops.alerts.view',
+                },
+            },
+            {
                 path: 'admin-users',
                 name: 'AdminUsers',
                 component: () => import('../pages/admin/AdminUsers.vue'),
@@ -359,6 +379,8 @@ const firstAllowedPath = (permissions) => {
         ['ops.alerts.view', '/admin/ops/alerts-oncall-dashboard'],
         ['ops.alerts.view', '/admin/ops/alerts-heatmap'],
         ['ops.alerts.view', '/admin/ops/alerts-handover'],
+        ['ops.alerts.view', '/admin/ops/alerts-workload'],
+        ['ops.alerts.view', '/admin/ops/alerts-topology'],
         ['admin.users.manage', '/admin/ops/admin-users'],
         ['admin.roles.manage', '/admin/ops/admin-roles'],
         ['admin.audit.view', '/admin/ops/admin-audit-logs'],

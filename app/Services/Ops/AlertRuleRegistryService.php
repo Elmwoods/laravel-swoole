@@ -2,11 +2,14 @@
 
 namespace App\Services\Ops;
 
+use App\Models\AdminUser;
 use App\Models\OpsAlertRule;
 use Illuminate\Support\Collection;
 
 class AlertRuleRegistryService
 {
+    public function __construct(private readonly AlertRuleChangeService $changes) {}
+
     public const DEFINITIONS = [
         'disk_usage' => [
             'name' => '磁盘使用率',
@@ -266,7 +269,7 @@ class AlertRuleRegistryService
      *
      * @return array{applied:int, total:int, skipped:array<int, array{key:mixed, reason:string}>}
      */
-    public function import(array $rules): array
+    public function import(array $rules, ?AdminUser $actor = null): array
     {
         $this->syncDefaults();
 
@@ -324,11 +327,14 @@ class AlertRuleRegistryService
                 continue;
             }
 
-            $rule->forceFill([
+            $old = ['warning_threshold' => $rule->warning_threshold, 'critical_threshold' => $rule->critical_threshold, 'is_active' => $rule->is_active];
+            $new = [
                 'warning_threshold' => $warning,
                 'critical_threshold' => $critical,
                 'is_active' => filter_var($incoming['is_active'] ?? true, FILTER_VALIDATE_BOOL),
-            ])->save();
+            ];
+            $rule->forceFill($new)->save();
+            $this->changes->record($key, $old, $new, $actor);
 
             $applied++;
         }

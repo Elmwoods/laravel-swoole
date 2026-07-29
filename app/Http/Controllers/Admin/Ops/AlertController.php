@@ -13,6 +13,7 @@ use App\Http\Requests\Admin\Ops\AlertTagsRequest;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\AlertChannelHealthService;
+use App\Services\Ops\AlertCorrelationService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,7 @@ class AlertController extends Controller
 
     public function __construct(
         private readonly AlertCenterService $service,
+        private readonly AlertCorrelationService $correlation,
     ) {}
 
     /**
@@ -184,6 +186,27 @@ class AlertController extends Controller
         return $this->success([
             'days' => $days,
             ...$this->service->heatmapSummary($days, $weighted),
+        ]);
+    }
+
+    /**
+     * 服务依赖拓扑（父子来源依赖 + 各节点当前 firing/suppressed 状态）。
+     */
+    public function topology(): JsonResponse
+    {
+        return $this->success($this->correlation->topology());
+    }
+
+    /**
+     * 值班绩效统计（按处理人：确认/恢复数 + 平均响应时长）。
+     */
+    public function workload(Request $request): JsonResponse
+    {
+        $days = min(90, max(1, (int) $request->integer('days', 30)));
+
+        return $this->success([
+            'days' => $days,
+            ...$this->service->workloadSummary($days),
         ]);
     }
 

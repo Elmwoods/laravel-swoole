@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\AlertIngestController;
 use App\Http\Controllers\Admin\Ops\AlertNoteController;
 use App\Http\Controllers\Admin\Ops\AlertPresetController;
 use App\Http\Controllers\Admin\Ops\AlertRuleController;
@@ -236,6 +237,8 @@ Route::prefix('/ops')
                 Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/report', [AlertController::class, 'report']);
                 Route::get('/heatmap', [AlertController::class, 'heatmap']);
+                Route::get('/workload', [AlertController::class, 'workload']);
+                Route::get('/topology', [AlertController::class, 'topology']);
                 Route::get('/handovers', [ShiftHandoverController::class, 'index']);
                 Route::post('/handovers', [ShiftHandoverController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,handover_create']);
@@ -270,6 +273,7 @@ Route::prefix('/ops')
                     ->middleware('admin.audit:ops.alerts,preset_delete');
                 Route::get('/rules', [AlertRuleController::class, 'index']);
                 Route::get('/rules/export', [AlertRuleController::class, 'export']);
+                Route::get('/rules/changes', [AlertRuleController::class, 'changes']);
                 Route::post('/rules/import', [AlertRuleController::class, 'import'])
                     ->middleware(['admin.audit:ops.alerts,rule_import', 'admin.permission:ops.alerts.manage']);
                 Route::put('/rules/{adminRule}', [AlertRuleController::class, 'update'])
@@ -333,3 +337,6 @@ Route::prefix('/ops')
 
 // Prometheus 指标导出（组外、无会话认证；控制器内 token 守卫 + opt-in）。
 Route::get('/ops/metrics', [MetricsController::class, 'index']);
+
+// 入站 Webhook 告警（组外、URI 不以 api/ops/ 开头以绕开审计-POST 规则；控制器内 token 守卫 + opt-in）。
+Route::post('/ingest/alerts', [AlertIngestController::class, 'store']);

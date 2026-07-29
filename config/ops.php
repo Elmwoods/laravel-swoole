@@ -156,6 +156,12 @@ return [
             'token' => env('OPS_ALERT_METRICS_TOKEN'),
         ],
 
+        // 入站 Webhook 告警（opt-in，token 守卫）：外部系统 POST /api/ingest/alerts 注入告警（复用去重/通知/广播）。
+        'ingest' => [
+            'enabled' => filter_var(env('OPS_ALERT_INGEST_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'token' => env('OPS_ALERT_INGEST_TOKEN'),
+        ],
+
         // 告警处理预案（source => {url, steps}，部署期设）：告警详情展示该来源的处理指引。
         'runbooks' => [
             // 'disk' => ['url' => 'https://runbook.example.com/disk', 'steps' => ['清理日志', '扩容磁盘']],
