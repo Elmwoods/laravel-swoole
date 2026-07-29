@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\Ops\AlertBatchRequest;
 use App\Http\Requests\Admin\Ops\AlertIndexRequest;
 use App\Http\Requests\Admin\Ops\AlertNotificationTestRequest;
 use App\Http\Requests\Admin\Ops\AlertSettingsUpdateRequest;
+use App\Http\Requests\Admin\Ops\AlertTagsRequest;
 use App\Models\OpsAlert;
 use App\Services\Ops\AlertCenterService;
 use App\Services\Ops\AlertChannelHealthService;
@@ -252,6 +253,23 @@ class AlertController extends Controller
                 $this->service->assign($alert, $request->validated()),
             ),
         );
+    }
+
+    public function setTags(AlertTagsRequest $request, OpsAlert $alert): JsonResponse
+    {
+        return $this->success(
+            $this->service->serialize(
+                $this->service->setTags($alert, (array) $request->validated('tags')),
+            ),
+        );
+    }
+
+    /**
+     * 相似告警：同来源历史已恢复告警 + 当时的处理备注。
+     */
+    public function similar(OpsAlert $alert): JsonResponse
+    {
+        return $this->success(['items' => $this->service->similarAlerts($alert)]);
     }
 
     /**

@@ -234,6 +234,9 @@ Route::prefix('/ops')
                 Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/report', [AlertController::class, 'report']);
                 Route::get('/heatmap', [AlertController::class, 'heatmap']);
+                Route::post('/{alert}/tags', [AlertController::class, 'setTags'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,tags_update']);
+                Route::get('/{alert}/similar', [AlertController::class, 'similar']);
                 Route::get('/{alert}/notes', [AlertNoteController::class, 'index']);
                 Route::post('/{alert}/notes', [AlertNoteController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,note_create']);

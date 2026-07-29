@@ -145,6 +145,17 @@ return [
             'cooldown_minutes' => max(1, (int) env('OPS_ALERT_FLAPPING_COOLDOWN_MINUTES', 30)),
         ],
 
+        // 告警自动打标（source => [tag,...]，部署期设）：storeAlert 时按来源附加标签。
+        'auto_tags' => [
+            // 'disk' => ['team:infra', 'env:prod'],
+        ],
+
+        // Prometheus 指标导出（opt-in，token 守卫）：GET /api/ops/metrics?token=... 输出文本指标供外部抓取。
+        'metrics' => [
+            'enabled' => filter_var(env('OPS_ALERT_METRICS_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'token' => env('OPS_ALERT_METRICS_TOKEN'),
+        ],
+
         // 告警处理预案（source => {url, steps}，部署期设）：告警详情展示该来源的处理指引。
         'runbooks' => [
             // 'disk' => ['url' => 'https://runbook.example.com/disk', 'steps' => ['清理日志', '扩容磁盘']],
