@@ -142,6 +142,16 @@
                     <span>值班交接</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts-workload">
+                    <el-icon><DataAnalysis /></el-icon>
+                    <span>值班绩效</span>
+                </el-menu-item>
+
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts-topology">
+                    <el-icon><Connection /></el-icon>
+                    <span>依赖拓扑</span>
+                </el-menu-item>
+
                 <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
@@ -221,6 +231,7 @@ import {
     Lock,
     Monitor,
     MuteNotification,
+    DataAnalysis,
     Grid,
     Odometer,
     Switch,

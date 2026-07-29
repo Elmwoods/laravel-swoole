@@ -220,6 +220,7 @@
                     </div>
 
                     <el-space>
+                        <el-button text @click="openRuleChanges">变更历史</el-button>
                         <el-button text @click="handleExportRules">导出规则</el-button>
                         <el-button text :loading="importingRules" @click="handleImportRules">导入规则</el-button>
                         <el-button text :loading="rulesLoading" @click="loadAlertRules">
@@ -606,6 +607,18 @@
             </div>
         </el-drawer>
 
+        <el-dialog v-model="ruleChangesVisible" title="规则变更历史" width="640px">
+            <el-table :data="ruleChanges" border stripe empty-text="暂无变更记录" max-height="420">
+                <el-table-column label="规则" prop="rule_key" width="150" />
+                <el-table-column label="字段" prop="field" width="150" />
+                <el-table-column label="旧→新" min-width="140">
+                    <template #default="{ row }">{{ row.old_value ?? '—' }} → {{ row.new_value ?? '—' }}</template>
+                </el-table-column>
+                <el-table-column label="操作人" prop="actor" width="120" />
+                <el-table-column label="时间" prop="created_at" width="170" />
+            </el-table>
+        </el-dialog>
+
         <el-dialog v-model="reportVisible" title="告警统计周报" width="560px">
             <div v-if="report" class="report-body">
                 <p>窗口：近 {{ report.window_days }} 天（{{ report.generated_at }}）</p>
@@ -646,6 +659,7 @@ import {
     getAlertGroups,
     getAlertPresets,
     getAlertReport,
+    getRuleChanges,
     importAlertRules,
     getAlertSettings,
     getAlertTrend,
@@ -677,6 +691,7 @@ import {
     type AlertReport,
     type AlertNoteItem,
     type SimilarAlert,
+    type RuleChange,
 } from '@/api/opsStage4'
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
@@ -693,6 +708,18 @@ const noteBody = ref('')
 const noteSaving = ref(false)
 const detailTags = ref<string[]>([])
 const similar = ref<SimilarAlert[]>([])
+const ruleChangesVisible = ref(false)
+const ruleChanges = ref<RuleChange[]>([])
+
+const openRuleChanges = async () => {
+    ruleChangesVisible.value = true
+    try {
+        const res = await getRuleChanges()
+        ruleChanges.value = res.data.data.items
+    } catch {
+        ruleChanges.value = []
+    }
+}
 
 const isFlapping = (row: OpsAlert) => !!row.flapping_until && new Date(row.flapping_until).getTime() > Date.now()
 

@@ -482,6 +482,45 @@ export const getHandovers = () =>
 export const createHandover = (payload: { from_assignee?: string | null; to_assignee?: string | null; note?: string | null }) =>
     request.post<ApiResponse<{ handover: { id: number; to_assignee: string; open_alert_count: number } }>>('/api/ops/alerts/handovers', payload)
 
+export interface RuleChange {
+    id: number
+    rule_key: string
+    field: string
+    old_value: string | null
+    new_value: string | null
+    actor: string | null
+    created_at: string | null
+}
+
+export const getRuleChanges = (key?: string) =>
+    request.get<ApiResponse<{ items: RuleChange[] }>>('/api/ops/alerts/rules/changes', { params: key ? { key } : {} })
+
+export interface WorkloadResult {
+    days: number
+    window_days: number
+    generated_at: string
+    people: Array<{
+        person: string
+        acknowledged_count: number
+        avg_ack_seconds: number
+        resolved_count: number
+        avg_resolve_seconds: number
+        assigned_count: number
+    }>
+}
+
+export const getAlertWorkload = (days = 30) =>
+    request.get<ApiResponse<WorkloadResult>>('/api/ops/alerts/workload', { params: { days } })
+
+export interface AlertTopologyResult {
+    enabled: boolean
+    nodes: Array<{ source: string; open: number; firing: boolean; suppressed: boolean }>
+    edges: Array<{ from: string; to: string }>
+}
+
+export const getAlertTopology = () =>
+    request.get<ApiResponse<AlertTopologyResult>>('/api/ops/alerts/topology')
+
 export interface OnCallDashboard {
     generated_at: string
     current_on_call: string | null
