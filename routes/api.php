@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\Ops\AlertSilenceController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
+use App\Http\Controllers\Admin\Ops\MetricsController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
 use App\Http\Controllers\Admin\Ops\OctaneController;
 use App\Http\Controllers\Admin\Ops\OnCallController;
@@ -329,3 +330,6 @@ Route::prefix('/ops')
             ];
         })->middleware('admin.permission:ops.system.view');
     });
+
+// Prometheus 指标导出（组外、无会话认证；控制器内 token 守卫 + opt-in）。
+Route::get('/ops/metrics', [MetricsController::class, 'index']);
