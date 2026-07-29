@@ -467,7 +467,7 @@
                 <el-table-column prop="hit_count" label="次数" width="90" />
                 <el-table-column prop="last_seen_at" label="最后出现" width="180" />
 
-                <el-table-column label="操作" width="250" fixed="right">
+                <el-table-column label="操作" width="180" fixed="right">
                     <template #default="{ row }">
                         <div class="action-buttons">
                             <el-button text @click="openDetail(row)">详情</el-button>
@@ -1860,7 +1860,8 @@ onBeforeUnmount(() => {
 .action-buttons {
     align-items: center;
     display: flex;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
 }
 
 .action-buttons :deep(.el-button + .el-button) {
