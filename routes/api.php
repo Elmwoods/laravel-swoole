@@ -4,6 +4,7 @@ use App\Events\Ops\TestEvent;
 use App\Http\Controllers\Admin\Auth\AdminAuthController;
 use App\Http\Controllers\Admin\Ops\AdvancedSystemController;
 use App\Http\Controllers\Admin\Ops\AlertController;
+use App\Http\Controllers\Admin\Ops\AlertIngestController;
 use App\Http\Controllers\Admin\Ops\AlertNoteController;
 use App\Http\Controllers\Admin\Ops\AlertPresetController;
 use App\Http\Controllers\Admin\Ops\AlertRuleController;
@@ -333,3 +334,6 @@ Route::prefix('/ops')
 
 // Prometheus 指标导出（组外、无会话认证；控制器内 token 守卫 + opt-in）。
 Route::get('/ops/metrics', [MetricsController::class, 'index']);
+
+// 入站 Webhook 告警（组外、URI 不以 api/ops/ 开头以绕开审计-POST 规则；控制器内 token 守卫 + opt-in）。
+Route::post('/ingest/alerts', [AlertIngestController::class, 'store']);

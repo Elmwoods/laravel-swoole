@@ -1256,6 +1256,53 @@ class AlertCenterService
      * $key 作 fingerprint 去重锚点（失败登录按 subject、敏感操作按审计行 id）；
      * source=security_audit 不在 autoResolveRecoveredAlerts 托管源，留人工确认。
      */
+    /**
+     * 入站外部告警：把外部系统 POST 的载荷规范化成 ops 告警（复用 storeAlert 去重/自动标签/关联抑制 + 通知 + 广播）。
+     */
+    public function ingestExternal(array $payload): OpsAlert
+    {
+        $context = (array) ($payload['context'] ?? []);
+        $context['target'] = (string) ($payload['dedup_key'] ?? $context['target'] ?? '');
+        $context['ingested'] = true;
+
+        $dto = new AlertDTO(
+            source: (string) $payload['source'],
+            severity: (string) $payload['severity'],
+            title: (string) $payload['title'],
+            message: $this->safeInspectionText((string) $payload['message']),
+            context: $context,
+        );
+
+        [$alert, $shouldRepeatNotification] = $this->storeAlert($dto);
+
+        // 显式入站标签合并进告警（storeAlert 已按来源自动打标）。
+        $incomingTags = array_values(array_filter(
+            array_map(fn ($t): string => trim((string) $t), (array) ($payload['tags'] ?? [])),
+            fn (string $t): bool => $t !== '',
+        ));
+        if ($incomingTags !== []) {
+            $alert->forceFill(['tags' => array_values(array_unique(array_merge((array) $alert->tags, $incomingTags)))])->save();
+        }
+
+        if ($alert->wasRecentlyCreated || $shouldRepeatNotification) {
+            $this->notification->send($alert);
+        }
+
+        $this->recordAlertEvent(
+            $alert,
+            $alert->wasRecentlyCreated ? 'ingested' : 'ingested_refired',
+            'external',
+            null,
+            null,
+            $alert->status,
+            $context,
+        );
+
+        broadcast(new AlertTriggered($alert));
+
+        return $alert;
+    }
+
     public function raiseAuditAnomalyAlert(string $key, string $severity, string $title, string $message, array $context = []): void
     {
         $dto = new AlertDTO(
