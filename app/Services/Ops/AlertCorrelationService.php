@@ -3,6 +3,7 @@
 namespace App\Services\Ops;
 
 use App\Models\OpsAlert;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -12,6 +13,58 @@ use Throwable;
  */
 class AlertCorrelationService
 {
+    /**
+     * 依赖拓扑：把 config 父子来源依赖 + 各来源当前 open 状态拼成图（nodes + edges）。只读、boot-safe。
+     */
+    public function topology(): array
+    {
+        $enabled = (bool) config('ops.alerts.correlation.enabled', false);
+        $deps = (array) config('ops.alerts.correlation.dependencies', []);
+
+        // 收集所有来源（child keys ∪ parent values）。
+        $sources = [];
+        $edges = [];
+        foreach ($deps as $child => $parents) {
+            $child = (string) $child;
+            $sources[$child] = true;
+            foreach ((array) $parents as $parent) {
+                $parent = (string) $parent;
+                if ($parent === '' || $parent === $child) {
+                    continue;
+                }
+                $sources[$parent] = true;
+                $edges[] = ['from' => $parent, 'to' => $child];
+            }
+        }
+
+        // 各来源当前 open 计数（自查，不注入 AlertCenterService 防环）。
+        $openCounts = [];
+        try {
+            $openCounts = OpsAlert::query()
+                ->where('status', 'open')
+                ->whereIn('source', array_keys($sources) ?: [''])
+                ->select('source', DB::raw('count(*) as total'))
+                ->groupBy('source')
+                ->pluck('total', 'source')
+                ->all();
+        } catch (Throwable) {
+            $openCounts = [];
+        }
+
+        $nodes = [];
+        foreach (array_keys($sources) as $source) {
+            $open = (int) ($openCounts[$source] ?? 0);
+            $nodes[] = [
+                'source' => $source,
+                'open' => $open,
+                'firing' => $open > 0,
+                'suppressed' => $open > 0 && $this->firingParents($source) !== [],
+            ];
+        }
+
+        return ['enabled' => $enabled, 'nodes' => $nodes, 'edges' => $edges];
+    }
+
     public function isSuppressed(OpsAlert $alert): bool
     {
         try {
