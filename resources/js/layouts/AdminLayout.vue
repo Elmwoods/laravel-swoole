@@ -137,6 +137,11 @@
                     <span>告警热力图</span>
                 </el-menu-item>
 
+                <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts-handover">
+                    <el-icon><Switch /></el-icon>
+                    <span>值班交接</span>
+                </el-menu-item>
+
                 <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
@@ -218,6 +223,7 @@ import {
     MuteNotification,
     Grid,
     Odometer,
+    Switch,
     Operation,
     Tickets,
     Timer,

@@ -22,6 +22,7 @@ class AlertIndexRequest extends FormRequest
             'source' => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9_-]+$/'],
             'assigned_to' => ['nullable', 'string', 'max:120'],
             'assigned' => ['nullable', 'string', 'in:unassigned,any'],
+            'tag' => ['nullable', 'string', 'max:60', 'regex:/^[A-Za-z0-9_:.\\-]+$/'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ];

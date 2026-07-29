@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\Ops\AlertSilenceController;
 use App\Http\Controllers\Admin\Ops\DashboardController;
 use App\Http\Controllers\Admin\Ops\DockerController;
 use App\Http\Controllers\Admin\Ops\Log\LogController;
+use App\Http\Controllers\Admin\Ops\MetricsController;
 use App\Http\Controllers\Admin\Ops\NetworkController;
 use App\Http\Controllers\Admin\Ops\OctaneController;
 use App\Http\Controllers\Admin\Ops\OnCallController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Admin\Ops\QueueController;
 use App\Http\Controllers\Admin\Ops\RedisMetricsController;
 use App\Http\Controllers\Admin\Ops\RedisMonitorController;
 use App\Http\Controllers\Admin\Ops\SecurityOverviewController;
+use App\Http\Controllers\Admin\Ops\ShiftHandoverController;
 use App\Http\Controllers\Admin\Ops\SupervisorController;
 use App\Http\Controllers\Admin\Ops\System\DiskController;
 use App\Http\Controllers\Admin\Ops\System\DiskPushController;
@@ -234,6 +236,12 @@ Route::prefix('/ops')
                 Route::get('/sla', [AlertController::class, 'sla']);
                 Route::get('/report', [AlertController::class, 'report']);
                 Route::get('/heatmap', [AlertController::class, 'heatmap']);
+                Route::get('/handovers', [ShiftHandoverController::class, 'index']);
+                Route::post('/handovers', [ShiftHandoverController::class, 'store'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,handover_create']);
+                Route::post('/{alert}/tags', [AlertController::class, 'setTags'])
+                    ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,tags_update']);
+                Route::get('/{alert}/similar', [AlertController::class, 'similar']);
                 Route::get('/{alert}/notes', [AlertNoteController::class, 'index']);
                 Route::post('/{alert}/notes', [AlertNoteController::class, 'store'])
                     ->middleware(['admin.permission:ops.alerts.manage', 'admin.audit:ops.alerts,note_create']);
@@ -322,3 +330,6 @@ Route::prefix('/ops')
             ];
         })->middleware('admin.permission:ops.system.view');
     });
+
+// Prometheus 指标导出（组外、无会话认证；控制器内 token 守卫 + opt-in）。
+Route::get('/ops/metrics', [MetricsController::class, 'index']);

@@ -19,6 +19,7 @@ class OpsAlert extends Model
         'title',
         'message',
         'context',
+        'tags',
         'status',
         'hit_count',
         'flap_count',
@@ -38,6 +39,7 @@ class OpsAlert extends Model
     {
         return [
             'context' => 'array',
+            'tags' => 'array',
             'last_seen_at' => 'datetime',
             'acknowledged_at' => 'datetime',
             'assigned_at' => 'datetime',

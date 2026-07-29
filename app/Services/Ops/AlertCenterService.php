@@ -44,7 +44,36 @@ class AlertCenterService
         private readonly OnCallRotationService $onCall,
         private readonly AlertSilenceService $silences,
         private readonly AlertCorrelationService $correlation,
+        private readonly OpsAlertNoteService $notes,
     ) {}
+
+    /**
+     * 相似告警：同来源、已恢复、非自身的历史告警（按恢复近因倒序），附各自处理备注。供加速排查。
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function similarAlerts(OpsAlert $alert, int $limit = 5): array
+    {
+        return OpsAlert::query()
+            ->where('source', $alert->source)
+            ->where('id', '!=', $alert->id)
+            ->where('status', 'resolved')
+            ->orderByDesc('updated_at')
+            ->limit(max(1, min(20, $limit)))
+            ->get()
+            ->map(fn (OpsAlert $other): array => [
+                'id' => $other->id,
+                'title' => $other->title,
+                'severity' => $other->severity,
+                'status' => $other->status,
+                'last_seen_at' => optional($other->last_seen_at)->toDateTimeString(),
+                'acknowledged_by' => $other->acknowledged_by,
+                'acknowledge_note' => $other->acknowledge_note,
+                'resolved_at' => optional($other->updated_at)->toDateTimeString(),
+                'notes' => $this->notes->list($other),
+            ])
+            ->all();
+    }
 
     private const BATCH_CAP = 500;
 
@@ -115,6 +144,7 @@ class AlertCenterService
             ->when(($filters['source'] ?? '') !== '', fn ($query) => $query->where('source', $filters['source']))
             ->when(($filters['assigned_to'] ?? '') !== '', fn ($query) => $query->where('assigned_to', $filters['assigned_to']))
             ->when(($filters['assigned'] ?? '') === 'unassigned', fn ($query) => $query->whereNull('assigned_to'))
+            ->when(($filters['tag'] ?? '') !== '', fn ($query) => $query->whereJsonContains('tags', $filters['tag']))
             ->orderByDesc('last_seen_at')
             ->orderByDesc('id')
             ->paginate(
@@ -1003,6 +1033,23 @@ class AlertCenterService
         return $alert;
     }
 
+    /**
+     * 覆盖告警标签（去重规范化）并记事件。
+     */
+    public function setTags(OpsAlert $alert, array $tags): OpsAlert
+    {
+        $clean = array_values(array_unique(array_filter(
+            array_map(fn ($t): string => trim((string) $t), $tags),
+            fn (string $t): bool => $t !== '',
+        )));
+
+        $alert->forceFill(['tags' => $clean])->save();
+        $alert = $alert->refresh();
+        $this->recordAlertEvent($alert, 'tags_updated', 'ops-user', implode(', ', $clean), $alert->status, $alert->status);
+
+        return $alert;
+    }
+
     public function assign(OpsAlert $alert, array $payload): OpsAlert
     {
         $alert = $this->markAssigned($alert, $payload['assigned_to'], $payload['assigned_to'], $payload['note'] ?? null);
@@ -1063,6 +1110,7 @@ class AlertCenterService
             'title' => $alert->title,
             'message' => $alert->message,
             'context' => $alert->context ?? [],
+            'tags' => $alert->tags ?? [],
             'status' => $alert->status,
             'hit_count' => $alert->hit_count,
             'last_seen_at' => optional($alert->last_seen_at)->toDateTimeString(),
@@ -1566,6 +1614,11 @@ class AlertCenterService
         $alert->status = 'open';
         $alert->last_seen_at = now();
         $alert->hit_count = $alert->exists ? $alert->hit_count + 1 : 1;
+        // 按来源自动打标（保留已有标签，去重）。
+        $alert->tags = array_values(array_unique(array_merge(
+            (array) $alert->tags,
+            (array) config("ops.alerts.auto_tags.{$alert->source}", []),
+        )));
         $alert->save();
 
         if ($wasReopen) {
