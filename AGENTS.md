@@ -72,7 +72,9 @@ npm run build
 
 - 三十七阶段：告警运营洞察四合一——(1) 抖动检测（`ops_alerts.flap_count/flapping_until` + `storeAlert` 检测 `resolved→open` reopen + `registerReopen` 统计窗口内 `reopened` 事件超阈值标 flapping + `send()` 第三道 gate reason=flapping）；(2) 处理备注协作（`ops_alert_notes` 表 + `OpsAlertNoteService` 仅作者可删 + `AlertNoteController` author 用真实 admin + `/{alert}/notes` 三路由）；(3) 处理预案（config `alerts.runbooks` source=>{url,steps} + `runbookFor` + serialize）；(4) 告警热力图（`heatmapSummary` PHP 7×24 分桶 + `GET /alerts/heatmap` + `AlertHeatmap.vue` echarts heatmap）。前端首次加告警详情抽屉（时间线+预案+备注）。
 
-候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联/预案的 DB 可视化编辑、周报/热力图导出。
+- 三十八阶段：告警运营集成四合一——(1) 告警标签（`ops_alerts.tags` json + config `alerts.auto_tags` 自动打标 + `setTags` 手动 + `paginate` whereJsonContains 筛选 + `POST /{alert}/tags`）；(2) 相似告警（`similarAlerts` 同源已恢复 + phase37 备注 + `GET /{alert}/similar`）；(3) 值班交接班（`ops_shift_handovers` 表 + `ShiftHandoverService` from/to + open 快照 + `GET/POST /handovers`）；(4) Prometheus 指标导出（`OpsMetricsExporter` + `MetricsController` token 守卫原始 text/plain + `GET /api/ops/metrics` 组外注册，opt-in）。
+
+候选后续增强：真实地理风控（GeoIP）、升级到外部 PagerDuty、告警关联/预案/标签的 DB 可视化编辑、指标历史存储。
 
 # 项目级 Codex 测试规范
 
