@@ -34,8 +34,8 @@ class SupervisorService
             'result' => $this->execute([
                 'supervisorctl',
                 'start',
-                $name
-            ])
+                $name,
+            ]),
         ];
     }
 
@@ -49,8 +49,8 @@ class SupervisorService
             'result' => $this->execute([
                 'supervisorctl',
                 'stop',
-                $name
-            ])
+                $name,
+            ]),
         ];
     }
 
@@ -64,8 +64,8 @@ class SupervisorService
             'result' => $this->execute([
                 'supervisorctl',
                 'restart',
-                $name
-            ])
+                $name,
+            ]),
         ];
     }
 
@@ -76,7 +76,7 @@ class SupervisorService
     {
         return $this->execute([
             'supervisorctl',
-            'reread'
+            'reread',
         ]);
     }
 
@@ -87,7 +87,7 @@ class SupervisorService
     {
         return $this->execute([
             'supervisorctl',
-            'update'
+            'update',
         ]);
     }
 
@@ -100,7 +100,7 @@ class SupervisorService
             'supervisorctl',
             'tail',
             "-{$lines}",
-            $name
+            $name,
         ]);
     }
 
@@ -161,11 +161,11 @@ class SupervisorService
             "ops.supervisor.logs.{$service}"
         );
 
-        if (!$file) {
+        if (! $file) {
             return 'Log file not configured';
         }
 
-        if (!File::exists($file)) {
+        if (! File::exists($file)) {
             return 'Log file not found';
         }
 

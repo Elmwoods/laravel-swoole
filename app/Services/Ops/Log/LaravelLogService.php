@@ -2,7 +2,6 @@
 
 namespace App\Services\Ops\Log;
 
-
 use App\DTO\Ops\Log\LogQueryDTO;
 
 class LaravelLogService

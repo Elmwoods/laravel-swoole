@@ -5,7 +5,6 @@ namespace App\Events\Ops\Docker;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 
-
 class DockerLogUpdated implements ShouldBroadcast
 {
     /**
@@ -28,12 +27,12 @@ class DockerLogUpdated implements ShouldBroadcast
         $this->log = $this->safeLogPayload($log);
     }
 
-    public function broadcastOn():array
+    public function broadcastOn(): array
     {
         return [
             new Channel(
                 "docker.logs.{$this->containerId}"
-            )
+            ),
         ];
     }
 

@@ -10,7 +10,8 @@ use Illuminate\Http\JsonResponse;
 class OctaneMonitorController extends Controller
 {
     use ApiResponse;
-    public function status(OctaneMonitorService  $monitorService ): JsonResponse
+
+    public function status(OctaneMonitorService $monitorService): JsonResponse
     {
         return $this->success($monitorService->getStatus()->toArray());
     }

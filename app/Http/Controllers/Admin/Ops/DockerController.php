@@ -11,8 +11,7 @@ class DockerController extends Controller
 {
     public function __construct(
         protected DockerService $docker
-    ) {
-    }
+    ) {}
 
     /**
      * 容器列表

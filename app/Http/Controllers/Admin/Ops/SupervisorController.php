@@ -15,8 +15,7 @@ class SupervisorController extends Controller
 
     public function status(
         SupervisorService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->status()
         );
@@ -25,8 +24,7 @@ class SupervisorController extends Controller
     public function start(
         SupervisorProcessRequest $request,
         SupervisorService $service,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->start($request->serviceName())
         );
@@ -35,8 +33,7 @@ class SupervisorController extends Controller
     public function stop(
         SupervisorControlRequest $request,
         SupervisorService $service,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->stop($request->serviceName())
         );
@@ -45,8 +42,7 @@ class SupervisorController extends Controller
     public function restart(
         SupervisorControlRequest $request,
         SupervisorService $service,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->restart($request->serviceName())
         );
@@ -54,29 +50,26 @@ class SupervisorController extends Controller
 
     public function reread(
         SupervisorService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success([
-            'result' => $service->reread()
+            'result' => $service->reread(),
         ]);
     }
 
     public function update(
         SupervisorService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success([
-            'result' => $service->update()
+            'result' => $service->update(),
         ]);
     }
 
     public function tail(
         SupervisorProcessRequest $request,
         SupervisorService $service,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success([
-            'logs' => $service->tail($request->serviceName())
+            'logs' => $service->tail($request->serviceName()),
         ]);
     }
 
@@ -88,7 +81,7 @@ class SupervisorController extends Controller
 
         return $this->success([
             'service' => $name,
-            'logs' => $service->logs($name)
+            'logs' => $service->logs($name),
         ]);
     }
 }

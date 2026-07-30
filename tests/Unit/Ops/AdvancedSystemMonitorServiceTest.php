@@ -9,7 +9,8 @@ class AdvancedSystemMonitorServiceTest extends TestCase
 {
     public function test_disk_io_returns_safe_unavailable_result_when_iostat_is_missing(): void
     {
-        $service = new class extends AdvancedSystemMonitorService {
+        $service = new class extends AdvancedSystemMonitorService
+        {
             protected function hasExecutable(string $command): bool
             {
                 return false;

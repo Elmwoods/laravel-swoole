@@ -20,21 +20,21 @@ class OctaneController extends Controller
     public function reload(OpsConfirmActionRequest $request, OctaneControlService $service): JsonResponse
     {
         return $this->success([
-            'reloaded' => $service->reload()
+            'reloaded' => $service->reload(),
         ]);
     }
 
     public function restart(OpsConfirmActionRequest $request, OctaneControlService $service): JsonResponse
     {
         return $this->success([
-            'restarted' => $service->restart()
+            'restarted' => $service->restart(),
         ]);
     }
 
     public function stop(OpsConfirmActionRequest $request, OctaneControlService $service): JsonResponse
     {
         return $this->success([
-            'stopped' => $service->stop()
+            'stopped' => $service->stop(),
         ]);
     }
 }

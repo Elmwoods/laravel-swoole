@@ -23,6 +23,6 @@ class MetricsBufferService
     {
         $list = Redis::lrange(self::KEY, 0, 29);
 
-        return array_map(fn($i) => json_decode($i, true), $list);
+        return array_map(fn ($i) => json_decode($i, true), $list);
     }
 }

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Ops;
 
-use App\Models\AdminAuditLog;
+use App\Models\AdminRole;
 use App\Models\OpsReleaseCheck;
 use App\Services\Admin\AdminPermissionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,13 +41,13 @@ class PhaseTenReleaseCheckTest extends TestCase
 
         $this->assertDatabaseHas('admin_roles', ['slug' => 'ops_admin']);
         $this->assertTrue(
-            \App\Models\AdminRole::query()
+            AdminRole::query()
                 ->where('slug', 'ops_admin')
                 ->whereHas('permissions', fn ($query) => $query->where('slug', 'ops.release.view'))
                 ->exists(),
         );
         $this->assertFalse(
-            \App\Models\AdminRole::query()
+            AdminRole::query()
                 ->where('slug', 'audit_viewer')
                 ->whereHas('permissions', fn ($query) => $query->where('slug', 'ops.release.view'))
                 ->exists(),

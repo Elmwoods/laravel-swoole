@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 class DiskController extends Controller
 {
     use ApiResponse;
+
     public function __construct(
         protected DiskService $diskService
     ) {}

@@ -15,7 +15,7 @@ class TestEvent implements ShouldBroadcast
     {
 
         return [
-            new Channel('ops.system.metrics')
+            new Channel('ops.system.metrics'),
         ];
     }
 

@@ -8,8 +8,7 @@ class SupervisorProcessDTO
         public string $name,
         public string $status,
         public string $description,
-    ) {
-    }
+    ) {}
 
     public function toArray(): array
     {
