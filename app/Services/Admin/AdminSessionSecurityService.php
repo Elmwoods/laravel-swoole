@@ -8,7 +8,9 @@ use Illuminate\Http\Request;
 class AdminSessionSecurityService
 {
     public const LAST_ACTIVITY_SESSION_KEY = 'admin_last_activity_at';
+
     public const IDLE_TIMEOUT_MINUTES = 120;
+
     public const IDLE_TIMEOUT_SECONDS = self::IDLE_TIMEOUT_MINUTES * 60;
 
     public function touch(Request $request, ?CarbonInterface $now = null): void

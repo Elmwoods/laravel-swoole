@@ -43,7 +43,9 @@ class AdvancedSystemMonitorService
 
         foreach ($stat2 as $i => $core2) {
 
-            if (!isset($stat1[$i])) continue;
+            if (! isset($stat1[$i])) {
+                continue;
+            }
 
             $idle = $core2['idle'] - $stat1[$i]['idle'];
             $total = $core2['total'] - $stat1[$i]['total'];
@@ -131,15 +133,17 @@ class AdvancedSystemMonitorService
 
         foreach ($lines as $line) {
 
-            if (strpos($line, ':') === false) continue;
+            if (strpos($line, ':') === false) {
+                continue;
+            }
 
             [$iface, $data] = explode(':', $line);
 
             $stats = preg_split('/\s+/', trim($data));
 
             $result[trim($iface)] = [
-                'rx_bytes' => (int)$stats[0],
-                'tx_bytes' => (int)$stats[8],
+                'rx_bytes' => (int) $stats[0],
+                'tx_bytes' => (int) $stats[8],
             ];
         }
 
@@ -209,7 +213,9 @@ class AdvancedSystemMonitorService
 
         foreach ($lines as $line) {
 
-            if (!str_starts_with($line, 'cpu')) continue;
+            if (! str_starts_with($line, 'cpu')) {
+                continue;
+            }
 
             $parts = preg_split('/\s+/', trim($line));
 

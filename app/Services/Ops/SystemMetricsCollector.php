@@ -21,6 +21,7 @@ class SystemMetricsCollector
     private function cpu(): float
     {
         $load = sys_getloadavg()[0];
+
         return round($load, 2);
     }
 
@@ -32,7 +33,7 @@ class SystemMetricsCollector
 
         foreach ($data as $line) {
             [$k, $v] = explode(':', $line);
-            $mem[$k] = (int)filter_var($v, FILTER_SANITIZE_NUMBER_INT);
+            $mem[$k] = (int) filter_var($v, FILTER_SANITIZE_NUMBER_INT);
         }
 
         return [
@@ -49,7 +50,7 @@ class SystemMetricsCollector
 
         foreach ($data as $line) {
             [$k, $v] = explode(':', $line);
-            $mem[$k] = (int)filter_var($v, FILTER_SANITIZE_NUMBER_INT);
+            $mem[$k] = (int) filter_var($v, FILTER_SANITIZE_NUMBER_INT);
         }
 
         return [
@@ -65,7 +66,9 @@ class SystemMetricsCollector
         $result = [];
 
         foreach ($lines as $line) {
-            if (!str_contains($line, ':')) continue;
+            if (! str_contains($line, ':')) {
+                continue;
+            }
 
             [$iface, $data] = explode(':', $line);
             $stats = preg_split('/\s+/', trim($data));

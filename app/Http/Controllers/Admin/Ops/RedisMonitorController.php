@@ -40,7 +40,7 @@ class RedisMonitorController extends Controller
     public function hitRate(RedisMonitorService $service): JsonResponse
     {
         return $this->success([
-            'hit_rate' => $service->getHitRate()
+            'hit_rate' => $service->getHitRate(),
         ]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Security;
 
+use App\Models\AdminPermission;
 use App\Services\Admin\AdminPermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,7 +29,7 @@ class AdminRoleStoreRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator): void {
-            $invalid = \App\Models\AdminPermission::query()
+            $invalid = AdminPermission::query()
                 ->whereIn('id', $this->input('permission_ids', []))
                 ->whereNotIn('slug', AdminPermissionRegistry::slugs())
                 ->exists();

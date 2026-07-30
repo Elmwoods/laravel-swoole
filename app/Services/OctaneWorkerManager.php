@@ -17,7 +17,7 @@ class OctaneWorkerManager
      */
     public function getMasterPid(): ?int
     {
-        if (!file_exists($this->stateFile())) {
+        if (! file_exists($this->stateFile())) {
             return null;
         }
 
@@ -33,7 +33,7 @@ class OctaneWorkerManager
     {
         $pid = $this->getMasterPid();
 
-        if (!$pid) {
+        if (! $pid) {
             return false;
         }
 
@@ -47,7 +47,7 @@ class OctaneWorkerManager
     {
         $pid = $this->getMasterPid();
 
-        if (!$pid) {
+        if (! $pid) {
             return false;
         }
 

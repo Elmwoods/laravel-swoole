@@ -25,7 +25,7 @@ class DockerLogService
         ];
 
         if ($dto->mode !== 'full') {
-            $command[] = '--tail=' . max(10, min($dto->lines, 1000));
+            $command[] = '--tail='.max(10, min($dto->lines, 1000));
         }
 
         $command[] = $container;

@@ -20,6 +20,6 @@ class NetworkController extends Controller
      */
     public function index(): JsonResponse
     {
-        return $this->success( $this->service->getSpeed());
+        return $this->success($this->service->getSpeed());
     }
 }

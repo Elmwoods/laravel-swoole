@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands\Ops;
 
-use Illuminate\Console\Command;
 use App\Services\Ops\System\DiskService;
+use Illuminate\Console\Command;
 
 /**
  * PushDiskMetricsCommand
@@ -34,14 +34,14 @@ class PushDiskMetricsCommand extends Command
                 // 采集 + 推送
                 $data = $diskService->push();
 
-                $this->info('[DiskMetrics] pushed at ' . now());
+                $this->info('[DiskMetrics] pushed at '.now());
 
                 // 控制频率（企业级建议 2~5 秒）
                 sleep(3);
 
             } catch (\Throwable $e) {
 
-                $this->error('[DiskMetrics ERROR] ' . $e->getMessage());
+                $this->error('[DiskMetrics ERROR] '.$e->getMessage());
 
                 // 防止 crash loop
                 sleep(5);

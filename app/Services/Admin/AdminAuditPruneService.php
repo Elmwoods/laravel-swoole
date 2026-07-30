@@ -9,7 +9,9 @@ use InvalidArgumentException;
 class AdminAuditPruneService
 {
     public const DEFAULT_RETENTION_DAYS = 180;
+
     public const MIN_RETENTION_DAYS = 30;
+
     public const MAX_RETENTION_DAYS = 3650;
 
     public function normalizeRetentionDays(?int $days): int

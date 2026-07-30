@@ -25,10 +25,14 @@ class NetworkTrafficService
         $result = [];
 
         foreach ($lines as $index => $line) {
-            if ($index < 2) continue; // 跳过表头
+            if ($index < 2) {
+                continue;
+            } // 跳过表头
 
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
 
             // eth0: 123 456 ...
             // 使用 limit=2 避免异常格式里出现额外冒号时影响解析。
@@ -43,10 +47,10 @@ class NetworkTrafficService
             $stats = preg_split('/\s+/', trim($data));
 
             $result[trim($iface)] = [
-                'rx_bytes' => (int)$stats[0],
-                'rx_packets' => (int)$stats[1],
-                'tx_bytes' => (int)$stats[8],
-                'tx_packets' => (int)$stats[9],
+                'rx_bytes' => (int) $stats[0],
+                'rx_packets' => (int) $stats[1],
+                'tx_bytes' => (int) $stats[8],
+                'tx_packets' => (int) $stats[9],
             ];
         }
 
@@ -69,7 +73,7 @@ class NetworkTrafficService
             'data' => $current,
         ], 30);
 
-        if (!$last) {
+        if (! $last) {
             return [
                 'status' => 'warming',
                 'timestamp' => time(),
@@ -99,7 +103,9 @@ class NetworkTrafficService
         foreach ($current as $iface => $data) {
 
             $lastData = $lastDataSet[$iface] ?? null;
-            if (!$lastData) continue;
+            if (! $lastData) {
+                continue;
+            }
 
             $rxBytes = max($data['rx_bytes'] - $lastData['rx_bytes'], 0);
             $txBytes = max($data['tx_bytes'] - $lastData['tx_bytes'], 0);
@@ -130,7 +136,7 @@ class NetworkTrafficService
                 'rx_mb_s' => round($summary['rx_mb_s'], 3),
                 'tx_mb_s' => round($summary['tx_mb_s'], 3),
             ],
-            'interfaces' => $result
+            'interfaces' => $result,
         ];
     }
 

@@ -20,10 +20,9 @@ class LogController extends Controller
      * Laravel 实时日志。
      */
     public function laravel(
-        LogQueryRequest   $request,
+        LogQueryRequest $request,
         LaravelLogService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->latest($request->dto())
         );
@@ -33,8 +32,7 @@ class LogController extends Controller
         LogQueryRequest $request,
         LaravelLogService $service,
         LogDownloadService $download,
-    ): StreamedResponse
-    {
+    ): StreamedResponse {
         return $download->download($service->latest($this->downloadDto($request)), 'laravel');
     }
 
@@ -42,10 +40,9 @@ class LogController extends Controller
      * Octane / Swoole 日志。
      */
     public function octane(
-        LogQueryRequest  $request,
+        LogQueryRequest $request,
         OctaneLogService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->latest($request->dto())
         );
@@ -55,8 +52,7 @@ class LogController extends Controller
         LogQueryRequest $request,
         OctaneLogService $service,
         LogDownloadService $download,
-    ): StreamedResponse
-    {
+    ): StreamedResponse {
         return $download->download($service->latest($this->downloadDto($request)), 'octane');
     }
 
@@ -66,8 +62,7 @@ class LogController extends Controller
     public function redis(
         LogQueryRequest $request,
         RedisLogService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->slowLogs($request->dto())
         );
@@ -77,8 +72,7 @@ class LogController extends Controller
         LogQueryRequest $request,
         RedisLogService $service,
         LogDownloadService $download,
-    ): StreamedResponse
-    {
+    ): StreamedResponse {
         return $download->download($service->slowLogs($this->downloadDto($request)), 'redis');
     }
 
@@ -86,10 +80,9 @@ class LogController extends Controller
      * Docker 容器日志。
      */
     public function docker(
-        LogQueryRequest  $request,
+        LogQueryRequest $request,
         DockerLogService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         $dto = $request->dto();
 
         return $this->success(
@@ -104,8 +97,7 @@ class LogController extends Controller
         LogQueryRequest $request,
         DockerLogService $service,
         LogDownloadService $download,
-    ): StreamedResponse
-    {
+    ): StreamedResponse {
         $dto = $this->downloadDto($request);
 
         return $download->download(
@@ -120,8 +112,7 @@ class LogController extends Controller
     public function system(
         LogQueryRequest $request,
         SystemLogService $service
-    ): JsonResponse
-    {
+    ): JsonResponse {
         return $this->success(
             $service->latest($request->dto())
         );
@@ -131,8 +122,7 @@ class LogController extends Controller
         LogQueryRequest $request,
         SystemLogService $service,
         LogDownloadService $download,
-    ): StreamedResponse
-    {
+    ): StreamedResponse {
         return $download->download($service->latest($this->downloadDto($request)), 'system');
     }
 

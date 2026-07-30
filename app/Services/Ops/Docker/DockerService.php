@@ -17,7 +17,7 @@ class DockerService
     {
         try {
             $data = $this->client->get('/containers/json', [
-                'all' => 1   // 包括停止的容器
+                'all' => 1,   // 包括停止的容器
             ]);
         } catch (\Throwable $e) {
             Log::error('Docker containers fetch failed', [
@@ -30,12 +30,12 @@ class DockerService
         return collect($data)
             ->map(function ($c) {
                 return [
-                    'id'      => substr($c['Id'], 0, 12),
+                    'id' => substr($c['Id'], 0, 12),
                     'full_id' => $c['Id'],
-                    'name'    => ltrim($c['Names'][0] ?? '', '/'),
-                    'image'   => $c['Image'],
-                    'state'   => $c['State'],
-                    'status'  => $c['Status'],
+                    'name' => ltrim($c['Names'][0] ?? '', '/'),
+                    'image' => $c['Image'],
+                    'state' => $c['State'],
+                    'status' => $c['Status'],
                 ];
             })
             ->sortBy('name')          // 按容器名排序
@@ -77,8 +77,8 @@ class DockerService
     /**
      * 获取容器日志（原始文本，已自动去除 Docker 帧头）
      *
-     * @param string $containerId 容器 ID 或名称
-     * @param int $tail 返回最后多少行，默认 20
+     * @param  string  $containerId  容器 ID 或名称
+     * @param  int  $tail  返回最后多少行，默认 20
      * @return string 纯日志文本
      */
     public function logs(string $containerId, int $tail = 20): string
@@ -89,12 +89,13 @@ class DockerService
             $raw = $this->client->getRaw("/containers/{$containerId}/logs", [
                 'stdout' => true,
                 'stderr' => true,
-                'tail'   => $tail,
+                'tail' => $tail,
             ]);
 
             return $this->stripDockerLogHeaders($raw);
         } catch (\Exception $e) {
-            Log::error("Failed to fetch logs for container {$containerId}: " . $e->getMessage());
+            Log::error("Failed to fetch logs for container {$containerId}: ".$e->getMessage());
+
             return '';
         }
     }
@@ -164,9 +165,6 @@ class DockerService
     /**
      * 移除 Docker logs API 返回的帧头（8 字节）
      * 格式：[1 byte stream type][3 bytes padding][4 bytes size] + data
-     *
-     * @param string $raw
-     * @return string
      */
     private function stripDockerLogHeaders(string $raw): string
     {

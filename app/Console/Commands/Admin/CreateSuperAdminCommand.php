@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Admin;
 
+use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Services\Admin\AdminPermissionRegistry;
 use Illuminate\Console\Command;
@@ -54,7 +55,7 @@ class CreateSuperAdminCommand extends Command
             ],
         );
 
-        $role = \App\Models\AdminRole::query()->where('slug', 'super_admin')->firstOrFail();
+        $role = AdminRole::query()->where('slug', 'super_admin')->firstOrFail();
         $admin->roles()->syncWithoutDetaching([$role->id]);
 
         $this->info("Super admin ready: {$admin->email}");

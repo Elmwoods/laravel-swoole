@@ -7,6 +7,7 @@ use RuntimeException;
 class DockerClient
 {
     private string $baseUri;
+
     private array $defaultHeaders;
 
     public function __construct(?string $baseUri = null)
@@ -24,6 +25,7 @@ class DockerClient
     public function request(string $method, string $path, array $data = []): array
     {
         $response = $this->requestRaw($method, $path, $data);
+
         return json_decode($response, true) ?? [];
     }
 
@@ -50,7 +52,7 @@ class DockerClient
         if (str_starts_with($this->baseUri, 'unix://')) {
             $socketPath = substr($this->baseUri, 7);
             $options[CURLOPT_UNIX_SOCKET_PATH] = $socketPath;
-            $url = 'http://localhost' . $path; // 占位，实际不经过网络
+            $url = 'http://localhost'.$path; // 占位，实际不经过网络
         } else {
             // tcp:// 或 http:// 地址
             $options[CURLOPT_URL] = $url;
@@ -80,7 +82,8 @@ class DockerClient
         // 若 baseUri 是 tcp:// 格式，转换为 http://
         $uri = preg_replace('/^tcp:/', 'http:', $this->baseUri);
         $uri = rtrim($uri, '/');
-        return $uri . '/v1.41' . $path;
+
+        return $uri.'/v1.41'.$path;
     }
 
     private function buildHeaders(): array
@@ -89,6 +92,7 @@ class DockerClient
         foreach ($this->defaultHeaders as $key => $value) {
             $headers[] = "{$key}: {$value}";
         }
+
         return $headers;
     }
 
@@ -97,8 +101,9 @@ class DockerClient
      */
     public function get(string $path, array $query = []): array
     {
-        $queryString = $query ? '?' . http_build_query($query) : '';
-        return $this->request('GET', $path . $queryString);
+        $queryString = $query ? '?'.http_build_query($query) : '';
+
+        return $this->request('GET', $path.$queryString);
     }
 
     /**
@@ -106,8 +111,9 @@ class DockerClient
      */
     public function getRaw(string $path, array $query = []): string
     {
-        $queryString = $query ? '?' . http_build_query($query) : '';
-        return $this->requestRaw('GET', $path . $queryString);
+        $queryString = $query ? '?'.http_build_query($query) : '';
+
+        return $this->requestRaw('GET', $path.$queryString);
     }
 
     public function post(string $path, array $data = []): array

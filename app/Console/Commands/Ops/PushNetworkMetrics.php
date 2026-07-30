@@ -17,13 +17,13 @@ class PushNetworkMetrics extends Command
 
     public function handle(): void
     {
-        $this->info('Network started...'. time());
+        $this->info('Network started...'.time());
 
         while (true) {
 
             try {
 
-                $data =  app(NetworkTrafficService::class)->getSpeed();
+                $data = app(NetworkTrafficService::class)->getSpeed();
 
                 // WebSocket 推送
                 broadcast(new NetworkMetricsUpdated($data));
@@ -32,7 +32,7 @@ class PushNetworkMetrics extends Command
 
                 // 防止进程挂掉
                 logger()->error('Network stream error', [
-                    'message' => $e->getMessage()
+                    'message' => $e->getMessage(),
                 ]);
             }
 

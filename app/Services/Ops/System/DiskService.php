@@ -16,8 +16,6 @@ class DiskService
 {
     /**
      * 获取磁盘使用情况
-     *
-     * @return array
      */
     public function getUsage(): array
     {
@@ -47,11 +45,15 @@ class DiskService
         $lines = explode("\n", trim($output));
 
         foreach (array_slice($lines, 1) as $line) {
-            if (!$line) continue;
+            if (! $line) {
+                continue;
+            }
 
             $parts = preg_split('/\s+/', $line);
 
-            if (count($parts) < 6) continue;
+            if (count($parts) < 6) {
+                continue;
+            }
 
             [$filesystem, $size, $used, $avail, $usePercent, $mount] = $parts;
 
@@ -61,11 +63,11 @@ class DiskService
 
             $disks[] = [
                 'filesystem' => $filesystem,
-                'size'       => $this->toGB($size),
-                'used'       => $this->toGB($used),
-                'available'  => $this->toGB($avail),
-                'usage'      => (int) str_replace('%', '', $usePercent),
-                'mount'      => $mount,
+                'size' => $this->toGB($size),
+                'used' => $this->toGB($used),
+                'available' => $this->toGB($avail),
+                'usage' => (int) str_replace('%', '', $usePercent),
+                'mount' => $mount,
             ];
         }
 

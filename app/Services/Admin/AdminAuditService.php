@@ -62,16 +62,19 @@ class AdminAuditService
         foreach ($payload as $key => $value) {
             if ($this->isSensitiveKey((string) $key)) {
                 $sanitized[$key] = '[FILTERED]';
+
                 continue;
             }
 
             if (is_array($value)) {
                 $sanitized[$key] = $this->sanitizePayload($value);
+
                 continue;
             }
 
             if (is_string($value)) {
                 $sanitized[$key] = mb_strimwidth($value, 0, 500, '...');
+
                 continue;
             }
 

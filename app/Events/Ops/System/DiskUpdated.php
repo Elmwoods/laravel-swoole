@@ -26,7 +26,7 @@ class DiskUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new Channel('ops.system.disk')
+            new Channel('ops.system.disk'),
         ];
     }
 

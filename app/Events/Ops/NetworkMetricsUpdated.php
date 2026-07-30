@@ -3,8 +3,8 @@
 namespace App\Events\Ops;
 
 use Illuminate\Broadcasting\Channel;
-# implements ShouldBroadcast 会走队列 需执行 php artisan queue:work
-//use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+// implements ShouldBroadcast 会走队列 需执行 php artisan queue:work
+// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
@@ -22,7 +22,7 @@ class NetworkMetricsUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new Channel('ops.system.metrics')
+            new Channel('ops.system.metrics'),
         ];
     }
 

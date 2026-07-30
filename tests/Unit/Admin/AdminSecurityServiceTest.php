@@ -5,15 +5,16 @@ namespace Tests\Unit\Admin;
 use App\Models\AdminPermission;
 use App\Models\AdminRole;
 use App\Models\AdminUser;
+use App\Services\Admin\AdminAuditPruneService;
 use App\Services\Admin\AdminAuditService;
 use App\Services\Admin\AdminCsvExportService;
-use App\Services\Admin\AdminAuditPruneService;
 use App\Services\Admin\AdminLoginThrottleService;
 use App\Services\Admin\AdminPasswordCryptoService;
 use App\Services\Admin\AdminSessionSecurityService;
 use App\Services\Ops\OpsConfirmService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -179,7 +180,7 @@ class AdminSecurityServiceTest extends TestCase
             'password_key_id' => $service->publicKeyPayload()['key_id'],
         ]));
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
 
         $service->decryptPasswordFromPayload([
             'password_encrypted' => base64_encode($ciphertext),

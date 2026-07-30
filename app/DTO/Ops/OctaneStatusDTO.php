@@ -8,8 +8,7 @@ class OctaneStatusDTO
         public int $workers,
         public int $taskWorkers,
         public string $status,
-    ) {
-    }
+    ) {}
 
     public function toArray(): array
     {

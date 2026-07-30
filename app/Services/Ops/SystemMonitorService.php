@@ -121,11 +121,11 @@ class SystemMonitorService
      */
     public function summary(): array
     {
-//        return [
-//            'cpu' => $this->cpuUsage(),
-//
-//            'memory' => $this->memoryUsage(),
-//        ];
+        //        return [
+        //            'cpu' => $this->cpuUsage(),
+        //
+        //            'memory' => $this->memoryUsage(),
+        //        ];
         return app(SystemMetricsCollector::class)->collect();
     }
 }

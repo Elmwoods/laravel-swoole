@@ -18,7 +18,7 @@ class PushSystemMetrics extends Command
 
     public function handle(): void
     {
-        $this->info('System Metrics Stream started...'. time());
+        $this->info('System Metrics Stream started...'.time());
 
         while (true) {
 
@@ -36,7 +36,7 @@ class PushSystemMetrics extends Command
 
                 // 防止进程挂掉
                 logger()->error('Metrics stream error', [
-                    'message' => $e->getMessage()
+                    'message' => $e->getMessage(),
                 ]);
             }
 

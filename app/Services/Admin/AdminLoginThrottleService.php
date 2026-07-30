@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 class AdminLoginThrottleService
 {
     private const MAX_ATTEMPTS = 5;
+
     private const DECAY_SECONDS = 900;
 
     public function key(string $email, string $ip): string
