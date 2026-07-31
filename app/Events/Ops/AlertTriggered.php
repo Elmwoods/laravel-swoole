@@ -17,7 +17,7 @@ class AlertTriggered implements ShouldBroadcastNow
     use SerializesModels;
 
     public function __construct(
-        public OpsAlert $alert
+        public OpsAlert $alert   // 触发广播的告警模型（SerializesModels 会按主键序列化，重建时重新查库）
     ) {}
 
     /**
@@ -48,9 +48,11 @@ class AlertTriggered implements ShouldBroadcastNow
             'source' => $this->alert->source,
             'severity' => $this->alert->severity,
             'title' => $this->alert->title,
+            // 正文按显示宽度截断到 220，避免长文本撑大广播 payload
             'message' => mb_strimwidth($this->alert->message, 0, 220, '...'),
             'status' => $this->alert->status,
             'hit_count' => $this->alert->hit_count,
+            // 时间可能为空，optional 安全取值后格式化为字符串
             'last_seen_at' => optional($this->alert->last_seen_at)->toDateTimeString(),
         ];
     }

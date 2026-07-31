@@ -23,12 +23,30 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
 /**
- * Ops Center 告警中心服务。
+ * Ops Center 告警中心服务（管线的编排核心）。
  *
- * 负责采集轻量指标、执行规则、持久化告警、发送通知和广播摘要。
+ * 处于整个告警子系统的中枢，串起 raise → notify → broadcast 三段：
+ * - raise（升起/去重）：snapshot 采集轻量指标 → ruleEngine 规则命中出 AlertDTO
+ *   → storeAlert 按 fingerprint 幂等去重/累加 hit_count/自动打标/关联抑制/值班自动指派；
+ *   除规则评估外，还有一批 raiseXxx 入口（巡检失败、登录异常、审计异常、SLA 违约、
+ *   通道健康、自动封禁、外部入站）都收敛到同一个 storeAlert 去重管线。
+ * - notify（通知）：委托 AlertNotificationService->send()，仅在「新建」或「过冷却期」时外发，避免刷屏。
+ * - broadcast（广播）：每次状态变化 broadcast(AlertTriggered) 推前端实时刷新。
+ *
+ * 另外承担只读聚合（summary/digest/heatmap/SLA/workload/周报）、生命周期流转
+ * （acknowledge/assign/resolve/自动恢复/升级 escalate/抖动 flapping）与设置读写。
+ *
+ * 去重锚点：所有告警靠 AlertDTO 的 fingerprint 归一，同一 fingerprint 视为「同一条告警的再次发生」。
  */
 class AlertCenterService
 {
+    /**
+     * 作用：注入告警管线所需的规则引擎、通知服务、各指标采集服务及生命周期协作服务。
+     *
+     * 「为什么」这么多依赖：本服务是编排核心，snapshot 要向每个子系统（磁盘/队列/Docker/
+     * 网络/系统/Redis/MySQL/Octane/Supervisor）取数，再交给 ruleEngine 判定；
+     * notification/onCall/silences/correlation/notes 分别覆盖外发、值班、静默、关联抑制与备注。
+     */
     public function __construct(
         private readonly AlertRuleEngineService $ruleEngine,
         private readonly AlertNotificationService $notification,
@@ -48,9 +66,14 @@ class AlertCenterService
     ) {}
 
     /**
-     * 相似告警：同来源、已恢复、非自身的历史告警（按恢复近因倒序），附各自处理备注。供加速排查。
+     * 作用：拉取与当前告警「同来源、已恢复、非自身」的历史告警，附各自处理备注，供加速排查。
      *
-     * @return array<int, array<string, mixed>>
+     * 「为什么」只取 resolved：把过去同类问题「怎么被解决的」摆给值班人参考；
+     * 按 updated_at 倒序即按最近恢复优先。
+     *
+     * @param  OpsAlert  $alert  当前告警（取 source 做匹配、排除自身 id）
+     * @param  int  $limit  返回条数，内部 clamp 到 1..20
+     * @return array<int, array<string, mixed>> 相似历史告警列表（含 notes）
      */
     public function similarAlerts(OpsAlert $alert, int $limit = 5): array
     {
@@ -75,15 +98,24 @@ class AlertCenterService
             ->all();
     }
 
+    // 单次批量操作最多处理的告警条数（防一次性操作过多拖垮请求）
     private const BATCH_CAP = 500;
 
     /**
-     * 对某分组（by=source|severity）的 open 告警批量执行 acknowledge|assign。
+     * 作用：对某分组（by=source|severity）的所有 open 告警批量执行 acknowledge|assign。
      *
+     * 「为什么」capped 字段：查询前先 count 总量，实际只取前 BATCH_CAP 条处理，
+     * total 超过 cap 时置 capped=true，让调用方知道还有剩余需再次操作。
+     *
+     * @param  string  $by  分组维度，仅 source|severity
+     * @param  string  $group  分组值（如某个 source 名）
+     * @param  string  $op  批量操作，仅 acknowledge|assign
+     * @param  array<string, mixed>  $payload  透传给 acknowledge/assign 的载荷
      * @return array{op:string, by:string, group:string, affected:int, capped:bool}
      */
     public function batchByGroup(string $by, string $group, string $op, array $payload = []): array
     {
+        // 白名单校验分组维度，防注入任意列名
         if (! in_array($by, ['source', 'severity'], true)) {
             throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
         }
@@ -93,8 +125,8 @@ class AlertCenterService
         }
 
         $query = OpsAlert::query()->where('status', 'open')->where($by, $group);
-        $total = (clone $query)->count();
-        $alerts = $query->orderBy('id')->limit(self::BATCH_CAP)->get();
+        $total = (clone $query)->count(); // 先取总量用于判断是否 capped
+        $alerts = $query->orderBy('id')->limit(self::BATCH_CAP)->get(); // 实际只处理 cap 内的批次
 
         foreach ($alerts as $alert) {
             if ($op === 'acknowledge') {
@@ -114,7 +146,16 @@ class AlertCenterService
     }
 
     /**
-     * 为某分组创建一条静默窗口（复用 phase-29 静默 create）。
+     * 作用：为某分组创建一条即时生效的静默窗口（复用 phase-29 静默 create）。
+     *
+     * 「为什么」按维度写入不同字段：source 维度填 sources、severity 维度填 severities，
+     * 让静默判定能按来源或按级别命中；窗口从「现在」到「现在+minutes」。
+     *
+     * @param  string  $by  分组维度，仅 source|severity
+     * @param  string  $group  分组值
+     * @param  int  $minutes  静默时长（分钟），clamp 到 1..1440
+     * @param  AdminUser|null  $actor  操作人（审计）
+     * @return OpsAlertSilence 新建的静默记录
      */
     public function batchSilenceGroup(string $by, string $group, int $minutes, ?AdminUser $actor = null): OpsAlertSilence
     {
@@ -122,7 +163,7 @@ class AlertCenterService
             throw new \InvalidArgumentException('分组维度仅支持 source 或 severity。');
         }
 
-        $minutes = max(1, min(1440, $minutes));
+        $minutes = max(1, min(1440, $minutes)); // 时长限定 1 分钟 ~ 24 小时
 
         return $this->silences->create([
             'label' => "批量静默 {$group}",
@@ -134,7 +175,13 @@ class AlertCenterService
     }
 
     /**
-     * 告警列表。
+     * 作用：按筛选条件分页返回告警列表（状态/级别/来源/指派人/标签/未指派）。
+     *
+     * 「为什么」用 when 链：每个筛选项仅在有值时才追加 where，空值不影响查询；
+     * 'unassigned' 特判为 whereNull，标签用 whereJsonContains 命中 JSON 数组元素。
+     *
+     * @param  array<string, mixed>  $filters  筛选条件与分页参数（per_page/page）
+     * @return LengthAwarePaginator 分页结果
      */
     public function paginate(array $filters = []): LengthAwarePaginator
     {
@@ -154,13 +201,17 @@ class AlertCenterService
     }
 
     /**
-     * open 告警按指定维度分组聚合（只读，不改去重）。供分组视图降噪 / 关联。
+     * 作用：把 open 告警按指定维度分组聚合，统计各组严重级构成/指派情况/样本标题。只读，不影响去重。
+     *
+     * 「为什么」空值归桶：分组键为空时，assigned_to 维度归入 __unassigned__、其它归入「未知」，
+     * 避免空键丢数据；最后按 total 倒序把最吵的组排前面，供分组视图降噪。
      *
      * @param  string  $by  source|severity|assigned_to（非法回退 source）
-     * @return array<int, array<string, mixed>>
+     * @return array<int, array<string, mixed>> 每组聚合信息
      */
     public function groupedOpen(string $by = 'source'): array
     {
+        // 白名单回退，防非法列名
         $by = in_array($by, ['source', 'severity', 'assigned_to'], true) ? $by : 'source';
 
         return OpsAlert::query()
@@ -190,9 +241,12 @@ class AlertCenterService
     }
 
     /**
-     * 已被指派过的处理人去重列表（供筛选下拉，不暴露完整管理员名册）。
+     * 作用：返回历史上被指派过的处理人去重列表，供筛选下拉。
      *
-     * @return array<int, string>
+     * 「为什么」不查管理员表：只从告警实际用过的 assigned_to 取值，
+     * 既满足筛选需求又不暴露完整管理员名册。
+     *
+     * @return array<int, string> 去重且排序的处理人列表
      */
     public function assignees(): array
     {
@@ -206,11 +260,16 @@ class AlertCenterService
     }
 
     /**
-     * 告警汇总。
+     * 作用：统计当前 open 告警的总量、各严重级计数与按来源的 Top 分布。
+     *
+     * 「为什么」clone 基础查询：$open 是未执行的 query builder，多个聚合各自 clone
+     * 复用同一 where 条件，避免重复拼装。
+     *
+     * @return array<string, mixed> open 汇总（含 checked_at）
      */
     public function summary(): array
     {
-        $open = OpsAlert::query()->where('status', 'open');
+        $open = OpsAlert::query()->where('status', 'open'); // 复用基座，下面逐个 clone
 
         return [
             'open_total' => (clone $open)->count(),
@@ -232,14 +291,21 @@ class AlertCenterService
     }
 
     /**
-     * 聚合最近 $hours 小时的告警（按严重级 / 状态 / 来源计数），供 digest 使用。
+     * 作用：聚合最近 $hours 小时内新建的告警，按严重级/状态/来源计数，供 digest 摘要使用。
+     *
+     * 「为什么」用 created_at 作窗口锚：统计的是「窗口内新发生的告警」，
+     * 而非仍 open 的存量；$hours clamp 到 1..168（最多 7 天）。
+     *
+     * @param  int  $hours  回溯小时数，clamp 到 1..168
+     * @return array<string, mixed> 摘要聚合结果
      */
     public function digestSummary(int $hours): array
     {
-        $hours = max(1, min(168, $hours));
+        $hours = max(1, min(168, $hours)); // 最多回溯 7 天
         $since = now()->subHours($hours);
         $scope = OpsAlert::query()->where('created_at', '>=', $since);
 
+        // 通用「按列分组计数」闭包：clone 复用 $scope 的时间窗条件
         $countBy = fn (string $column): array => (clone $scope)
             ->select($column, DB::raw('count(*) as total'))
             ->groupBy($column)
@@ -280,7 +346,12 @@ class AlertCenterService
     }
 
     /**
-     * 把聚合结果渲染成纯文本摘要正文。
+     * 作用：把 digestSummary 的聚合数组渲染成纯文本摘要正文。
+     *
+     * 「为什么」末尾走 safeInspectionText：摘要文本可能间接含来源名等，统一脱敏兜底。
+     *
+     * @param  array<string, mixed>  $summary  digestSummary 输出
+     * @return string 多行纯文本摘要
      */
     public function renderDigest(array $summary): string
     {
@@ -302,22 +373,29 @@ class AlertCenterService
     }
 
     /**
-     * 构造一条不落库的合成告警，把窗口摘要经现有通道推送。
+     * 作用：构造一条不落库的合成告警，把窗口摘要经现有通知通道推送出去。
      *
-     * config 未开或窗口内无告警（且未配置空发）时不发送。
+     * 「为什么」用合成 OpsAlert：复用 notification->send 的通道逻辑，但摘要不该进告警表，
+     * 故只在内存里构造。config 未开或窗口内无告警（且未开启空发）时直接不发。
+     *
+     * @param  int  $hours  摘要窗口小时数
+     * @return array<string, mixed> {sent, reason?/summary?/channels?}
      */
     public function sendDigest(int $hours): array
     {
+        // 总开关未开：不发
         if (! (bool) config('ops.alerts.digest.enabled', false)) {
             return ['sent' => false, 'reason' => 'disabled'];
         }
 
         $summary = $this->digestSummary($hours);
 
+        // 窗口内无告警且未开启「空也发」：跳过，避免发无意义的空摘要
         if ($summary['total'] === 0 && ! (bool) config('ops.alerts.digest.send_when_empty', false)) {
             return ['sent' => false, 'reason' => 'empty', 'summary' => $summary];
         }
 
+        // 合成告警：仅承载摘要文本，不落库
         $alert = new OpsAlert([
             'source' => 'digest',
             'severity' => (string) config('ops.alerts.digest.severity', 'info'),
@@ -336,7 +414,14 @@ class AlertCenterService
     }
 
     /**
-     * 告警热力图：按 小时(0-23)×星期(0-6) 分桶的告警频率 + 最吵来源 + 按天趋势。纯只读，PHP 分桶（DB 可移植）。
+     * 作用：生成告警热力图——按 星期(0-6)×小时(0-23) 分桶的频率矩阵 + 最吵来源 + 按天趋势。
+     *
+     * 「为什么」PHP 分桶而非 SQL：dayOfWeek/hour 抽取各数据库语法不一，改在 PHP 里算保证可移植；
+     * weighted=true 时按 hit_count 加权，反映「同一告警反复触发」的真实压力。
+     *
+     * @param  int  $days  回溯天数，clamp 到 1..90
+     * @param  bool  $weighted  是否按 hit_count 加权计数
+     * @return array<string, mixed> 热力图数据（buckets/sources/trend）
      */
     public function heatmapSummary(int $days, bool $weighted = false): array
     {
@@ -364,9 +449,11 @@ class AlertCenterService
 
             $dow = (int) $alert->created_at->dayOfWeek;
             $hour = (int) $alert->created_at->hour;
+            // 加权模式下每条按 hit_count 计（至少 1），否则每条恒记 1
             $weight = $weighted ? max(1, (int) $alert->hit_count) : 1;
             $matrix[$dow][$hour] += $weight;
 
+            // 同步累加到按天趋势
             $date = $alert->created_at->toDateString();
             $trend[$date] = ($trend[$date] ?? 0) + $weight;
         }

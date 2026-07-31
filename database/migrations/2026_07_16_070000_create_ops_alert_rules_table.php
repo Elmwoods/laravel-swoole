@@ -4,6 +4,13 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * 创建 Ops Center 告警规则表（告警可配置化阶段）。
+ *
+ * 将原本硬编码的告警阈值抽成可配置规则：每条规则针对某个来源的某个指标，
+ * 配置比较操作符与预警/严重双阈值，评估器据此判定是否触发告警。
+ * 各列语义见下方 ->comment() 说明。
+ */
 return new class extends Migration
 {
     public function up(): void
@@ -27,6 +34,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        // 回滚 up()：删除告警规则表
         Schema::dropIfExists('ops_alert_rules');
     }
 };

@@ -17,7 +17,7 @@ class DiskUpdated implements ShouldBroadcastNow
     use SerializesModels;
 
     public function __construct(
-        public array $payload
+        public array $payload   // 磁盘监控载荷（各挂载点使用率等）
     ) {}
 
     /**

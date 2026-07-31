@@ -18,6 +18,7 @@ return [
     |
     */
 
+    // Session 驱动，读取 SESSION_DRIVER，默认 "database"；可选 file/cookie/redis/memcached 等
     'driver' => env('SESSION_DRIVER', 'database'),
 
     /*
@@ -32,8 +33,10 @@ return [
     |
     */
 
+    // Session 空闲有效期（分钟），读取 SESSION_LIFETIME，默认 120
     'lifetime' => (int) env('SESSION_LIFETIME', 120),
 
+    // 浏览器关闭时是否立即过期，读取 SESSION_EXPIRE_ON_CLOSE，默认 false
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 
     /*
@@ -47,6 +50,7 @@ return [
     |
     */
 
+    // 是否加密 Session 数据，读取 SESSION_ENCRYPT，默认 false；开启后 Laravel 自动加解密
     'encrypt' => env('SESSION_ENCRYPT', false),
 
     /*
@@ -60,6 +64,7 @@ return [
     |
     */
 
+    // 使用 file 驱动时 Session 文件的存放目录：storage/framework/sessions
     'files' => storage_path('framework/sessions'),
 
     /*
@@ -73,6 +78,7 @@ return [
     |
     */
 
+    // 使用 database/redis 驱动时的连接名，读取 SESSION_CONNECTION，为空则用默认连接
     'connection' => env('SESSION_CONNECTION'),
 
     /*
@@ -86,6 +92,7 @@ return [
     |
     */
 
+    // 使用 database 驱动时的 Session 表名，读取 SESSION_TABLE，默认 "sessions"
     'table' => env('SESSION_TABLE', 'sessions'),
 
     /*
@@ -101,6 +108,7 @@ return [
     |
     */
 
+    // 使用缓存型驱动（redis/memcached/dynamodb）时使用的缓存 store，读取 SESSION_STORE
     'store' => env('SESSION_STORE'),
 
     /*
@@ -114,6 +122,7 @@ return [
     |
     */
 
+    // Session 垃圾回收概率：每次请求有 2/100 的几率清理过期 Session
     'lottery' => [2, 100],
 
     /*
@@ -127,6 +136,7 @@ return [
     |
     */
 
+    // Session Cookie 名称，读取 SESSION_COOKIE，默认由应用名 slug 拼成 "<app>-session"
     'cookie' => env(
         'SESSION_COOKIE',
         Str::slug((string) env('APP_NAME', 'laravel')).'-session'
@@ -143,6 +153,7 @@ return [
     |
     */
 
+    // Cookie 生效路径，读取 SESSION_PATH，默认 "/"（整站）
     'path' => env('SESSION_PATH', '/'),
 
     /*
@@ -156,6 +167,7 @@ return [
     |
     */
 
+    // Cookie 生效的域名/子域，读取 SESSION_DOMAIN，为空则仅限根域名
     'domain' => env('SESSION_DOMAIN'),
 
     /*
@@ -169,6 +181,7 @@ return [
     |
     */
 
+    // 是否仅在 HTTPS 下发送 Cookie，读取 SESSION_SECURE_COOKIE（为空由框架自行判断）
     'secure' => env('SESSION_SECURE_COOKIE'),
 
     /*
@@ -182,6 +195,7 @@ return [
     |
     */
 
+    // 是否设为 HttpOnly（禁止 JS 读取 Cookie），读取 SESSION_HTTP_ONLY，默认 true
     'http_only' => env('SESSION_HTTP_ONLY', true),
 
     /*
@@ -199,6 +213,7 @@ return [
     |
     */
 
+    // SameSite 策略，读取 SESSION_SAME_SITE，默认 "lax"；用于缓解 CSRF，可选 lax/strict/none/null
     'same_site' => env('SESSION_SAME_SITE', 'lax'),
 
     /*
@@ -212,6 +227,7 @@ return [
     |
     */
 
+    // 是否使用分区 Cookie（CHIPS），读取 SESSION_PARTITIONED_COOKIE，默认 false；需 secure 且 SameSite=none
     'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),
 
     /*
@@ -228,6 +244,7 @@ return [
     |
     */
 
+    // Session 数据序列化策略，此处为 "json"；用 "php" 可存 PHP 对象，但 APP_KEY 泄露时有 gadget chain 风险
     'serialization' => 'json',
 
 ];

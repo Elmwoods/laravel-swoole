@@ -24,6 +24,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        // 回滚 up()：删除 Redis 指标采样表
         Schema::dropIfExists('ops_redis_metric_samples');
     }
 };

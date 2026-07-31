@@ -14,10 +14,22 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
+/**
+ * Ops Center 第 27 阶段：安全总览仪表盘（Security Dashboard）测试。
+ *
+ * 场景：/api/ops/security/overview 聚合接口把散落在各处的安全信号
+ * （登录风险、失败登录 Top IP、活跃会话、2FA 覆盖率、受信任设备、
+ *  IP 准入规则、通道健康、安全类告警）汇总成一份总览数据。
+ * 本测试用多来源数据 seed 校验聚合口径正确、空库不除零、并受权限保护。
+ */
 class PhaseTwentySevenSecurityDashboardTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * 造出覆盖所有安全来源的样本数据，供总览聚合断言使用。
+     * 每一类数据都刻意混入"应计入"与"不应计入"的记录，以验证过滤口径。
+     */
     private function seedSecurityData(AdminUser $actor): void
     {
         // 登录事件（7 天内）：1 条新 IP、1 条新设备、1 条普通。
@@ -57,6 +69,7 @@ class PhaseTwentySevenSecurityDashboardTest extends TestCase
         $this->alert('disk', 'warning'); // 非安全源，不应计入
     }
 
+    // 快捷造一条 open 状态告警：source 决定是否属于"安全类"，severity 决定分级统计。
     private function alert(string $source, string $severity): void
     {
         OpsAlert::query()->create([
@@ -71,11 +84,15 @@ class PhaseTwentySevenSecurityDashboardTest extends TestCase
         ]);
     }
 
+    // 验证总览接口把 8 大安全来源全部正确聚合：登录风险计数、失败登录 Top IP、
+    // 会话/2FA/受信任设备统计、IP 规则分类、通道健康、安全告警分级，且 recent_events 只含安全源。
     public function test_overview_aggregates_all_security_sources(): void
     {
+        // 需要 ops.security.view 权限才能访问总览接口。
         $actor = $this->actingAsAdminWithPermissions(['ops.security.view']);
 
         // 2FA 覆盖率：acting(active,no 2FA) + 1 active w/2FA + 1 active w/o + 1 inactive。
+        // A：活跃且已确认 2FA（计入 enabled）；B：活跃未开 2FA；C：非活跃（不计入分母）。
         AdminUser::query()->create(['name' => 'A', 'email' => 'a@example.com', 'password' => Hash::make('x'), 'is_active' => true, 'two_factor_confirmed_at' => now()]);
         AdminUser::query()->create(['name' => 'B', 'email' => 'b@example.com', 'password' => Hash::make('x'), 'is_active' => true]);
         AdminUser::query()->create(['name' => 'C', 'email' => 'c@example.com', 'password' => Hash::make('x'), 'is_active' => false]);
@@ -83,6 +100,8 @@ class PhaseTwentySevenSecurityDashboardTest extends TestCase
         $this->seedSecurityData($actor);
 
         $res = $this->getJson('/api/ops/security/overview')->assertOk();
+
+        // 逐一断言各聚合口径：3 个活跃 admin 中仅 1 个开了 2FA → 覆盖率 33%。
 
         $res->assertJsonPath('data.login_risk.new_ip_logins', 1)
             ->assertJsonPath('data.login_risk.new_device_logins', 1)
@@ -111,6 +130,7 @@ class PhaseTwentySevenSecurityDashboardTest extends TestCase
         $this->assertNotEmpty($res->json('data.failed_login_trend'));
     }
 
+    // 验证空数据库（无任何 seed）时总览各计数为 0，且 2FA 覆盖率计算不会因分母为 0 崩溃。
     public function test_empty_state_does_not_divide_by_zero(): void
     {
         // 把 acting admin 设为唯一但先删掉让 active=0? actingAs 需要一个 admin；改为断言 coverage 合法。
@@ -126,8 +146,10 @@ class PhaseTwentySevenSecurityDashboardTest extends TestCase
         $this->assertSame(0, $res->json('data.two_factor.coverage_percent'));
     }
 
+    // 验证权限门禁：无任何权限的 admin 访问总览接口返回 403。
     public function test_requires_security_view_permission(): void
     {
+        // 空权限集合模拟"已登录但无 ops.security.view 授权"的 admin。
         $this->actingAsAdminWithPermissions([]);
         $this->getJson('/api/ops/security/overview')->assertStatus(403);
     }

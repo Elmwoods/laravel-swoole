@@ -38,6 +38,7 @@ return [
     |
     */
 
+    // Octane 服务器，读取 OCTANE_SERVER，默认 "roadrunner"；可选 swoole/frankenphp
     'server' => env('OCTANE_SERVER', 'roadrunner'),
 
     /*
@@ -51,6 +52,7 @@ return [
     |
     */
 
+    // 强制 HTTPS，读取 OCTANE_HTTPS，默认 false；为 true 时所有绝对链接以 https 生成
     'https' => env('OCTANE_HTTPS', false),
 
     /*
@@ -64,6 +66,7 @@ return [
     |
     */
 
+    // Octane 事件监听器：负责在每次请求间重置应用状态（常驻内存需手动清理）
     'listeners' => [
         WorkerStarting::class => [
             EnsureUploadedFilesAreValid::class,
@@ -130,10 +133,13 @@ return [
     |
     */
 
+    // 预热与刷新绑定
+    // warm：worker 启动时预先解析的容器绑定（默认包含 Octane 推荐的服务）
     'warm' => [
         ...Octane::defaultServicesToWarm(),
     ],
 
+    // flush：每次新请求前从容器中清除、强制重新解析的绑定
     'flush' => [
         //
     ],
@@ -149,10 +155,11 @@ return [
     |
     */
 
+    // Swoole 内存表：供各 worker 快速共享访问的数据表（键格式 "表名:行数"）
     'tables' => [
         'example:1000' => [
-            'name' => 'string:1000',
-            'votes' => 'int',
+            'name' => 'string:1000',    // name 列：最长 1000 字节的字符串
+            'votes' => 'int',           // votes 列：整型
         ],
     ],
 
@@ -167,9 +174,10 @@ return [
     |
     */
 
+    // Swoole 缓存表（Octane cache）：基于 Swoole 表实现
     'cache' => [
-        'rows' => 1000,
-        'bytes' => 10000,
+        'rows' => 1000,     // 最大行数
+        'bytes' => 10000,   // 每行最大字节数
     ],
 
     /*
@@ -183,6 +191,7 @@ return [
     |
     */
 
+    // 文件监听列表：使用 --watch 时，这些文件/目录变动会自动重载 worker
     'watch' => [
         'app',
         'bootstrap',
@@ -206,6 +215,7 @@ return [
     |
     */
 
+    // 垃圾回收阈值（MB）：应用内存占用超过此值时强制触发 GC，此处为 50MB
     'garbage' => 50,
 
     /*
@@ -219,6 +229,7 @@ return [
     |
     */
 
+    // 单次请求最大执行时间（秒），此处为 30；设为 0 表示不限制
     'max_execution_time' => 30,
 
 ];

@@ -13,7 +13,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 class SystemMetricsUpdated implements ShouldBroadcastNow
 {
     public function __construct(
-        public array $data
+        public array $data   // 系统监控指标载荷（CPU/内存/负载等）
     ) {}
 
     /**

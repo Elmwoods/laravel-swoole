@@ -1,5 +1,6 @@
 <template>
     <section class="alerts-page">
+        <!-- 顶部静默提示条：当存在生效中的告警静默时提醒运维——命中的告警仍会入库并展示，但暂不外发到通知通道 -->
         <el-alert
             v-if="activeSilenceCount > 0"
             type="warning"
@@ -9,6 +10,7 @@
             :title="`${activeSilenceCount} 条告警静默生效中：命中的告警暂不外发到通道（仍会入库并在此列出）。`"
         />
 
+        <!-- 概览卡片区：Open / Critical / Warning / Info 四张统计卡，数据来自 summaryCards 计算属性 -->
         <div class="summary-grid">
             <el-card v-for="item in summaryCards" :key="item.label" shadow="never" class="summary-card">
                 <div class="summary-label">{{ item.label }}</div>
@@ -17,6 +19,7 @@
             </el-card>
         </div>
 
+        <!-- 告警趋势卡：折线图展示近 N 天每日命中告警与自动恢复数量 -->
         <el-card v-loading="trendLoading" shadow="never" class="trend-card">
             <div class="notification-header">
                 <div>
@@ -24,6 +27,7 @@
                     <div class="panel-subtitle">近 {{ trendDays }} 天每日命中告警与自动恢复数量</div>
                 </div>
 
+                <!-- 趋势时间窗切换（7/14/30 天），切换后重新拉取趋势数据 -->
                 <el-select v-model="trendDays" size="small" class="trend-days" @change="loadTrend">
                     <el-option :value="7" label="近 7 天" />
                     <el-option :value="14" label="近 14 天" />
@@ -31,10 +35,12 @@
                 </el-select>
             </div>
 
+            <!-- 无数据时展示空态；否则渲染 echarts 折线图挂载容器（ref=trendRef，用 v-show 保留 DOM 以便 echarts 复用实例） -->
             <el-empty v-if="!trendLoading && trendEmpty" description="暂无告警趋势数据" />
             <div v-show="!trendEmpty" ref="trendRef" class="trend-chart"></div>
         </el-card>
 
+        <!-- 通知通道卡：展示各通道（Telegram/邮件/Webhook/钉钉/飞书）配置与连通状态，并提供通知策略表单 -->
         <el-card shadow="never" class="notification-card">
             <div class="notification-header">
                 <div>
@@ -42,6 +48,7 @@
                     <div class="panel-subtitle">Telegram 与邮件告警配置状态</div>
                 </div>
 
+                <!-- 通道操作：立即自检（连通性）与刷新状态 -->
                 <div class="notification-actions">
                     <el-button text :loading="runningHealthCheck" @click="handleHealthCheck">
                         立即自检
@@ -52,12 +59,14 @@
                 </div>
             </div>
 
+            <!-- 通道状态网格：逐个通道展示是否可用/启用、缺失配置项、最近自检时间与连通标签 -->
             <div class="notification-grid">
                 <div
                     v-for="channel in notificationChannels"
                     :key="channel.name"
                     class="notification-item"
                 >
+                    <!-- 通道标题行：名称 + 可用性标签（configured）+ 连通性标签（health，仅在已知时展示，异常时 tooltip 显示 last_error） -->
                     <div class="channel-title">
                         <span>{{ channel.label }}</span>
                         <el-tag :type="channel.configured ? 'success' : 'warning'" effect="plain">
@@ -86,6 +95,7 @@
                 </div>
             </div>
 
+            <!-- 通知策略面板：编辑重复通知/自动恢复/升级重推/分级通道/总开关/消息模板等设置（绑定 settingsDraft 草稿） -->
             <div class="settings-panel">
                 <div class="panel-subtitle">通知策略</div>
                 <el-form v-if="settingsDraft" class="settings-form" label-width="120px">
@@ -121,6 +131,7 @@
                         />
                         <span class="muted inline-help">分钟未确认则升级重推</span>
                     </el-form-item>
+                    <!-- 分级通道策略：为每个严重级（critical/warning/info）勾选允许外发的通道 -->
                     <el-form-item label="通道策略">
                         <div class="severity-grid">
                             <div v-for="level in severityLevels" :key="level" class="severity-row">
@@ -136,6 +147,7 @@
                             </div>
                         </div>
                     </el-form-item>
+                    <!-- 通道总开关：逐通道启停（覆盖分级策略之上的全局开关，字段名为 `${ch}_enabled`） -->
                     <el-form-item label="总开关">
                         <el-checkbox
                             v-for="ch in channelKeys"
@@ -146,6 +158,7 @@
                             {{ channelLabel(ch) }}
                         </el-checkbox>
                     </el-form-item>
+                    <!-- 全局消息模板：文本通道通知文案模板，留空回退内置多行格式；支持占位符 {title} 等 -->
                     <el-form-item label="消息模板">
                         <el-input
                             v-model="settingsDraft.message_template"
@@ -160,6 +173,7 @@
                             自定义文本通道（Telegram / 邮件 / 钉钉 / 飞书）通知文案；Webhook 仍为结构化 JSON。留空恢复默认。
                         </div>
                     </el-form-item>
+                    <!-- 每通道专属模板：折叠面板逐个文本通道单独定制文案（字段 `message_template_${ch}`），留空回退全局模板 -->
                     <el-form-item label="每通道模板">
                         <el-collapse class="channel-templates">
                             <el-collapse-item v-for="ch in textChannelKeys" :key="ch" :name="ch" :title="`${channelLabel(ch)} 专属模板`">
@@ -185,6 +199,7 @@
             </div>
         </el-card>
 
+        <!-- 巡检状态卡：展示最近一次告警评估（巡检）的执行结果，无记录时显示空态 -->
         <el-card shadow="never" class="evaluation-card">
             <div class="notification-header">
                 <div>
@@ -197,6 +212,7 @@
                 </el-button>
             </div>
 
+            <!-- 评估结果详情：状态标签、触发方式、命中数、自动恢复数、耗时、完成时间及可选说明 -->
             <el-empty v-if="!latestEvaluation && !evaluationLoading" description="暂无评估记录" />
             <div v-else-if="latestEvaluation" class="evaluation-grid">
                 <el-tag :type="latestEvaluation.status === 'success' ? 'success' : 'danger'" effect="plain">
@@ -211,6 +227,7 @@
             </div>
         </el-card>
 
+        <!-- 规则配置卡：可编辑白名单告警规则的阈值与启停；头部提供变更历史/导出/导入/刷新操作 -->
         <el-card shadow="never" class="rule-card">
             <template #header>
                 <div class="panel-header">
@@ -219,6 +236,7 @@
                         <div class="panel-subtitle">系统白名单规则的阈值与启停状态</div>
                     </div>
 
+                    <!-- 规则头部操作按钮组：查看变更历史、导出/导入规则 JSON、刷新规则列表 -->
                     <el-space>
                         <el-button text @click="openRuleChanges">变更历史</el-button>
                         <el-button text @click="handleExportRules">导出规则</el-button>
@@ -230,6 +248,7 @@
                 </div>
             </template>
 
+            <!-- 规则加载/为空时的提示条（如无规则、加载失败的引导文案） -->
             <el-alert
                 v-if="rulesNotice"
                 class="rule-notice"
@@ -239,6 +258,7 @@
                 :closable="false"
             />
 
+            <!-- 规则表格：每行一条规则，阈值/启用列绑定到 ruleDrafts 草稿，编辑后逐行保存 -->
             <el-table :data="alertRules" border stripe v-loading="rulesLoading" empty-text="暂无告警规则">
                 <el-table-column label="规则" min-width="220">
                     <template #default="{ row }">
@@ -250,6 +270,7 @@
                 <el-table-column prop="source" label="来源" width="110" />
                 <el-table-column prop="metric" label="指标" width="150" />
 
+                <!-- 预警阈值列：可编辑数字输入，精度依单位而定（thresholdPrecision） -->
                 <el-table-column label="预警阈值" width="180">
                     <template #default="{ row }">
                         <el-input-number
@@ -263,6 +284,7 @@
                     </template>
                 </el-table-column>
 
+                <!-- 严重阈值列：仅当规则已设严重阈值或强制要求时可编辑，否则显示占位「-」 -->
                 <el-table-column label="严重阈值" width="180">
                     <template #default="{ row }">
                         <el-input-number
@@ -284,6 +306,7 @@
                     </template>
                 </el-table-column>
 
+                <!-- 启用开关列：切换即调用 handleToggleRule 启停该规则 -->
                 <el-table-column label="启用" width="100">
                     <template #default="{ row }">
                         <el-switch
@@ -295,6 +318,7 @@
                     </template>
                 </el-table-column>
 
+                <!-- 操作列：保存该行规则草稿的阈值改动 -->
                 <el-table-column label="操作" width="110" fixed="right">
                     <template #default="{ row }">
                         <el-button
@@ -311,6 +335,7 @@
             </el-table>
         </el-card>
 
+        <!-- 告警分组卡：按来源/严重级/指派人聚合 open 告警，便于降噪与批量处理 -->
         <el-card shadow="never" class="group-card">
             <template #header>
                 <div class="panel-header">
@@ -318,6 +343,7 @@
                         <div class="panel-title">告警分组</div>
                         <div class="panel-subtitle">按维度聚合 open 告警，降噪与关联</div>
                     </div>
+                    <!-- 分组维度切换（groupBy）+ 打开统计周报弹窗 -->
                     <div class="group-actions">
                         <el-segmented v-model="groupBy" :options="groupByOptions" @change="loadGroups" />
                         <el-button text @click="openReport">统计周报</el-button>
@@ -325,6 +351,7 @@
                 </div>
             </template>
 
+            <!-- 分组表格：每行一个聚合分组，展示总数、各级别数、指派情况、样本与最近出现时间 -->
             <el-table :data="alertGroups" border stripe v-loading="groupsLoading" empty-text="暂无 open 告警">
                 <el-table-column label="分组" min-width="160">
                     <template #default="{ row }">{{ row.group === '__unassigned__' ? '未指派' : row.group }}</template>
@@ -346,6 +373,7 @@
                     </template>
                 </el-table-column>
                 <el-table-column label="最近出现" width="180" prop="last_seen_at" />
+                <!-- 批量操作列：仅有管理权限且非按指派人分组时可见——整组确认/指派/静默 -->
                 <el-table-column v-if="canManage && groupBy !== 'assigned_to'" label="批量" width="220" fixed="right">
                     <template #default="{ row }">
                         <el-button text type="primary" @click="batchAck(row)">确认整组</el-button>
@@ -356,6 +384,7 @@
             </el-table>
         </el-card>
 
+        <!-- 告警中心主卡：告警列表 + 筛选 + 分页；头部含实时连接状态标签与测试/模拟/评估操作 -->
         <el-card shadow="never" class="alert-panel">
             <template #header>
                 <div class="panel-header">
@@ -364,6 +393,7 @@
                         <div class="panel-subtitle">实时告警、确认处理与通知状态入口</div>
                     </div>
 
+                    <!-- 头部操作：实时连接状态标签 + 测试通知 / 生成模拟数据 / 立即评估 -->
                     <el-space>
                         <el-tag :type="realtimeConnected ? 'success' : 'info'" effect="plain">
                             {{ realtimeConnected ? '实时已连接' : '实时未连接' }}
@@ -381,6 +411,7 @@
                 </div>
             </template>
 
+            <!-- 筛选栏：状态/级别/来源/指派人/标签多维过滤，以及筛选预设的应用/保存/删除 -->
             <div class="filters">
                 <el-segmented v-model="status" :options="statusOptions" @change="handleFilterChange" />
 
@@ -399,6 +430,7 @@
                     />
                 </el-select>
 
+                <!-- 指派人筛选：未指派 / 指派给我（当前管理员）/ 其他指派人（去重排除自己） -->
                 <el-select v-model="assigneeFilter" clearable placeholder="指派人" class="assignee-select" @change="handleFilterChange">
                     <el-option label="未指派" value="__unassigned__" />
                     <el-option v-if="currentAdminName" :label="`指派给我（${currentAdminName}）`" :value="currentAdminName" />
@@ -412,6 +444,7 @@
 
                 <el-input v-model="tagFilter" clearable placeholder="标签" class="tag-filter" @change="handleFilterChange" @clear="handleFilterChange" />
 
+                <!-- 筛选预设：选择即套用已保存的过滤组合；右侧按钮保存当前筛选 / 删除选中预设 -->
                 <el-select v-model="selectedPresetId" clearable placeholder="筛选预设" class="preset-select" @change="applyPreset">
                     <el-option v-for="p in presets" :key="p.id" :label="p.name" :value="p.id" />
                 </el-select>
@@ -419,6 +452,7 @@
                 <el-button v-if="selectedPresetId" text type="danger" @click="handleDeletePreset">删除预设</el-button>
             </div>
 
+            <!-- 告警列表表格：级别/来源/内容/状态/指派/次数/时间及行内操作 -->
             <el-table :data="alerts" border stripe v-loading="loading" empty-text="暂无告警">
                 <el-table-column label="级别" width="120">
                     <template #default="{ row }">
@@ -440,6 +474,7 @@
                     </template>
                 </el-table-column>
 
+                <!-- 状态列：主状态标签 + 已升级/被抑制/抖动中等附加状态标签 -->
                 <el-table-column label="状态" width="150">
                     <template #default="{ row }">
                         <el-tag :type="row.status === 'open' ? 'danger' : 'info'" effect="plain">
@@ -467,6 +502,7 @@
                 <el-table-column prop="hit_count" label="次数" width="90" />
                 <el-table-column prop="last_seen_at" label="最后出现" width="180" />
 
+                <!-- 行内操作列：详情 / 指派 / 指派给我 / 确认 / 恢复，按当前状态与权限条件展示 -->
                 <el-table-column label="操作" width="180" fixed="right">
                     <template #default="{ row }">
                         <div class="action-buttons">
@@ -512,6 +548,7 @@
                 </el-table-column>
             </el-table>
 
+            <!-- 分页栏：页码/每页条数变化后重新拉取告警列表 -->
             <div class="pagination-bar">
                 <el-pagination
                     v-model:current-page="page"
@@ -526,8 +563,10 @@
             </div>
         </el-card>
 
+        <!-- 告警详情抽屉：展示单条告警的基本信息、处理预案、标签、相似告警、时间线与处理备注 -->
         <el-drawer v-model="detailVisible" title="告警详情" size="520px">
             <div v-if="detailAlert" class="detail-body">
+                <!-- 基础信息描述列表：标题/来源/级别/状态/说明及可选的指派人、抖动次数 -->
                 <el-descriptions :column="1" border size="small">
                     <el-descriptions-item label="标题">{{ detailAlert.title }}</el-descriptions-item>
                     <el-descriptions-item label="来源">{{ detailAlert.source }}</el-descriptions-item>
@@ -538,6 +577,7 @@
                     <el-descriptions-item v-if="detailAlert.flap_count" label="抖动次数">{{ detailAlert.flap_count }}</el-descriptions-item>
                 </el-descriptions>
 
+                <!-- 处理预案（runbook）：可选的处理链接与分步骤操作指引 -->
                 <template v-if="detailAlert.runbook">
                     <div class="detail-section-title">处理预案</div>
                     <a v-if="detailAlert.runbook.url" :href="detailAlert.runbook.url" target="_blank" rel="noopener" class="runbook-link">{{ detailAlert.runbook.url }}</a>
@@ -546,6 +586,7 @@
                     </ol>
                 </template>
 
+                <!-- 标签编辑：可创建/多选标签，变更时保存（仅有管理权限可编辑） -->
                 <div class="detail-section-title">标签</div>
                 <el-select
                     v-model="detailTags"
@@ -561,6 +602,7 @@
                     <el-option v-for="t in detailTags" :key="t" :label="t" :value="t" />
                 </el-select>
 
+                <!-- 相似告警：同来源且已恢复的历史告警，附恢复备注与处理备注，供排查参考 -->
                 <div class="detail-section-title">相似告警（同源已恢复）</div>
                 <el-empty v-if="!similar.length" description="暂无相似告警" :image-size="60" />
                 <div v-for="s in similar" :key="s.id" class="similar-item">
@@ -572,6 +614,7 @@
                     <div v-for="n in s.notes" :key="n.id" class="muted">· {{ n.author }}：{{ n.body }}</div>
                 </div>
 
+                <!-- 时间线：该告警的事件流水（动作 + 操作人 + 备注） -->
                 <div class="detail-section-title">时间线</div>
                 <el-timeline v-if="detailAlert.timeline.length">
                     <el-timeline-item
@@ -584,6 +627,7 @@
                 </el-timeline>
                 <el-empty v-else description="暂无事件" :image-size="60" />
 
+                <!-- 处理备注：有权限时可新增备注；列表逐条展示，作者本人可删除自己的备注 -->
                 <div class="detail-section-title">处理备注</div>
                 <div v-if="canManage" class="note-add">
                     <el-input v-model="noteBody" type="textarea" :rows="2" :maxlength="2000" placeholder="记录排查过程 / 结论" />
@@ -607,6 +651,7 @@
             </div>
         </el-drawer>
 
+        <!-- 规则变更历史弹窗：审计规则字段的旧值→新值、操作人与时间 -->
         <el-dialog v-model="ruleChangesVisible" title="规则变更历史" width="640px">
             <el-table :data="ruleChanges" border stripe empty-text="暂无变更记录" max-height="420">
                 <el-table-column label="规则" prop="rule_key" width="150" />
@@ -619,6 +664,7 @@
             </el-table>
         </el-dialog>
 
+        <!-- 告警统计周报弹窗：窗口期内的告警总量/分级、MTTA/MTTR、SLA 达标率、积压分布、值班与 Top 来源 -->
         <el-dialog v-model="reportVisible" title="告警统计周报" width="560px">
             <div v-if="report" class="report-body">
                 <p>窗口：近 {{ report.window_days }} 天（{{ report.generated_at }}）</p>
@@ -635,6 +681,19 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 告警中心（Ops Center / AlertCenter）页面。
+ *
+ * 作用：运维告警的统一控制台，聚合以下能力于一屏：
+ *  - 概览统计（Open/Critical/Warning/Info）与近 N 天告警趋势折线图（echarts）；
+ *  - 通知通道状态与连通自检、通知策略（重复/自动恢复/升级/分级通道/消息模板）编辑；
+ *  - 最近一次巡检（评估）结果、白名单规则阈值与启停的在线编辑、规则导入导出与变更历史；
+ *  - open 告警按维度分组聚合及批量确认/指派/静默、统计周报；
+ *  - 告警列表的多维筛选/预设、确认/指派/认领/恢复、详情抽屉（预案、标签、相似告警、时间线、备注）；
+ *  - 通过 Laravel Echo 订阅实时告警推送并刷新徽标。
+ *
+ * 数据主要来自 @/api/opsStage4 与 @/api/opsAlertSilence 两个接口模块，权限由 adminAuth store 控制。
+ */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, Refresh } from '@element-plus/icons-vue'
@@ -696,21 +755,22 @@ import {
 import { getAlertSilences } from '@/api/opsAlertSilence'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 
-const adminAuth = useAdminAuthStore()
-const currentAdminName = computed(() => adminAuth.profile?.admin?.name ?? '')
-const canManage = computed(() => adminAuth.hasPermission('ops.alerts.manage'))
-const reportVisible = ref(false)
-const report = ref<AlertReport | null>(null)
-const detailVisible = ref(false)
-const detailAlert = ref<OpsAlert | null>(null)
-const alertNotes = ref<AlertNoteItem[]>([])
-const noteBody = ref('')
-const noteSaving = ref(false)
-const detailTags = ref<string[]>([])
-const similar = ref<SimilarAlert[]>([])
-const ruleChangesVisible = ref(false)
-const ruleChanges = ref<RuleChange[]>([])
+const adminAuth = useAdminAuthStore() // 管理员鉴权 store，提供当前管理员信息与权限判断
+const currentAdminName = computed(() => adminAuth.profile?.admin?.name ?? '') // 当前登录管理员名（用于「指派给我」与筛选）
+const canManage = computed(() => adminAuth.hasPermission('ops.alerts.manage')) // 是否具备告警管理权限（控制批量/编辑类操作可见性）
+const reportVisible = ref(false) // 统计周报弹窗显隐
+const report = ref<AlertReport | null>(null) // 周报数据
+const detailVisible = ref(false) // 告警详情抽屉显隐
+const detailAlert = ref<OpsAlert | null>(null) // 当前查看的告警对象
+const alertNotes = ref<AlertNoteItem[]>([]) // 当前告警的处理备注列表
+const noteBody = ref('') // 备注输入框内容
+const noteSaving = ref(false) // 备注提交中标志
+const detailTags = ref<string[]>([]) // 当前告警的标签草稿（可编辑）
+const similar = ref<SimilarAlert[]>([]) // 相似告警（同源已恢复）列表
+const ruleChangesVisible = ref(false) // 规则变更历史弹窗显隐
+const ruleChanges = ref<RuleChange[]>([]) // 规则变更历史记录
 
+// 作用：打开规则变更历史弹窗并拉取记录。为什么：审计规则阈值/启停的历史修改，失败时清空列表避免残留旧数据。
 const openRuleChanges = async () => {
     ruleChangesVisible.value = true
     try {
@@ -721,8 +781,10 @@ const openRuleChanges = async () => {
     }
 }
 
+// 作用：判断告警当前是否处于抖动（flapping）状态。为什么：flapping_until 是抖动抑制截止时间，未过期即视为抖动中，用于列表打标签。
 const isFlapping = (row: OpsAlert) => !!row.flapping_until && new Date(row.flapping_until).getTime() > Date.now()
 
+// 作用：打开详情抽屉并加载该告警的备注与相似告警。为什么：先重置抽屉内各状态再并发拉取，避免展示上一条告警的残留数据。
 const openDetail = async (row: OpsAlert) => {
     detailAlert.value = row
     detailVisible.value = true
@@ -739,6 +801,7 @@ const openDetail = async (row: OpsAlert) => {
     }
 }
 
+// 作用：保存详情抽屉中编辑的标签。为什么：标签变更需同步回后端与列表行，成功后刷新列表让标签筛选生效；无权限直接跳过。
 const saveTags = async () => {
     if (!detailAlert.value || !canManage.value) return
     try {
@@ -752,6 +815,7 @@ const saveTags = async () => {
     }
 }
 
+// 作用：为当前告警提交一条处理备注。为什么：记录排查过程；提交后清空输入并重新拉取备注列表以显示最新一条。
 const submitNote = async () => {
     if (!detailAlert.value || !noteBody.value.trim()) return
     noteSaving.value = true
@@ -768,6 +832,7 @@ const submitNote = async () => {
     }
 }
 
+// 作用：删除指定处理备注。为什么：仅作者本人可删；成功后本地过滤移除该条，避免整表重拉。
 const removeNote = async (noteId: number) => {
     if (!detailAlert.value) return
     try {
@@ -778,18 +843,19 @@ const removeNote = async (noteId: number) => {
     }
 }
 
-const loading = ref(false)
-const evaluating = ref(false)
-const testingNotification = ref(false)
-const trendRef = ref<HTMLDivElement>()
-const trendDays = ref(14)
-const trendLoading = ref(false)
-const trendEmpty = ref(false)
-let trendChart: echarts.ECharts | null = null
-const demoLoading = ref(false)
-const notificationLoading = ref(false)
-const activeSilenceCount = ref(0)
+const loading = ref(false) // 告警列表加载中
+const evaluating = ref(false) // 手动「立即评估」执行中
+const testingNotification = ref(false) // 「测试通知」执行中
+const trendRef = ref<HTMLDivElement>() // 趋势折线图的 DOM 容器引用（echarts 挂载点）
+const trendDays = ref(14) // 趋势时间窗（天），默认近 14 天
+const trendLoading = ref(false) // 趋势数据加载中
+const trendEmpty = ref(false) // 趋势是否无数据（用于切换空态/图表显隐）
+let trendChart: echarts.ECharts | null = null // echarts 实例句柄（惰性初始化，卸载时销毁）
+const demoLoading = ref(false) // 「模拟数据」生成中
+const notificationLoading = ref(false) // 通知通道状态加载中
+const activeSilenceCount = ref(0) // 生效中的告警静默条数（用于顶部提示条）
 
+// 作用：拉取当前生效的告警静默数量。为什么：顶部横幅据此提醒「静默生效中」，失败时归零不阻塞页面。
 const loadSilences = async () => {
     try {
         const res = await getAlertSilences()
@@ -798,52 +864,52 @@ const loadSilences = async () => {
         activeSilenceCount.value = 0
     }
 }
-const runningHealthCheck = ref(false)
-const importingRules = ref(false)
-const assigneeFilter = ref('')
-const assignees = ref<string[]>([])
-const tagFilter = ref('')
-const groupBy = ref<'source' | 'severity' | 'assigned_to'>('source')
-const groupsLoading = ref(false)
-const alertGroups = ref<AlertGroup[]>([])
-const groupByOptions = [
+const runningHealthCheck = ref(false) // 通道连通自检执行中
+const importingRules = ref(false) // 规则导入中
+const assigneeFilter = ref('') // 指派人筛选值（'' 表示不限，'__unassigned__' 表示未指派）
+const assignees = ref<string[]>([]) // 已出现过的指派人列表（筛选下拉数据源）
+const tagFilter = ref('') // 标签筛选输入
+const groupBy = ref<'source' | 'severity' | 'assigned_to'>('source') // 告警分组维度
+const groupsLoading = ref(false) // 分组数据加载中
+const alertGroups = ref<AlertGroup[]>([]) // 分组聚合结果
+const groupByOptions = [ // 分组维度可选项（分段控件数据源）
     { label: '按来源', value: 'source' },
     { label: '按严重级', value: 'severity' },
     { label: '按指派人', value: 'assigned_to' },
 ]
-const rulesLoading = ref(false)
-const rulesNotice = ref('')
-const evaluationLoading = ref(false)
-const settingsSaving = ref(false)
-const realtimeConnected = ref(false)
-const acknowledgingId = ref<number | null>(null)
-const resolvingId = ref<number | null>(null)
-const assigningId = ref<number | null>(null)
-const savingRuleKey = ref<string | null>(null)
-const togglingRuleKey = ref<string | null>(null)
-const alerts = ref<OpsAlert[]>([])
-const alertRules = ref<AlertRule[]>([])
-const latestEvaluation = ref<AlertEvaluationStatus | null>(null)
-const settingsDraft = ref<AlertSettings | null>(null)
-const ruleDrafts = ref<Record<string, {
+const rulesLoading = ref(false) // 规则列表加载中
+const rulesNotice = ref('') // 规则区提示文案（无规则/加载失败引导）
+const evaluationLoading = ref(false) // 巡检状态加载中
+const settingsSaving = ref(false) // 通知策略保存中
+const realtimeConnected = ref(false) // 实时通道（Echo）连接状态
+const acknowledgingId = ref<number | null>(null) // 正在确认的告警 id（行内 loading）
+const resolvingId = ref<number | null>(null) // 正在恢复的告警 id
+const assigningId = ref<number | null>(null) // 正在指派/认领的告警 id
+const savingRuleKey = ref<string | null>(null) // 正在保存的规则 key
+const togglingRuleKey = ref<string | null>(null) // 正在启停的规则 key
+const alerts = ref<OpsAlert[]>([]) // 当前页告警列表
+const alertRules = ref<AlertRule[]>([]) // 规则列表
+const latestEvaluation = ref<AlertEvaluationStatus | null>(null) // 最近一次巡检评估结果
+const settingsDraft = ref<AlertSettings | null>(null) // 通知策略表单草稿（编辑副本，保存后回填）
+const ruleDrafts = ref<Record<string, { // 各规则阈值/启停的可编辑草稿，以 rule.key 为索引
     warning_threshold: number
     critical_threshold: number | null
     is_active: boolean
 }>>({})
-const status = ref<AlertStatus | 'all'>('open')
-const severity = ref('')
-const source = ref('')
-const presets = ref<AlertPreset[]>([])
-const selectedPresetId = ref<number | undefined>(undefined)
-const page = ref(1)
-const perPage = ref(20)
-const pagination = ref({
+const status = ref<AlertStatus | 'all'>('open') // 状态筛选，默认只看 open
+const severity = ref('') // 级别筛选
+const source = ref('') // 来源筛选
+const presets = ref<AlertPreset[]>([]) // 已保存的筛选预设列表
+const selectedPresetId = ref<number | undefined>(undefined) // 当前选中的预设 id
+const page = ref(1) // 当前页码
+const perPage = ref(20) // 每页条数
+const pagination = ref({ // 分页元信息（来自接口返回）
     current_page: 1,
     per_page: 20,
     total: 0,
     last_page: 1,
 })
-const summary = ref<AlertSummary>({
+const summary = ref<AlertSummary>({ // 概览统计（Open/各级别计数与来源分布），驱动顶部卡片与来源下拉
     open_total: 0,
     critical: 0,
     warning: 0,
@@ -851,7 +917,7 @@ const summary = ref<AlertSummary>({
     sources: [],
     checked_at: '-',
 })
-const notificationStatus = ref<AlertNotificationStatus>({
+const notificationStatus = ref<AlertNotificationStatus>({ // 各通知通道的配置/连通状态（后端为单一来源，含 settings）
     telegram: {
         enabled: false,
         configured: false,
@@ -864,15 +930,16 @@ const notificationStatus = ref<AlertNotificationStatus>({
     },
     checked_at: '-',
 })
-let channel: any = null
+let channel: any = null // Echo 频道句柄，避免重复订阅；离开页面时置空
 
-const statusOptions = [
+const statusOptions = [ // 状态筛选分段控件选项
     { label: 'Open', value: 'open' },
     { label: '已确认', value: 'acknowledged' },
     { label: '全部', value: 'all' },
 ]
-const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info']
+const severityLevels: AlertSeverity[] = ['critical', 'warning', 'info'] // 严重级枚举（分级通道策略行迭代用）
 
+// 计算属性：将 summary 概览数据映射为顶部四张统计卡（含展示文案与样式类）。
 const summaryCards = computed(() => [
     {
         label: 'Open',
@@ -900,6 +967,7 @@ const summaryCards = computed(() => [
     },
 ])
 
+// 通道 key 到中文展示名的映射表
 const CHANNEL_LABELS: Record<string, string> = {
     telegram: 'Telegram',
     mail: '邮件',
@@ -908,6 +976,7 @@ const CHANNEL_LABELS: Record<string, string> = {
     feishu: '飞书',
 }
 
+// 作用：取通道显示名，无映射时回退原始 key。
 const channelLabel = (name: string): string => CHANNEL_LABELS[name] ?? name
 
 // 通道列表来自后端通知状态（单一来源），前端不再写死 telegram/mail。
@@ -918,6 +987,7 @@ const channelKeys = computed<string[]>(() =>
 // 支持自定义模板的文本通道（去掉 webhook——结构化载荷不套模板）。
 const textChannelKeys = computed<string[]>(() => channelKeys.value.filter(name => name !== 'webhook'))
 
+// 计算属性：把通道 key 展开为带显示名与状态字段的通道对象数组，供状态网格渲染。
 const notificationChannels = computed(() =>
     channelKeys.value.map(name => ({
         name,
@@ -1005,11 +1075,13 @@ const handleHealthCheck = async () => {
     }
 }
 
+// 作用：加载通知策略并写入草稿。为什么：用 structuredClone 深拷贝，编辑草稿不污染原始返回、保存前可随时丢弃。
 const loadAlertSettings = async () => {
     const res = await getAlertSettings()
     settingsDraft.value = structuredClone(res.data.data)
 }
 
+// 作用：加载最近一次巡检（评估）状态。为什么：展示定时评估是否成功及命中/恢复量，供运维确认巡检链路正常。
 const loadEvaluationStatus = async () => {
     evaluationLoading.value = true
 
@@ -1071,6 +1143,7 @@ const handleEvaluate = async () => {
     }
 }
 
+// 作用：保存通知策略草稿。为什么：保存后用返回值回填草稿并刷新通道状态，使分级/开关等改动即时生效。
 const handleSaveSettings = async () => {
     if (!settingsDraft.value) {
         return
@@ -1288,6 +1361,7 @@ const handleFilterChange = async () => {
     await loadAlerts()
 }
 
+// 作用：加载已保存的筛选预设列表。为什么：填充「筛选预设」下拉，失败时置空不影响其他筛选。
 const loadPresets = async () => {
     try {
         const res = await getAlertPresets()
@@ -1297,6 +1371,7 @@ const loadPresets = async () => {
     }
 }
 
+// 作用：套用选中的筛选预设。为什么：把预设里的 status/severity/source 写回筛选状态并重新查询，快速复用常用过滤组合。
 const applyPreset = async (id: number | undefined) => {
     const preset = presets.value.find(p => p.id === id)
     if (!preset) return
@@ -1306,6 +1381,7 @@ const applyPreset = async (id: number | undefined) => {
     await handleFilterChange()
 }
 
+// 作用：把当前筛选条件命名保存为预设。为什么：只收集非默认的 status/severity/source 组成预设，便于后续一键复用。
 const handleSavePreset = async () => {
     try {
         const { value } = await ElMessageBox.prompt('为当前筛选取个名字', '保存筛选预设', {
@@ -1326,6 +1402,7 @@ const handleSavePreset = async () => {
     }
 }
 
+// 作用：删除当前选中的筛选预设。为什么：二次确认后删除并清空选中态、刷新列表；用户取消则直接返回。
 const handleDeletePreset = async () => {
     if (!selectedPresetId.value) return
     try {
@@ -1380,6 +1457,7 @@ const handleAcknowledge = async (alert: OpsAlert) => {
     }
 }
 
+// 作用：把告警指派给手填的负责人。为什么：弹窗校验负责人字符集后写入指派，成功后刷新列表与指派人下拉数据源。
 const handleAssign = async (alert: OpsAlert) => {
     try {
         const { value } = await ElMessageBox.prompt('填写负责人', '指派告警', {
@@ -1458,8 +1536,10 @@ const loadGroups = async () => {
     }
 }
 
+// 作用：分组显示名转换。为什么：把哨兵值 __unassigned__ 显示为「未指派」，其余原样返回。
 const groupLabel = (row: AlertGroup) => (row.group === '__unassigned__' ? '未指派' : row.group)
 
+// 作用：批量确认整个分组的告警。为什么：二次确认后按分组维度批量 ack，成功后同时刷新分组/列表/概览三处数据。
 const batchAck = async (row: AlertGroup) => {
     try {
         await ElMessageBox.confirm(`确认整组「${groupLabel(row)}」的 ${row.total} 条告警？`, '批量确认', { type: 'warning' })
@@ -1475,6 +1555,7 @@ const batchAck = async (row: AlertGroup) => {
     }
 }
 
+// 作用：把整个分组批量指派给某负责人。为什么：一次性给同类告警派单，成功后刷新分组/列表/指派人列表。
 const batchAssign = async (row: AlertGroup) => {
     try {
         const { value } = await ElMessageBox.prompt(`把「${groupLabel(row)}」整组指派给谁？`, '批量指派', {
@@ -1489,6 +1570,7 @@ const batchAssign = async (row: AlertGroup) => {
     }
 }
 
+// 作用：对整个分组批量静默指定分钟数。为什么：临时抑制同类告警外发降噪，成功后刷新顶部静默计数。
 const batchSilence = async (row: AlertGroup) => {
     try {
         const { value } = await ElMessageBox.prompt(`静默「${groupLabel(row)}」多少分钟？`, '批量静默', {
@@ -1504,6 +1586,7 @@ const batchSilence = async (row: AlertGroup) => {
     }
 }
 
+// 作用：打开统计周报弹窗并拉取近 7 天报告。为什么：汇总 SLA/MTTR 等指标供复盘，失败时置空显示空态。
 const openReport = async () => {
     reportVisible.value = true
     try {
@@ -1583,6 +1666,7 @@ const stopRealtime = () => {
     realtimeConnected.value = false
 }
 
+// 作用：把严重级映射为 el-tag 的类型色。为什么：critical→danger、warning→warning、其余→info，统一列表标签配色。
 const severityTag = (value: string) => {
     if (value === 'critical') {
         return 'danger'
@@ -1595,6 +1679,7 @@ const severityTag = (value: string) => {
     return 'info'
 }
 
+// 作用：把告警状态英文枚举转中文文案。为什么：open→未处理、acknowledged→已确认、其余→已恢复，用于列表与详情展示。
 const statusLabel = (value: string) => {
     if (value === 'open') {
         return '未处理'
@@ -1607,20 +1692,25 @@ const statusLabel = (value: string) => {
     return '已恢复'
 }
 
+// 作用：按单位决定阈值输入框的小数精度。为什么：MB/s 类速率保留 2 位小数，其余（如百分比/计数）取整。
 const thresholdPrecision = (unit: string | null) => unit === 'MB/s' ? 2 : 0
 
+// 作用：加载告警趋势并渲染 echarts 折线图。为什么：惰性初始化图表实例、装配 option 并 resize，保证首绘与容器尺寸正确。
 const loadTrend = async () => {
     trendLoading.value = true
 
     try {
         const res = await getAlertTrend(trendDays.value)
         const buckets = res.data.data.buckets
+        // 若所有分桶评估次数均为 0，则视为无数据（切换空态、隐藏图表）
         trendEmpty.value = buckets.every(bucket => bucket.evaluations === 0)
 
+        // 惰性初始化：仅当实例未创建且容器已挂载时 init（v-show 保证容器始终存在）
         if (!trendChart && trendRef.value) {
             trendChart = echarts.init(trendRef.value)
         }
 
+        // 装配 echarts option：双折线（命中告警红 / 自动恢复绿）+ 轴/图例/tooltip 配置
         trendChart?.setOption({
             tooltip: { trigger: 'axis' },
             legend: { top: 8, left: 'center' },
@@ -1633,20 +1723,24 @@ const loadTrend = async () => {
             ],
         })
 
+        // 重新计算图表尺寸以适配当前容器宽度（数据窗切换/首绘后）
         trendChart?.resize()
     } finally {
         trendLoading.value = false
     }
 }
 
+// 作用：窗口 resize 时同步重绘趋势图。为什么：echarts 不会自动感知容器变化，需手动 resize 保持自适应。
 const handleTrendResize = () => trendChart?.resize()
 
+// 生命周期：挂载时并发加载全部初始数据，随后建立实时订阅并注册窗口 resize 监听。
 onMounted(async () => {
     await Promise.all([loadSummary(), loadAlerts(), loadNotificationStatus(), loadAlertRules(), loadAlertSettings(), loadEvaluationStatus(), loadTrend(), loadSilences(), loadPresets(), loadAssignees(), loadGroups()])
     startRealtime()
     window.addEventListener('resize', handleTrendResize)
 })
 
+// 生命周期：卸载前解绑 resize 监听、断开实时频道并销毁 echarts 实例，防止内存泄漏与重复订阅。
 onBeforeUnmount(() => {
     window.removeEventListener('resize', handleTrendResize)
     stopRealtime()

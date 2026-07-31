@@ -24,6 +24,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        // 回滚 up()：删除系统指标采样表
         Schema::dropIfExists('ops_metric_samples');
     }
 };
