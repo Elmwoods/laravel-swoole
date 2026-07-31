@@ -1,5 +1,6 @@
 <template>
     <section class="dashboard">
+        <!-- 顶部核心状态卡片区：遍历 summaryCards 渲染 Octane/Redis/MySQL/内存/告警 概览 -->
         <div class="summary-grid">
             <el-card
                 v-for="item in summaryCards"
@@ -7,6 +8,7 @@
                 shadow="never"
                 class="summary-card"
             >
+                <!-- 卡片头部：左侧带背景色的图标，右侧状态标签（正常/异常/实时等） -->
                 <div class="summary-head">
                     <el-icon :class="item.iconClass">
                         <component :is="item.icon" />
@@ -17,12 +19,14 @@
                     </el-tag>
                 </div>
 
+                <!-- 卡片正文：标题 / 主数值 / 补充描述 -->
                 <div class="summary-title">{{ item.title }}</div>
                 <div class="summary-value">{{ item.value }}</div>
                 <div class="summary-desc">{{ item.desc }}</div>
             </el-card>
         </div>
 
+        <!-- 工具栏：手动刷新按钮 + 高风险的 Reload Octane 按钮 + 最后刷新时间 -->
         <div class="toolbar">
             <el-space wrap>
                 <el-button :icon="Refresh" :loading="loading" @click="fetch">
@@ -39,6 +43,7 @@
             </div>
         </div>
 
+        <!-- 主图表行：左侧高级系统图表，右侧服务快捷入口卡片（大屏 16:8，窄屏堆叠） -->
         <el-row :gutter="20">
             <el-col :xs="24" :xl="16">
                 <AdvancedSystemChart />
@@ -50,6 +55,7 @@
                         <div class="card-header">服务快捷入口</div>
                     </template>
 
+                    <!-- 快捷入口列表：遍历 services 生成跳转到各运维子页面的链接 -->
                     <div class="quick-list">
                         <router-link
                             v-for="service in services"
@@ -73,6 +79,7 @@
             </el-col>
         </el-row>
 
+        <!-- 底部行：左侧系统信息卡片，右侧系统图表（大屏 10:14 分栏，窄屏堆叠） -->
         <el-row :gutter="20" class="lower-row">
             <el-col :xs="24" :lg="10">
                 <SystemCard />
@@ -135,17 +142,26 @@ interface DashboardData {
     }
 }
 
+// 首页汇总数据（后端 /dashboard 返回），初始为 null 以区分「未加载」与「空数据」
 const data = ref<DashboardData | null>(null)
+// 列表刷新中标志：驱动刷新按钮 loading 态
 const loading = ref(false)
+// 高风险操作（Reload Octane）执行中标志：与列表刷新分开，避免互相影响按钮态
 const actionLoading = ref(false)
+// 最后一次成功刷新的本地时间字符串，展示在工具栏右侧
 const checkedAt = ref('')
+// 轮询定时器句柄：挂载时启动、卸载时清理，防止组件销毁后仍在请求
 let timer: number | null = null
 
+// 根据连通性布尔值映射为中文状态文案，供状态标签复用
 const serviceStatus = (online?: boolean) => online ? '正常' : '异常'
+// 根据连通性布尔值映射为 el-tag 的类型（绿色成功 / 红色危险）
 const serviceTag = (online?: boolean) => online ? 'success' : 'danger'
 
 /**
  * 首页核心状态卡片。
+ * 为什么：用 computed 依赖 data，data 每次轮询更新后卡片自动重算；
+ * 全程用 ?? 兜底默认值，保证 data 尚未加载（null）时也能安全渲染。
  */
 const summaryCards = computed(() => [
     {
@@ -189,6 +205,8 @@ const summaryCards = computed(() => [
         value: `${data.value?.alerts?.open_total ?? 0} Open`,
         desc: `Critical：${data.value?.alerts?.critical ?? 0} / Warning：${data.value?.alerts?.warning ?? 0}`,
         status: (data.value?.alerts?.open_total ?? 0) > 0 ? '待处理' : '正常',
+        // 标签颜色按严重度分级：有 critical 用红色，其余有未处理告警用橙色，全部处理完用绿色，
+        // 以便一眼判断是否需要立即介入
         tagType: (data.value?.alerts?.critical ?? 0) > 0
             ? 'danger'
             : ((data.value?.alerts?.open_total ?? 0) > 0 ? 'warning' : 'success'),
@@ -259,6 +277,8 @@ const services = [
 
 /**
  * 获取首页汇总数据。
+ * 为什么：既在挂载时调用，也被 5 秒轮询和 reload 后复用；失败只提示不清空旧数据，
+ * 避免网络抖动时页面瞬间空白。
  */
 const fetch = async () => {
     loading.value = true
@@ -276,6 +296,8 @@ const fetch = async () => {
 
 /**
  * 高风险控制确认。
+ * 为什么：Reload Octane 会影响线上进程，强制用户手动输入 CONFIRM 短语，
+ * 避免误点按钮直接触发；取消或不匹配时返回 null，交由调用方中止。
  */
 const askConfirm = async (action: string) => {
     try {
@@ -299,9 +321,12 @@ const askConfirm = async (action: string) => {
 
 /**
  * 平滑重载 Octane Worker。
+ * 为什么：先经二次确认拿到 CONFIRM 短语再调用后端，成功后立即刷新一次数据，
+ * 让用户看到 reload 后的最新进程状态。
  */
 const reload = async () => {
     const confirmText = await askConfirm('Reload Octane')
+    // 用户取消或未通过确认，直接中止，不发起请求
     if (!confirmText) return
 
     actionLoading.value = true
@@ -315,11 +340,13 @@ const reload = async () => {
     }
 }
 
+// 挂载后立即拉取一次并开启 5 秒轮询，保证首页监控数据接近实时
 onMounted(() => {
     fetch()
     timer = window.setInterval(fetch, 5000)
 })
 
+// 卸载前清除轮询定时器，避免离开页面后仍在后台发请求造成泄漏
 onBeforeUnmount(() => {
     if (timer) {
         window.clearInterval(timer)

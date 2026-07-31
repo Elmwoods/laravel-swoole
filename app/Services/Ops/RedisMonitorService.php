@@ -8,11 +8,18 @@ use Illuminate\Support\Facades\Redis;
  * Redis 实时监控服务（Octane 兼容版）
  * ✔ 直接使用 Redis INFO array
  * ✔ 不再做字符串解析
+ *
+ * 作用：作为 Ops Center Redis 面板的实时数据源，向前端暴露 Redis INFO 快照、
+ * 提炼后的核心指标（内存/连接/性能/持久化）以及缓存命中率。
+ * 「为什么」：Laravel 的 phpredis/predis 驱动会把 `INFO` 命令返回值解析为关联数组，
+ * 因此本服务无需再手工解析原始文本，天然兼容常驻内存的 Octane 运行时。
  */
 class RedisMonitorService
 {
     /**
-     * 获取 Redis 原始 INFO（已是 array）
+     * 作用：获取 Redis 原始 INFO 快照（驱动已解析为 array）。
+     *
+     * @return array<string, mixed> Redis INFO 的键值对（如 used_memory、connected_clients 等）
      */
     public function getInfo(): array
     {
@@ -20,7 +27,9 @@ class RedisMonitorService
     }
 
     /**
-     * Dashboard 核心指标（推荐前端使用）
+     * 作用：从原始 INFO 中挑选并整理出 Dashboard 需要的核心指标，供前端直接消费。
+     *
+     * @return array<string, mixed> 经过默认值兜底的关键指标集合
      */
     public function getSummary(): array
     {
@@ -68,7 +77,12 @@ class RedisMonitorService
     }
 
     /**
-     * 计算缓存命中率（Ops Center 很关键指标）
+     * 作用：计算 Redis 缓存命中率（百分比），是评估缓存有效性的关键指标。
+     *
+     * 「为什么」：命中率 = hits / (hits + misses)，当二者皆为 0（刚启动、无任何读操作）
+     * 时分母为 0，需短路返回 0.0 以避免除零。
+     *
+     * @return float 命中率百分比，保留两位小数（0.0 表示暂无数据或全部未命中）
      */
     public function getHitRate(): float
     {
@@ -79,6 +93,7 @@ class RedisMonitorService
 
         $total = $hits + $misses;
 
+        // 无任何键空间读操作时分母为 0，短路返回避免除零
         if ($total === 0) {
             return 0.0;
         }

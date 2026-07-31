@@ -1,5 +1,11 @@
 <?php
 
+// Ops Center（运维中心）总配置文件。
+// 集中声明队列监控、Supervisor 进程守护、日志中心、自动巡检、告警中心（多通道通知 +
+// 升级链 + SLA + 值班排班 + 抖动/关联抑制 + 指标导出/入站 webhook）以及后台安全准入（IP 白黑名单、
+// 可信代理、失败登录自动封禁）等各子系统的开关与阈值。
+// 约定：几乎所有 *_ENABLED 布尔开关都是 opt-in（默认 false / 显式配置才生效），可经对应 env 变量覆盖；
+// 所有 token / secret / webhook 等敏感值一律走 env，绝不硬编码。
 return [
     /*
     |--------------------------------------------------------------------------
@@ -101,18 +107,19 @@ return [
         // 占位符：{title} {severity} {source} {status} {time} {message}
         'message_template' => (string) env('OPS_ALERT_MESSAGE_TEMPLATE', ''),
 
+        // 系统巡检阈值：各监控项触发告警的临界值，均可经 env 覆盖（部署期按环境调优）。
         'thresholds' => [
-            'disk_usage_warning' => (int) env('OPS_ALERT_DISK_USAGE_WARNING', 85),
-            'disk_usage_critical' => (int) env('OPS_ALERT_DISK_USAGE_CRITICAL', 95),
-            'queue_pending_warning' => (int) env('OPS_ALERT_QUEUE_PENDING_WARNING', 100),
-            'failed_jobs_warning' => (int) env('OPS_ALERT_FAILED_JOBS_WARNING', 1),
-            'network_mbps_warning' => (float) env('OPS_ALERT_NETWORK_MBPS_WARNING', 50),
-            'docker_exited_enabled' => filter_var(env('OPS_ALERT_DOCKER_EXITED_ENABLED', true), FILTER_VALIDATE_BOOL),
-            'auto_resolve_enabled' => filter_var(env('OPS_ALERT_AUTO_RESOLVE_ENABLED', true), FILTER_VALIDATE_BOOL),
-            'auto_resolve_grace_minutes' => (int) env('OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES', 5),
-            'notification_repeat_minutes' => (int) env('OPS_ALERT_NOTIFICATION_REPEAT_MINUTES', 30),
-            'escalation_enabled' => filter_var(env('OPS_ALERT_ESCALATION_ENABLED', true), FILTER_VALIDATE_BOOL),
-            'escalation_after_minutes' => (int) env('OPS_ALERT_ESCALATION_AFTER_MINUTES', 30),
+            'disk_usage_warning' => (int) env('OPS_ALERT_DISK_USAGE_WARNING', 85),   // 磁盘使用率警告线（%）
+            'disk_usage_critical' => (int) env('OPS_ALERT_DISK_USAGE_CRITICAL', 95), // 磁盘使用率严重线（%），高于 warning
+            'queue_pending_warning' => (int) env('OPS_ALERT_QUEUE_PENDING_WARNING', 100), // 队列积压待处理任务数警告线
+            'failed_jobs_warning' => (int) env('OPS_ALERT_FAILED_JOBS_WARNING', 1),  // 失败任务数警告线（>=1 即告警）
+            'network_mbps_warning' => (float) env('OPS_ALERT_NETWORK_MBPS_WARNING', 50), // 网络吞吐警告线（Mbps）
+            'docker_exited_enabled' => filter_var(env('OPS_ALERT_DOCKER_EXITED_ENABLED', true), FILTER_VALIDATE_BOOL), // 是否对已退出的容器告警（默认开）
+            'auto_resolve_enabled' => filter_var(env('OPS_ALERT_AUTO_RESOLVE_ENABLED', true), FILTER_VALIDATE_BOOL),   // 指标恢复后是否自动闭环告警（默认开）
+            'auto_resolve_grace_minutes' => (int) env('OPS_ALERT_AUTO_RESOLVE_GRACE_MINUTES', 5),   // 自动闭环前的观察宽限期（分钟），避免抖动误闭环
+            'notification_repeat_minutes' => (int) env('OPS_ALERT_NOTIFICATION_REPEAT_MINUTES', 30), // 未闭环告警的重复通知间隔（分钟）
+            'escalation_enabled' => filter_var(env('OPS_ALERT_ESCALATION_ENABLED', true), FILTER_VALIDATE_BOOL),  // 是否启用超时升级（默认开）
+            'escalation_after_minutes' => (int) env('OPS_ALERT_ESCALATION_AFTER_MINUTES', 30), // 告警未处理多久后升级（分钟）
         ],
 
         // 多级升级链（L1→L2→L3，部署期设，同 SLA 目标口径）：open critical 告警随时长逐级升级，
@@ -177,39 +184,42 @@ return [
             ],
         ],
 
+        // 各通知通道的独立开关与凭证。所有 *_ENABLED 默认 false（opt-in），必须显式配置 env 才会真正外发，
+        // 避免开发环境误发。token/secret/webhook 等敏感值全部走 env，不硬编码在仓库里。
         'telegram' => [
-            'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL),
-            'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'),
-            'chat_id' => env('OPS_ALERT_TELEGRAM_CHAT_ID'),
-            'message_template' => (string) env('OPS_ALERT_TELEGRAM_MESSAGE_TEMPLATE', ''),
+            'enabled' => filter_var(env('OPS_ALERT_TELEGRAM_ENABLED', false), FILTER_VALIDATE_BOOL), // opt-in，默认关
+            'bot_token' => env('OPS_ALERT_TELEGRAM_BOT_TOKEN'), // 机器人 token（敏感，走 env）
+            'chat_id' => env('OPS_ALERT_TELEGRAM_CHAT_ID'),     // 目标会话 id
+            'message_template' => (string) env('OPS_ALERT_TELEGRAM_MESSAGE_TEMPLATE', ''), // 该通道专属模板，留空回退全局模板
         ],
 
         'mail' => [
-            'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),
-            'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))),
-            'message_template' => (string) env('OPS_ALERT_MAIL_MESSAGE_TEMPLATE', ''),
+            'enabled' => filter_var(env('OPS_ALERT_MAIL_ENABLED', false), FILTER_VALIDATE_BOOL), // opt-in，默认关
+            'to' => array_values(array_filter(explode(',', env('OPS_ALERT_MAIL_TO', '')))), // 收件人列表（逗号分隔，过滤空值）
+            'message_template' => (string) env('OPS_ALERT_MAIL_MESSAGE_TEMPLATE', ''), // 该通道专属模板
         ],
 
         'webhook' => [
-            'enabled' => filter_var(env('OPS_ALERT_WEBHOOK_ENABLED', false), FILTER_VALIDATE_BOOL),
-            'url' => env('OPS_ALERT_WEBHOOK_URL'),
-            'secret' => env('OPS_ALERT_WEBHOOK_SECRET'),
+            'enabled' => filter_var(env('OPS_ALERT_WEBHOOK_ENABLED', false), FILTER_VALIDATE_BOOL), // opt-in，默认关
+            'url' => env('OPS_ALERT_WEBHOOK_URL'),        // 外发 webhook 地址
+            'secret' => env('OPS_ALERT_WEBHOOK_SECRET'),  // 用于对 payload 签名的密钥（敏感）
         ],
 
         'dingtalk' => [
-            'enabled' => filter_var(env('OPS_ALERT_DINGTALK_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'enabled' => filter_var(env('OPS_ALERT_DINGTALK_ENABLED', false), FILTER_VALIDATE_BOOL), // opt-in，默认关
             'webhook' => env('OPS_ALERT_DINGTALK_WEBHOOK'),
-            'secret' => env('OPS_ALERT_DINGTALK_SECRET'),
+            'secret' => env('OPS_ALERT_DINGTALK_SECRET'), // 钉钉加签密钥（敏感）
             'message_template' => (string) env('OPS_ALERT_DINGTALK_MESSAGE_TEMPLATE', ''),
         ],
 
         'feishu' => [
-            'enabled' => filter_var(env('OPS_ALERT_FEISHU_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'enabled' => filter_var(env('OPS_ALERT_FEISHU_ENABLED', false), FILTER_VALIDATE_BOOL), // opt-in，默认关
             'webhook' => env('OPS_ALERT_FEISHU_WEBHOOK'),
-            'secret' => env('OPS_ALERT_FEISHU_SECRET'),
+            'secret' => env('OPS_ALERT_FEISHU_SECRET'), // 飞书加签密钥（敏感）
             'message_template' => (string) env('OPS_ALERT_FEISHU_MESSAGE_TEMPLATE', ''),
         ],
 
+        // 演示通道：非生产环境默认开启，仅把告警落库/回显不真正外发，便于本地调试。生产环境默认关。
         'demo' => [
             'enabled' => filter_var(env('OPS_ALERT_DEMO_ENABLED', env('APP_ENV', 'local') !== 'production'), FILTER_VALIDATE_BOOL),
         ],

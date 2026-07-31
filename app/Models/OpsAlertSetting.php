@@ -5,21 +5,30 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
+/**
+ * Ops Center 告警配置项模型（键值存储）。
+ *
+ * 以 key/value 单行一项的方式保存告警中心的可调参数（通知重复间隔、
+ * 自动恢复、升级策略、各通道开关与消息模板、严重级 × 通道路由矩阵等）。
+ * 读取时优先取库中值，缺失或数据库不可用时回退到 defaults()（源自 config('ops.alerts.*')）。
+ */
 class OpsAlertSetting extends Model
 {
     protected $fillable = [
-        'key',
-        'value',
-        'description',
+        'key',          // 配置项键名（唯一），如 escalation_enabled
+        'value',        // 配置值，任意结构（标量/数组），以 JSON 存储
+        'description',  // 配置说明（可空）
     ];
 
     protected function casts(): array
     {
         return [
+            // value 可能是布尔/整数/数组等多种类型，用 json 保留原始结构
             'value' => 'json',
         ];
     }
 
+    // 支持的告警严重级别（用于生成路由矩阵）
     public const SEVERITIES = ['critical', 'warning', 'info'];
 
     /**
@@ -52,11 +61,17 @@ class OpsAlertSetting extends Model
         ));
     }
 
+    /**
+     * 实例便捷方法：读取指定配置项的值（转调静态 value）。
+     */
     public function valueFor(string $key): mixed
     {
         return self::value($key);
     }
 
+    /**
+     * 读取单个配置值：库中有则用库值，否则回退默认值；数据库异常时也回退默认。
+     */
     public static function value(string $key): mixed
     {
         try {
@@ -72,6 +87,9 @@ class OpsAlertSetting extends Model
         return self::defaults()[$key] ?? null;
     }
 
+    /**
+     * 写入/更新单个配置项（按 key upsert）。
+     */
     public static function setValue(string $key, mixed $value, ?string $description = null): void
     {
         self::query()->updateOrCreate(
@@ -80,6 +98,9 @@ class OpsAlertSetting extends Model
         );
     }
 
+    /**
+     * 返回全部配置：以默认值为底，用库中已存在的键覆盖；数据库异常时返回纯默认。
+     */
     public static function allValues(): array
     {
         $values = self::defaults();
@@ -99,6 +120,9 @@ class OpsAlertSetting extends Model
         return $values;
     }
 
+    /**
+     * 生成全部配置项的默认值（来源于 config('ops.alerts.*')），供缺库值时回退。
+     */
     public static function defaults(): array
     {
         $defaults = [

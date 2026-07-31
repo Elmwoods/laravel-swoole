@@ -1,6 +1,9 @@
 <template>
+    <!-- 运维后台整体骨架：左侧固定侧边导航 + 右侧头部与内容区 -->
     <el-container class="ops-shell">
+        <!-- 侧边栏：品牌标识 + 权限过滤后的导航菜单 -->
         <el-aside class="ops-sidebar" width="248px">
+            <!-- 品牌区：Logo 缩写与产品名 -->
             <div class="brand">
                 <div class="brand-mark">OC</div>
 
@@ -10,11 +13,13 @@
                 </div>
             </div>
 
+            <!-- 主导航菜单：default-active 高亮当前路由，router 模式点击即路由跳转 -->
             <el-menu
                 :default-active="activePath"
                 class="ops-menu"
                 router
             >
+                <!-- 每个菜单项都按对应权限点 v-if 显隐，无权限则整条不渲染 -->
                 <el-menu-item v-if="hasPermission('ops.dashboard.view')" index="/admin/ops">
                     <el-icon><Monitor /></el-icon>
                     <span>运维总览</span>
@@ -40,6 +45,7 @@
                     <span>自动巡检</span>
                 </el-menu-item>
 
+                <!-- Redis 分组：折叠子菜单，含监控与趋势两个页面 -->
                 <el-sub-menu v-if="hasPermission('ops.system.view')" index="redis">
                     <template #title>
                         <el-icon><Coin /></el-icon>
@@ -72,6 +78,7 @@
                     <span>Docker</span>
                 </el-menu-item>
 
+                <!-- 系统资源分组：网络流量、磁盘监控、系统趋势 -->
                 <el-sub-menu v-if="hasPermission('ops.system.view')" index="system">
                     <template #title>
                         <el-icon><DataLine /></el-icon>
@@ -99,10 +106,12 @@
                     <span>日志中心</span>
                 </el-menu-item>
 
+                <!-- 告警中心：菜单右侧带未处理告警数量红色徽标，仅在有未处理告警时显示 -->
                 <el-menu-item v-if="hasPermission('ops.alerts.view')" index="/admin/ops/alerts">
                     <el-icon><Bell /></el-icon>
                     <span class="menu-label">
                         <span>告警中心</span>
+                        <!-- openAlertCount 为 0 时不渲染徽标，超过 99 显示 99+ -->
                         <el-badge
                             v-if="openAlertCount > 0"
                             :value="openAlertCount"
@@ -152,6 +161,7 @@
                     <span>依赖拓扑</span>
                 </el-menu-item>
 
+                <!-- 安全管理分组：只要拥有其中任一子权限即展示该分组，子项再各自按权限显隐 -->
                 <el-sub-menu v-if="hasAnyPermission(['admin.users.manage', 'admin.roles.manage', 'admin.audit.view', 'admin.security.manage'])" index="security">
                     <template #title>
                         <el-icon><Lock /></el-icon>
@@ -186,21 +196,27 @@
             </el-menu>
         </el-aside>
 
+        <!-- 右侧主区：顶部信息栏 + 路由内容区 -->
         <el-container class="ops-main">
+            <!-- 顶部栏：左侧标题/副标题随路由 meta 变化，右侧为当前管理员信息与退出 -->
             <el-header class="ops-header">
                 <div>
+                    <!-- 标题与描述均取自当前路由的 meta -->
                     <div class="page-title">{{ pageTitle }}</div>
                     <div class="page-description">{{ pageDescription }}</div>
                 </div>
 
                 <el-space>
+                    <!-- 当前登录管理员姓名 -->
                     <span class="admin-name">{{ auth.profile?.admin?.name }}</span>
                     <el-tag type="success" effect="plain">Swoole</el-tag>
                     <el-tag type="info" effect="plain">Docker Sail</el-tag>
+                    <!-- 退出登录，清理会话后跳回登录页 -->
                     <el-button text type="primary" @click="logout">退出</el-button>
                 </el-space>
             </el-header>
 
+            <!-- 内容区：子路由页面在此渲染 -->
             <el-main class="ops-content">
                 <router-view />
             </el-main>
@@ -242,11 +258,17 @@ import {
     View,
 } from '@element-plus/icons-vue'
 
+// 当前路由对象，用于读取 path 与 meta
 const route = useRoute()
+// 路由实例，用于退出后跳转
 const router = useRouter()
+// 管理员鉴权 store：提供 profile、权限判断与登出
 const auth = useAdminAuthStore()
+// 未处理告警数量，驱动侧边栏红色徽标
 const openAlertCount = ref(0)
+// 告警实时频道句柄，卸载时退订
 let alertChannel: any = null
+// 定时轮询计时器句柄，作为 WebSocket 的兜底刷新
 let alertCountTimer: number | null = null
 
 /**
@@ -311,26 +333,34 @@ const handleLocalAlertUpdate = () => {
     loadAlertCount()
 }
 
+// 单个权限判断，转发给 store，供模板 v-if 使用
 const hasPermission = (permission: string): boolean => auth.hasPermission(permission)
 
+// 任一权限判断：用于父级分组，只要命中列表中任意权限即展示
 const hasAnyPermission = (permissions: string[]): boolean => permissions.some(hasPermission)
 
+// 退出登录：清理会话后跳回登录页
 const logout = async () => {
     await auth.logout()
     await router.replace('/admin/login')
 }
 
+// 挂载：确保已加载用户档案 → 首次拉取告警数 → 开启实时与轮询双通道刷新
 onMounted(async () => {
+    // 档案未加载则先加载，保证权限判断可用
     if (!auth.loaded) {
         await auth.loadProfile()
     }
 
     await loadAlertCount()
     startAlertRealtime()
+    // 监听同页内的告警变更事件，实现本地即时刷新
     window.addEventListener('ops:alerts-updated', handleLocalAlertUpdate)
+    // 每 30 秒兜底轮询一次，防止 WebSocket 断连时计数长期失真
     alertCountTimer = window.setInterval(loadAlertCount, 30000)
 })
 
+// 卸载：退订频道、清除定时器、移除事件监听，全面回收资源防止泄漏
 onBeforeUnmount(() => {
     if (alertChannel) {
         echo.leaveChannel('ops.alerts')

@@ -13,6 +13,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // 仅当旧列 session_id_hash 存在且新列 session_token_hash 尚不存在时才改名，保证多次运行/新库均幂等
         if (Schema::hasColumn('admin_sessions', 'session_id_hash')
             && ! Schema::hasColumn('admin_sessions', 'session_token_hash')) {
             Schema::table('admin_sessions', function (Blueprint $table): void {
@@ -21,6 +22,7 @@ return new class extends Migration
         }
     }
 
+    // down：回滚 up()，把列名改回 session_id_hash（同样带存在性判断以保持幂等）
     public function down(): void
     {
         if (Schema::hasColumn('admin_sessions', 'session_token_hash')

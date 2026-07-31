@@ -13,7 +13,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 class NetworkMetricsUpdated implements ShouldBroadcastNow
 {
     public function __construct(
-        public array $data
+        public array $data   // 网络流量指标载荷（收发速率等），原样广播
     ) {}
 
     /**
